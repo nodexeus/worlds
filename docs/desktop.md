@@ -4,12 +4,12 @@ Open **Nodexeus Worlds.app** from Applications. Node, npm, Docker, and a termina
 needed to run the packaged app. This build targets Apple Silicon Macs.
 
 - Closing the window keeps the scanner running in the menu bar by default.
-- Choose **Show Colony** from the menu bar or click the Dock icon to return.
-- **Bot Crossing → Keep Running in Menu Bar** controls close behavior.
-- **Bot Crossing → Open at Login** starts it in the background at the next login. This
+- Choose **Show Campus** from the menu bar or click the Dock icon to return.
+- **Nodexeus Worlds → Keep Running in Menu Bar** controls close behavior.
+- **Nodexeus Worlds → Open at Login** starts it in the background at the next login. This
   is off by default. It uses an app-owned per-user LaunchAgent, which also works with
   this unsigned local build. Disable it before moving or removing the app.
-- **Quit Bot Crossing** (⌘Q) saves the colony and stops the scanner.
+- **Quit Nodexeus Worlds** (⌘Q) saves the colony and stops the scanner.
 - Rendering and audio pause when the window is hidden or minimized; the scanner continues.
 
 The scanner reads the same local harness stores as the browser version and uses native
@@ -17,6 +17,8 @@ process detection. Claude/Codex CLI binaries are still needed for the app's term
 actions; they are not needed just to view sessions.
 
 ## Data and migration
+
+For a new development machine, follow the [handoff and transfer checklist](HANDOFF.md).
 
 Colony data, desktop preferences, browser storage, and logs live in:
 

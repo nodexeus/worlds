@@ -59,8 +59,10 @@ transcripts without that metadata.
 
 The container cannot open your host's desktop apps, terminals, or repository folders.
 Host process detection is also unavailable. Compose sets `BOT_CROSSING_CLAUDE_ACTIVITY=transcript`
-so Claude activity and subagents can be inferred from recent transcript writes: a user
-turn or tool call indicates work, and an assistant reply indicates waiting for you.
+so Claude activity and subagents can be inferred from recent transcript writes. A user
+turn or tool call can indicate work; an assistant reply alone does not mean the user is
+needed. Active subagents keep their parent working, while requests for input are tracked
+separately from unread replies. See [activity and attention](desktop.md#activity-and-attention).
 After five minutes without transcript writes, that activity signal expires. A killed
 session may look busy until then, and a quiet tool running longer than five minutes may
 look idle. Native runs keep the stricter live-process check unless you explicitly set

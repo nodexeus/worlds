@@ -9,6 +9,9 @@ explicitly unconnected; platform agents, workflow execution, RAG, memory access,
 inference billing are future integrations. See [the product direction](PRODUCT.md) and
 [the identity model](docs/platform-identity.md).
 
+Moving development to another machine? Start with the [handoff and setup guide](docs/HANDOFF.md),
+which indexes the committed specs, plans, and design documents.
+
 An independently maintained fork of [Bot Crossing](https://github.com/Station-Sciences/bot-crossing).
 Original source attribution, [MIT license](LICENSE), and [upstream trademark notes](TRADEMARKS.md)
 are retained. Nodexeus branding identifies this fork.
