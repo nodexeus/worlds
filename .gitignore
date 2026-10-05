@@ -38,3 +38,7 @@ public/dev-mobile.html
 # not. Same reasoning as the sound samples above: what is in the repository is MIT, and this
 # is the one part of the project deliberately kept out of that grant. See TRADEMARKS.md.
 design/character
+
+# Local visual review evidence can contain private workspace and session names.
+.impeccable/review/
+.impeccable/hook.cache.json

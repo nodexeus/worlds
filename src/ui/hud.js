@@ -1,3 +1,4 @@
+import { installCampusShell } from './campus-shell.js'
 import { PRESETS, PLANETS_ORDER } from './hud-data.js'
 import { PLANETS } from '../world/planet.js'
 import { TIMES, systemTimeOfDay } from '../world/sky.js'
@@ -50,11 +51,11 @@ const ICON = {
 }
 
 const STAT_DEFS = [
-  { key: 'working', label: 'building', cls: 'working' },
+  { key: 'working', label: 'working', cls: 'working' },
   { key: 'waiting', label: 'need you', cls: 'waiting' },
   { key: 'blocked', label: 'blocked', cls: 'blocked' },
   { key: 'celebrating', label: 'shipped', cls: 'done' },
-  { key: 'agents', label: 'bots', cls: 'idle' },
+  { key: 'agents', label: 'sessions', cls: 'idle' },
 ]
 
 export class Hud {
@@ -77,6 +78,7 @@ export class Hud {
     this._buildAvatar()
     this._wire()
     this.syncSettings()
+    this.campus = installCampusShell(this.el, actions.enterLibrary)
     // Read layout when panels resize/change, never in the animation loop.
     this._layoutObserver = new ResizeObserver(() => this._syncLayout())
     this._layoutObserver.observe(this.el)
@@ -426,7 +428,7 @@ export class Hud {
     // On a phone the sidebar is a sheet: a tap on its brand row (not on its buttons) pulls
     // it up or lets it drop, and a drag on the row does the same by direction.
     const brandbar = this.$('.side .brandbar')
-    const grab = this.$('.side .grab')
+    on('#btn-workspaces', 'click', () => this.toggleSheet())
     let dragY = null
     const startDrag = (e) => {
       if (!this.isPhone() || e.target.closest('.btn')) return
@@ -439,7 +441,7 @@ export class Hud {
       if (Math.abs(dy) > 24) this.toggleSheet(dy < 0)
       else if (!e.target.closest('.btn')) this.toggleSheet()
     }
-    for (const el of [brandbar, grab]) {
+    for (const el of [brandbar]) {
       el.addEventListener('pointerdown', startDrag)
       el.addEventListener('pointerup', endDrag)
     }
@@ -530,7 +532,7 @@ export class Hud {
       b.addEventListener('click', () => this.actions.pickProject?.(p.name))
       wrap.appendChild(b)
     }
-    this.$('.sec-head span').textContent = `${projects.length} repo${projects.length === 1 ? '' : 's'}`
+    this.$('.sec-head span').textContent = `${projects.length} workspace${projects.length === 1 ? '' : 's'}`
 
     // The hidden list is its own block at the foot of the sidebar: collapsed by default, because
     // the whole point of hiding a repo is not to look at it.
@@ -797,6 +799,7 @@ export class Hud {
     const width = this.el.clientWidth
     const height = this.el.clientHeight
     const side = this.$('.side')
+    this.$('.side-body').inert = this.isPhone() && !side.classList.contains('open')
     let right = 0
     let bottom = 0
     if (this.visible) {
@@ -904,6 +907,8 @@ export class Hud {
     const side = this.$('.side')
     const open = force ?? !side.classList.contains('open')
     side.classList.toggle('open', open)
+    this.$('#btn-workspaces').setAttribute('aria-expanded', String(open))
+    this.$('#btn-workspaces').textContent = open ? 'Hide workspaces' : 'Show workspaces'
     this._syncLayout()
     return open
   }
@@ -1064,9 +1069,9 @@ function ago(ts) {
 
 const TEMPLATE = `
 <aside class="side panel">
-  <div class="grab"></div>
+  <button type="button" class="btn sheet-toggle" id="btn-workspaces" aria-expanded="false" aria-controls="campus-workspaces">Show workspaces</button>
   <header class="brandbar">
-    <div class="brand"><i class="dot"></i>Bot Crossing</div>
+    <div class="brand">Your campus</div>
     <button class="btn icon ghost" id="btn-shot" title="Screenshot (P)">${ICON.camera}</button>
     <button class="btn icon ghost" id="btn-help" title="Help (?)">${ICON.help}</button>
     <button class="btn icon ghost" id="btn-hide" title="Hide all UI (H)">${ICON.eye}</button>
@@ -1075,9 +1080,9 @@ const TEMPLATE = `
 
   <div class="stats"></div>
 
-  <div class="side-body">
+  <div class="side-body" id="campus-workspaces">
     <div class="projects-pane">
-      <div class="sec-head"><span>Repos</span></div>
+      <div class="sec-head"><span>Workspaces</span></div>
       <div class="projects"></div>
       <div class="hidden-block" hidden>
         <button type="button" class="hidden-toggle" id="btn-hidden-toggle" aria-expanded="false">
@@ -1088,7 +1093,7 @@ const TEMPLATE = `
     </div>
 
     <div class="project-detail">
-      <button class="btn ghost back" id="btn-close-project" title="Back to every repo (Esc)">${ICON.back} All repos</button>
+      <button class="btn ghost back" id="btn-close-project" title="Back to all workspaces (Esc)">${ICON.back} All workspaces</button>
       <div class="who">
         <i class="swatch"></i>
         <div class="text">
@@ -1103,20 +1108,21 @@ const TEMPLATE = `
           <button class="btn" id="btn-reveal" title="Show this folder in ${FILE_MANAGER}">${ICON.folder} ${FILE_MANAGER}</button>
           <button class="btn" id="btn-copy-path" title="Copy the folder path">${ICON.copy} Copy path</button>
         </div>
-        <button class="btn" id="btn-hide-project" title="Hide this repo from the colony — does not archive its threads">${ICON.eyeOff} Hide from colony</button>
+        <button class="btn" id="btn-hide-project" title="Hide this workspace — does not archive its sessions">${ICON.eyeOff} Hide workspace</button>
       </div>
       <div class="threads-head"></div>
       <div class="threads"></div>
     </div>
   </div>
+  <p class="side-source"><span>Local sessions</span> · On this computer</p>
 </aside>
 
 <div class="rail panel">
   <button class="btn icon" id="btn-home" title="Reset the view (0)">${ICON.home}</button>
   <button class="btn icon" id="btn-next" title="Next bot waiting on you (N)">${ICON.next}</button>
   <div class="sep"></div>
-  <button class="btn icon" id="btn-orbit" title="Orbit mode — sweep around the colony (O)" aria-pressed="false">${ICON.orbit}</button>
-  <button class="btn icon" id="btn-planet" title="Change planet (Tab)">${ICON.globe}</button>
+  <button class="btn icon" id="btn-orbit" title="Orbit mode — explore your campus (O)" aria-pressed="false">${ICON.orbit}</button>
+  <button class="btn icon" id="btn-planet" title="Change planet (G)">${ICON.globe}</button>
   <button class="btn icon" id="btn-time" title="Change the time of day (L)">${ICON.sun}</button>
   <div class="sep"></div>
   <button class="btn icon" id="btn-sound" title="Mute (M)" aria-pressed="true">${ICON.sound}</button>
@@ -1152,8 +1158,8 @@ const TEMPLATE = `
 
 <div class="help">
   <div class="sheet panel">
-    <h2>Bot Crossing</h2>
-    <p class="sub">Every coding-agent thread on this machine is a bot. They walk out of the ship, claim a plot for their repo, and build. Click one to open its thread; click a zone — its deck or its name — for the repo itself, and start a new conversation there. Hide a repo from that panel if you would rather not see it — its threads stay in your harness, and you can show it again from the list. Navigation works like Google Earth — drag the ground itself, right-drag to tilt, scroll to zoom in on whatever is under the cursor.</p>
+    <h2>Nodexeus Worlds</h2>
+    <p class="sub">Your local agent sessions share one campus. Each workspace groups the sessions for a repository, so you can see work in progress and requests for your input. Click one to open its thread; click a zone — its deck or its name — for the repo itself, and start a new conversation there. Hide a repo from that panel if you would rather not see it — its threads stay in your harness, and you can show it again from the list. Navigation works like Google Earth — drag the ground itself, right-drag to tilt, scroll to zoom in on whatever is under the cursor.</p>
     <div class="cols">
       <div>
         <div class="k"><span>Drag the ground</span><kbd>drag</kbd></div>
@@ -1173,7 +1179,7 @@ const TEMPLATE = `
         <div class="k"><span>Archive</span><kbd>A</kbd></div>
         <div class="k"><span>New conversation</span><kbd>C</kbd></div>
         <div class="k"><span>Orbit mode</span><kbd>O</kbd></div>
-        <div class="k"><span>Change planet</span><kbd>Tab</kbd></div>
+        <div class="k"><span>Change planet</span><kbd>G</kbd></div>
         <div class="k"><span>Time of day</span><kbd>L</kbd></div>
         <div class="k"><span>Mute</span><kbd>M</kbd></div>
         <div class="k"><span>Deselect</span><kbd>Esc</kbd></div>
@@ -1187,6 +1193,7 @@ const TEMPLATE = `
       <div class="legend-row"><i class="badge" style="background:#332b12;color:#e6c67f">✓</i> its pull request landed</div>
       <div class="legend-row"><i class="badge" style="background:#1d1f2e;color:#a9a8c0">z</i> nothing for three days</div>
     </div>
+    <p class="sub">Based on the open-source Bot Crossing project. Nodexeus Worlds is independently maintained.</p>
     <div style="margin-top:18px;display:flex;justify-content:flex-end">
       <button class="btn primary" id="btn-help-close">Got it</button>
     </div>

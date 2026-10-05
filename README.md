@@ -1,22 +1,21 @@
-# Bot Crossing — your agent threads, as a colony
+# Nodexeus Worlds
 
-**[botcrossing.com](https://botcrossing.com)**
+A visual campus for agent work. This first version brings local coding-agent sessions
+into a shared 3D view, with a Nodexeus interface and a permanent Library building for future
+shared-knowledge integration.
 
-Every coding-agent thread on this machine is a little bot. They walk out of the ship, claim
-a plot for their repo, and build something. When one needs you it stops and holds a `?` over
-its head; click it and the thread opens back in whichever harness it came from.
+Local Claude, Codex, and other supported harness sessions are live. The Library is
+explicitly unconnected; platform agents, workflow execution, RAG, memory access, and
+inference billing are future integrations. See [the product direction](PRODUCT.md) and
+[the identity model](docs/platform-identity.md).
 
-It reads the harness's own files, on your own machine. Nothing is uploaded, there is no
-account, and **it never writes to a harness at all** — `data/colony.json`, where the map lives,
-is the only file it writes anywhere.
-
-> **Status:** published as-is. I built this for myself and cannot promise to maintain it —
-> issues and PRs are welcome but may go unanswered, and forking is an entirely reasonable
-> thing to do. [CONTRIBUTING.md](CONTRIBUTING.md) sets out what to expect.
+An independently maintained fork of [Bot Crossing](https://github.com/Station-Sciences/bot-crossing).
+Original source attribution, [MIT license](LICENSE), and [upstream trademark notes](TRADEMARKS.md)
+are retained. Nodexeus branding identifies this fork.
 
 ## Run it
 
-**macOS desktop app:** open **Bot Crossing.app** from Applications. See
+**macOS desktop app:** open **Nodexeus Worlds.app** from Applications. See
 [the desktop guide](docs/desktop.md) for menu-bar controls, login startup, data migration,
 and building the `.app` or `.dmg`.
 

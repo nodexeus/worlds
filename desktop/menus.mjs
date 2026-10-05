@@ -14,7 +14,7 @@ export async function installMenus({ root, userData, preferences, show, logFile 
   const tray = new Tray(image)
   let login = process.platform === 'darwin' && await isLoginEnabled(os.homedir())
   let status = 'Scanning sessions…'
-  tray.setToolTip('Bot Crossing')
+  tray.setToolTip('Nodexeus Worlds')
   tray.on('click', show)
 
   /** Report a settings failure without leaving a checked but unapplied menu item.
@@ -55,20 +55,20 @@ export async function installMenus({ root, userData, preferences, show, logFile 
       { label: 'Open Log File', click: () => void shell.openPath(logFile) },
     ]
     tray.setContextMenu(Menu.buildFromTemplate([
-      { label: 'Show Colony', click: show }, { label: status, enabled: false },
+      { label: 'Show Campus', click: show }, { label: status, enabled: false },
       { type: 'separator' }, ...settingsItems(), { type: 'separator' }, ...utilities,
-      { type: 'separator' }, { label: 'Quit Bot Crossing', role: 'quit' },
+      { type: 'separator' }, { label: 'Quit Nodexeus Worlds', role: 'quit' },
     ]))
     Menu.setApplicationMenu(Menu.buildFromTemplate([
-      { label: 'Bot Crossing', submenu: [
-        { label: 'About Bot Crossing', role: 'about' }, { type: 'separator' },
+      { label: 'Nodexeus Worlds', submenu: [
+        { label: 'About Nodexeus Worlds', role: 'about' }, { type: 'separator' },
         ...settingsItems(), { type: 'separator' }, ...utilities,
         { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' },
         { type: 'separator' }, { role: 'quit' },
       ] },
       { role: 'editMenu' },
       { label: 'View', submenu: [
-        { label: 'Show Colony', accelerator: 'CmdOrCtrl+1', click: show },
+        { label: 'Show Campus', accelerator: 'CmdOrCtrl+1', click: show },
         { role: 'reload' }, { role: 'togglefullscreen' },
         ...(!app.isPackaged ? [{ role: 'toggleDevTools' }] : []),
       ] },
@@ -80,7 +80,7 @@ export async function installMenus({ root, userData, preferences, show, logFile 
   return {
     update: info => {
       status = info.error ? 'Scanner unavailable' : `${info.working} working · ${info.waiting} waiting · ${info.total} sessions`
-      tray.setToolTip(`Bot Crossing — ${status}${info.warning ? '\n' + info.warning : ''}`)
+      tray.setToolTip(`Nodexeus Worlds — ${status}${info.warning ? '\n' + info.warning : ''}`)
       rebuild()
     },
     destroy: () => tray.destroy(),

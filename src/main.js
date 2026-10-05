@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import './ui/styles.css'
+import './ui/campus-theme.css'
 import { DEFAULT_PRESET, Settings, hasStoredSettings } from './core/settings.js'
 import { Engine } from './core/engine.js'
 import { CameraRig } from './core/camera.js'
@@ -42,8 +43,8 @@ const app = document.getElementById('app')
 app.insertAdjacentHTML(
   'beforeend',
   `<div class="boot"><div class="inner">
-     <h1>Bot Crossing</h1>
-     <p>Scanning for agent threads…</p>
+     <h1>Nodexeus Worlds</h1>
+     <p>Opening your campus…</p>
      <div class="bar"><i></i></div>
    </div></div>`
 )
@@ -79,6 +80,10 @@ const hoverGround = new THREE.Vector3()
 // ── actions the HUD can trigger ────────────────────────────────────────────────────────
 
 const actions = {
+  enterLibrary: () => {
+    select(null, {})
+    rig.focus(colony.library.group.position, { distance: 32 })
+  },
   viewportChanged: ({ width, height, right, bottom }) => {
     rig.setViewportInsets(width, height, { right, bottom })
     engine.tiltShift?.setCamera(engine.camera)
@@ -96,7 +101,7 @@ const actions = {
     const url = engine.canvas.toDataURL('image/png')
     const a = document.createElement('a')
     a.href = url
-    a.download = `bot-crossing-${colony.planet.id}-${stamp()}.png`
+    a.download = `nodexeus-worlds-${colony.planet.id}-${stamp()}.png`
     a.click()
     hud.toast('Screenshot saved')
   },
@@ -490,7 +495,7 @@ engine.canvas.addEventListener('pointermove', (e) => {
   colony.setHoveredPlot(plot)
   // A plot is grabbable as well as clickable, so it gets the hand rather than the finger:
   // 'pointer' promised only a click and hid the hold-to-drag entirely.
-  engine.canvas.style.cursor = agent ? 'pointer' : 'grab'
+  engine.canvas.style.cursor = agent || colony.library.containsPointer(p.x, p.y, engine.camera) ? 'pointer' : 'grab'
 })
 
 /**
@@ -767,6 +772,11 @@ engine.canvas.addEventListener('pointerup', (e) => {
   if (e.button !== 0 || !rig.wasClick || drag.lifted || drag.swallowClick) return
   const p = ndc(e)
   const agent = colony.pick(p.x, p.y, p.aspect)
+  if (!agent && colony.library.containsPointer(p.x, p.y, engine.camera)) {
+    hud.campus.openLibrary()
+    return
+  }
+  hud.campus.closeLibrary()
   if (agent) {
     select(agent.id, {})
     return
@@ -791,6 +801,8 @@ engine.canvas.addEventListener('pointerleave', () => {
 window.addEventListener('keydown', (e) => {
   // Never steal keys from a field the user is actually typing in.
   const t = e.target
+  if (e.key === 'Tab' && hud.visible) return
+  if (t.closest?.('button, a, [role="button"]')) return
   if (t instanceof HTMLInputElement || t instanceof HTMLSelectElement || t instanceof HTMLTextAreaElement) return
 
   // ⌘\ (⌃\ elsewhere) dismisses the chrome, the same as H — the shortcut every editor
@@ -832,6 +844,8 @@ window.addEventListener('keydown', (e) => {
       settings.set('sound', !settings.get('sound'))
       hud.hint(settings.get('sound') ? 'Sound on' : 'Muted')
       break
+    case 'g':
+    case 'G':
     case 'Tab':
       e.preventDefault()
       actions.cyclePlanet()

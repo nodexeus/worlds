@@ -100,7 +100,8 @@ test('a stranded group keeps its own shape and spacing', () => {
     c: [{ q: 2, r: 0 }],
     d: [{ q: 3, r: 0 }],
   })
-  const after = planMove(zones, 'b', -2, 1)
+  // The old destination (-1, 1) is now the permanent Library; use a free neighbour.
+  const after = planMove(zones, 'b', -1, -1)
   assert.ok(after)
   const [c] = after.get('c')
   const [d] = after.get('d')

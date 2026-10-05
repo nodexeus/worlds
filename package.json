@@ -1,19 +1,19 @@
 {
-  "name": "bot-crossing",
+  "name": "nodexeus-worlds",
   "version": "1.0.0",
   "private": true,
   "type": "module",
   "main": "desktop/main.mjs",
-  "description": "A 3D colony sim where every coding-agent thread on your machine is a little astronaut building something.",
+  "description": "A Nodexeus campus for your agents, workflows, and shared knowledge.",
   "license": "MIT",
   "author": "Jarren Rocks",
-  "homepage": "https://botcrossing.com",
+  "homepage": "https://www.nodexeus.com",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jarrenrocks/bot-crossing.git"
+    "url": "git+https://github.com/nodexeus/worlds.git"
   },
   "bugs": {
-    "url": "https://github.com/jarrenrocks/bot-crossing/issues"
+    "url": "https://github.com/nodexeus/worlds/issues"
   },
   "keywords": [
     "claude-code",

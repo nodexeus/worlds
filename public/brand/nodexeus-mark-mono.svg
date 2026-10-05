@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <g id="glyph" transform="translate(48,48)">
+    <path fill="currentColor" d="M0,80 L0,148 Q0,160 12,160 L40,160 L40,80 A40,40 0 0 1 120,80 L120,160 L148,160 Q160,160 160,148 L160,80 A80,80 0 0 0 0,80 Z"/>
+  </g>
+</svg>

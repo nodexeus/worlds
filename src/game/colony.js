@@ -14,6 +14,7 @@ import {
   Plot,
   allocateCells,
   shipPosition,
+  hexToWorld,
   createLabel,
   hashString,
   worldToHex,
@@ -21,9 +22,10 @@ import {
   PLOT_PALETTE,
   PLOT_CELL,
 } from '../world/plots.js'
-import { translateCells } from '../world/plot-move.js'
+import { CORE_CELLS, LIBRARY_CELL, translateCells } from '../world/plot-move.js'
 import { createBuilding, buildingUniforms, Scaffolds } from '../world/buildings.js'
 import { Ship } from '../world/ship.js'
+import { Library } from '../world/library.js'
 import { Astronauts } from '../agents/astronauts.js'
 import { Indicators, BADGE } from '../agents/indicators.js'
 import { MAX_AGENT_CAP } from '../core/settings.js'
@@ -155,6 +157,12 @@ export class Colony {
     scene.add(this.worldGroup)
 
     this.ship = new Ship(scene, shipPosition())
+    const librarySite = hexToWorld(LIBRARY_CELL.q, LIBRARY_CELL.r)
+    this.library = new Library(scene, new THREE.Vector3(librarySite.x, 0, librarySite.z))
+    this.libraryLabel = createLabel('Library', 0xfdc700)
+    this.libraryLabel.visible = true
+    this.libraryLabel.material.opacity = 1
+    scene.add(this.libraryLabel)
     this.astronauts = new Astronauts(scene, settings)
     this.astronauts.world = this._world()
     // Sized for the largest preset rather than the current one: unlike the astronaut meshes these
@@ -219,6 +227,9 @@ export class Colony {
     // at construction — a world with more relief would otherwise leave it hovering.
     const ship = shipPosition()
     this.ship.group.position.y = terrainHeight(ship.x, ship.z, this.planet)
+    const library = this.library.group.position
+    library.y = terrainHeight(library.x, library.z, this.planet)
+    this.libraryLabel.position.copy(library).y += 5.3
 
     this._dustTint.set(this.planet.ground.high)
 
@@ -287,8 +298,7 @@ export class Colony {
     for (const plot of this.plotOrder) {
       for (const local of plot.localCenters) list.push({ x: plot.center.x + local.x, z: plot.center.z + local.z })
     }
-    const ship = shipPosition()
-    list.push({ x: ship.x, z: ship.z })
+    for (const cell of CORE_CELLS) list.unshift(hexToWorld(cell.q, cell.r))
     return list.slice(0, SKY_MAX_CELLS)
   }
 
@@ -386,6 +396,8 @@ export class Colony {
     }
     const ship = shipPosition()
     clear.push({ x: ship.x, z: ship.z, r: 7.5 })
+    const library = this.library.group.position
+    clear.push({ x: library.x, z: library.z, r: 7.5 })
     this.scatterGroup = createScatter(this.planet, this.settings.get('scatterDensity'), clear, 4242, (x, z) => this.onIsland(x, z))
     this.worldGroup.add(this.scatterGroup)
     this._scatterFootprint = this._plotFootprint()
@@ -827,6 +839,8 @@ export class Colony {
 
     const ship = shipPosition()
     obstacles.push({ x: ship.x, z: ship.z, r: 3.4 + AGENT_RADIUS })
+    const library = this.library.group.position
+    obstacles.push({ x: library.x, z: library.z, r: this.library.radius + TRAVEL_RADIUS, keep: this.library.radius + AGENT_RADIUS })
     this.nav.rebuild(obstacles)
   }
 
@@ -1280,6 +1294,9 @@ export class Colony {
     this.rock?.dispose()
     this.water?.dispose()
     this.ship.dispose()
+    this.library.dispose()
+    this.libraryLabel.removeFromParent()
+    this.libraryLabel.userData.dispose()
     this.astronauts.dispose()
     this.indicators.dispose()
     this.particles.dispose()

@@ -1,0 +1,395 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-05T21:44:58.906Z",
+  "title": "Design System: Nodexeus Worlds",
+  "extensions": {
+    "colorMeta": {
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "tonalRamp": [
+          "oklch(15.00% 0.0032 285.88)",
+          "oklch(26.43% 0.0032 285.88)",
+          "oklch(37.86% 0.0032 285.88)",
+          "oklch(49.29% 0.0032 285.88)",
+          "oklch(60.71% 0.0032 285.88)",
+          "oklch(72.14% 0.0032 285.88)",
+          "oklch(83.57% 0.0032 285.88)",
+          "oklch(95.00% 0.0032 285.88)"
+        ]
+      },
+      "panel": {
+        "role": "neutral",
+        "displayName": "Panel",
+        "tonalRamp": [
+          "oklch(15.00% 0.0041 285.97)",
+          "oklch(26.43% 0.0041 285.97)",
+          "oklch(37.86% 0.0041 285.97)",
+          "oklch(49.29% 0.0041 285.97)",
+          "oklch(60.71% 0.0041 285.97)",
+          "oklch(72.14% 0.0041 285.97)",
+          "oklch(83.57% 0.0041 285.97)",
+          "oklch(95.00% 0.0041 285.97)"
+        ]
+      },
+      "white": {
+        "role": "neutral",
+        "displayName": "White",
+        "tonalRamp": [
+          "oklch(15.00% 0.0000 89.88)",
+          "oklch(26.43% 0.0000 89.88)",
+          "oklch(37.86% 0.0000 89.88)",
+          "oklch(49.29% 0.0000 89.88)",
+          "oklch(60.71% 0.0000 89.88)",
+          "oklch(72.14% 0.0000 89.88)",
+          "oklch(83.57% 0.0000 89.88)",
+          "oklch(95.00% 0.0000 89.88)"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Muted",
+        "tonalRamp": [
+          "oklch(15.00% 0.0127 286.10)",
+          "oklch(26.43% 0.0127 286.10)",
+          "oklch(37.86% 0.0127 286.10)",
+          "oklch(49.29% 0.0127 286.10)",
+          "oklch(60.71% 0.0127 286.10)",
+          "oklch(72.14% 0.0127 286.10)",
+          "oklch(83.57% 0.0127 286.10)",
+          "oklch(95.00% 0.0127 286.10)"
+        ]
+      },
+      "dim": {
+        "role": "neutral",
+        "displayName": "Dim",
+        "tonalRamp": [
+          "oklch(15.00% 0.0115 286.11)",
+          "oklch(26.43% 0.0115 286.11)",
+          "oklch(37.86% 0.0115 286.11)",
+          "oklch(49.29% 0.0115 286.11)",
+          "oklch(60.71% 0.0115 286.11)",
+          "oklch(72.14% 0.0115 286.11)",
+          "oklch(83.57% 0.0115 286.11)",
+          "oklch(95.00% 0.0115 286.11)"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Line",
+        "tonalRamp": [
+          "oklch(15.00% 0.0072 285.95)",
+          "oklch(26.43% 0.0072 285.95)",
+          "oklch(37.86% 0.0072 285.95)",
+          "oklch(49.29% 0.0072 285.95)",
+          "oklch(60.71% 0.0072 285.95)",
+          "oklch(72.14% 0.0072 285.95)",
+          "oklch(83.57% 0.0072 285.95)",
+          "oklch(95.00% 0.0072 285.95)"
+        ]
+      },
+      "line-strong": {
+        "role": "neutral",
+        "displayName": "Line Strong",
+        "tonalRamp": [
+          "oklch(15.00% 0.0129 285.88)",
+          "oklch(26.43% 0.0129 285.88)",
+          "oklch(37.86% 0.0129 285.88)",
+          "oklch(49.29% 0.0129 285.88)",
+          "oklch(60.71% 0.0129 285.88)",
+          "oklch(72.14% 0.0129 285.88)",
+          "oklch(83.57% 0.0129 285.88)",
+          "oklch(95.00% 0.0129 285.88)"
+        ]
+      },
+      "amber": {
+        "role": "primary",
+        "displayName": "Amber",
+        "tonalRamp": [
+          "oklch(15.00% 0.1744 88.77)",
+          "oklch(26.43% 0.1744 88.77)",
+          "oklch(37.86% 0.1744 88.77)",
+          "oklch(49.29% 0.1744 88.77)",
+          "oklch(60.71% 0.1744 88.77)",
+          "oklch(72.14% 0.1744 88.77)",
+          "oklch(83.57% 0.1744 88.77)",
+          "oklch(95.00% 0.1744 88.77)"
+        ]
+      },
+      "amber-hover": {
+        "role": "primary",
+        "displayName": "Amber Hover",
+        "tonalRamp": [
+          "oklch(15.00% 0.1528 93.38)",
+          "oklch(26.43% 0.1528 93.38)",
+          "oklch(37.86% 0.1528 93.38)",
+          "oklch(49.29% 0.1528 93.38)",
+          "oklch(60.71% 0.1528 93.38)",
+          "oklch(72.14% 0.1528 93.38)",
+          "oklch(83.57% 0.1528 93.38)",
+          "oklch(95.00% 0.1528 93.38)"
+        ]
+      },
+      "nav-selected": {
+        "role": "neutral",
+        "displayName": "Nav Selected",
+        "tonalRamp": [
+          "oklch(15.00% 0.0368 94.56)",
+          "oklch(26.43% 0.0368 94.56)",
+          "oklch(37.86% 0.0368 94.56)",
+          "oklch(49.29% 0.0368 94.56)",
+          "oklch(60.71% 0.0368 94.56)",
+          "oklch(72.14% 0.0368 94.56)",
+          "oklch(83.57% 0.0368 94.56)",
+          "oklch(95.00% 0.0368 94.56)"
+        ]
+      },
+      "row-selected": {
+        "role": "neutral",
+        "displayName": "Row Selected",
+        "tonalRamp": [
+          "oklch(15.00% 0.0261 98.21)",
+          "oklch(26.43% 0.0261 98.21)",
+          "oklch(37.86% 0.0261 98.21)",
+          "oklch(49.29% 0.0261 98.21)",
+          "oklch(60.71% 0.0261 98.21)",
+          "oklch(72.14% 0.0261 98.21)",
+          "oklch(83.57% 0.0261 98.21)",
+          "oklch(95.00% 0.0261 98.21)"
+        ]
+      },
+      "control-hover": {
+        "role": "neutral",
+        "displayName": "Control Hover",
+        "tonalRamp": [
+          "oklch(15.00% 0.0093 285.74)",
+          "oklch(26.43% 0.0093 285.74)",
+          "oklch(37.86% 0.0093 285.74)",
+          "oklch(49.29% 0.0093 285.74)",
+          "oklch(60.71% 0.0093 285.74)",
+          "oklch(72.14% 0.0093 285.74)",
+          "oklch(83.57% 0.0093 285.74)",
+          "oklch(95.00% 0.0093 285.74)"
+        ]
+      },
+      "stat-surface": {
+        "role": "neutral",
+        "displayName": "Stat Surface",
+        "tonalRamp": [
+          "oklch(15.00% 0.0077 285.78)",
+          "oklch(26.43% 0.0077 285.78)",
+          "oklch(37.86% 0.0077 285.78)",
+          "oklch(49.29% 0.0077 285.78)",
+          "oklch(60.71% 0.0077 285.78)",
+          "oklch(72.14% 0.0077 285.78)",
+          "oklch(83.57% 0.0077 285.78)",
+          "oklch(95.00% 0.0077 285.78)"
+        ]
+      },
+      "working": {
+        "role": "secondary",
+        "displayName": "Working",
+        "tonalRamp": [
+          "oklch(15.00% 0.1158 153.38)",
+          "oklch(26.43% 0.1158 153.38)",
+          "oklch(37.86% 0.1158 153.38)",
+          "oklch(49.29% 0.1158 153.38)",
+          "oklch(60.71% 0.1158 153.38)",
+          "oklch(72.14% 0.1158 153.38)",
+          "oklch(83.57% 0.1158 153.38)",
+          "oklch(95.00% 0.1158 153.38)"
+        ]
+      },
+      "blocked": {
+        "role": "secondary",
+        "displayName": "Blocked",
+        "tonalRamp": [
+          "oklch(15.00% 0.1138 20.17)",
+          "oklch(26.43% 0.1138 20.17)",
+          "oklch(37.86% 0.1138 20.17)",
+          "oklch(49.29% 0.1138 20.17)",
+          "oklch(60.71% 0.1138 20.17)",
+          "oklch(72.14% 0.1138 20.17)",
+          "oklch(83.57% 0.1138 20.17)",
+          "oklch(95.00% 0.1138 20.17)"
+        ]
+      },
+      "done": {
+        "role": "secondary",
+        "displayName": "Done",
+        "tonalRamp": [
+          "oklch(15.00% 0.0618 256.11)",
+          "oklch(26.43% 0.0618 256.11)",
+          "oklch(37.86% 0.0618 256.11)",
+          "oklch(49.29% 0.0618 256.11)",
+          "oklch(60.71% 0.0618 256.11)",
+          "oklch(72.14% 0.0618 256.11)",
+          "oklch(83.57% 0.0618 256.11)",
+          "oklch(95.00% 0.0618 256.11)"
+        ]
+      },
+      "idle": {
+        "role": "secondary",
+        "displayName": "Idle",
+        "tonalRamp": [
+          "oklch(15.00% 0.0127 291.22)",
+          "oklch(26.43% 0.0127 291.22)",
+          "oklch(37.86% 0.0127 291.22)",
+          "oklch(49.29% 0.0127 291.22)",
+          "oklch(60.71% 0.0127 291.22)",
+          "oklch(72.14% 0.0127 291.22)",
+          "oklch(83.57% 0.0127 291.22)",
+          "oklch(95.00% 0.0127 291.22)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Library drawer heading."
+      },
+      "metadata": {
+        "displayName": "Metadata",
+        "purpose": "Paths, elapsed time, and session metadata."
+      }
+    },
+    "shadows": [
+      {
+        "name": "panel-lift",
+        "value": "0 12px 32px rgb(0 0 0 / 28%)",
+        "purpose": "Ambient separation between opaque interface panels and the scene."
+      }
+    ],
+    "motion": [
+      {
+        "name": "button-state",
+        "value": "background 140ms ease, border-color 140ms ease, transform 90ms ease",
+        "purpose": "Shared button hover and press feedback."
+      },
+      {
+        "name": "library-arrive",
+        "value": "220ms cubic-bezier(.16,1,.3,1)",
+        "purpose": "Move the Library panel from translateY(6px) to rest when reduced motion is not requested."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "0.01ms",
+        "purpose": "Global animation and transition duration when reduced motion is requested."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "stacked-brand-max",
+        "value": "1050px"
+      },
+      {
+        "name": "horizontal-rail-max",
+        "value": "820px"
+      },
+      {
+        "name": "mobile-layout-max",
+        "value": "720px"
+      },
+      {
+        "name": "bottom-sheet-max",
+        "value": "600px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Amber action with dark text.",
+      "html": "<button class=\"ds-button ds-primary\">Open session</button>",
+      "css": ".ds-button{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:34px;min-width:34px;padding:0 11px;border:1px solid var(--line,#2c2c30);border-radius:8px;background:rgba(255,255,255,.05);color:var(--text,#fafafa);font:13px Geist,system-ui,sans-serif;cursor:pointer;transition:background 140ms ease,border-color 140ms ease,transform 90ms ease}.ds-button:hover{background:rgba(255,255,255,.11);border-color:var(--line-strong,#56565e)}.ds-button:active{transform:scale(.96)}.ds-button:focus-visible{outline:2px solid var(--accent,#fdc700);outline-offset:4px}.ds-primary{background:var(--accent,#fdc700);color:var(--bg,#050506);border-color:transparent;font-weight:650}.ds-primary:hover{background:#ffda55;color:var(--bg,#050506)}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Neutral action within an opaque panel.",
+      "html": "<button class=\"ds-button\">Return to campus</button>",
+      "css": ".ds-button{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:34px;min-width:34px;padding:0 11px;border:1px solid var(--line,#2c2c30);border-radius:8px;background:rgba(255,255,255,.05);color:var(--text,#fafafa);font:13px Geist,system-ui,sans-serif;cursor:pointer;transition:background 140ms ease,border-color 140ms ease,transform 90ms ease}.ds-button:hover{background:rgba(255,255,255,.11);border-color:var(--line-strong,#56565e)}.ds-button:active{transform:scale(.96)}.ds-button:focus-visible{outline:2px solid var(--accent,#fdc700);outline-offset:4px}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Unfilled secondary action.",
+      "html": "<button class=\"ds-button ds-ghost\">Back</button>",
+      "css": ".ds-button{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:34px;min-width:34px;padding:0 11px;border:1px solid var(--line,#2c2c30);border-radius:8px;background:rgba(255,255,255,.05);color:var(--text,#fafafa);font:13px Geist,system-ui,sans-serif;cursor:pointer;transition:background 140ms ease,border-color 140ms ease,transform 90ms ease}.ds-button:hover{background:rgba(255,255,255,.11);border-color:var(--line-strong,#56565e)}.ds-button:active{transform:scale(.96)}.ds-button:focus-visible{outline:2px solid var(--accent,#fdc700);outline-offset:4px}.ds-ghost{background:transparent}"
+    },
+    {
+      "name": "Settings Select",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "Compact native settings field.",
+      "html": "<label class=\"ds-label\">View <select class=\"ds-select\"><option>Campus</option><option>Planet</option></select></label>",
+      "css": ".ds-label{color:var(--muted,#b2b2bb);font:13px Geist,system-ui,sans-serif}.ds-select{appearance:none;height:30px;padding:0 28px 0 11px;border-radius:9px;border:1px solid var(--line,#2c2c30);background:rgba(255,255,255,.06) url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%239b9aa3' stroke-width='1.6'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5'/%3E%3C/svg%3E\") no-repeat right 8px center/12px;color:var(--text,#fafafa);font:13px Geist,system-ui,sans-serif;cursor:pointer}.ds-select:focus-visible{outline:2px solid var(--accent,#fdc700);outline-offset:4px}"
+    },
+    {
+      "name": "Campus Navigation",
+      "kind": "nav",
+      "refersTo": "navigation",
+      "description": "Text labels remain visible at narrow widths.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Worlds views\"><button class=\"ds-view\" aria-pressed=\"true\">Campus</button><button class=\"ds-view\" aria-pressed=\"false\">Library</button></nav>",
+      "css": ".ds-nav{display:flex;align-items:center;gap:4px}.ds-view{appearance:none;border:0;border-radius:8px;padding:10px 12px;display:flex;align-items:center;gap:7px;font:550 13px Geist,system-ui,sans-serif;color:var(--muted,#b2b2bb);background:transparent;cursor:pointer}.ds-view:hover{background:#242429;color:var(--text,#fafafa)}.ds-view[aria-pressed=\"true\"]{background:#302a14;color:#ffda55}.ds-view:focus-visible{outline:2px solid var(--accent,#fdc700);outline-offset:4px}"
+    },
+    {
+      "name": "Status Chip",
+      "kind": "chip",
+      "refersTo": "status-chip",
+      "description": "Label, tabular count, and semantic pip stay together.",
+      "html": "<button class=\"ds-stat\"><span class=\"ds-pip\" aria-hidden=\"true\"></span><span class=\"ds-count\">2</span><span class=\"ds-status-label\">Working</span></button>",
+      "css": ".ds-stat{display:inline-flex;align-items:center;gap:6px;min-height:30px;padding:0 9px;border:0;border-radius:6px;background:#1c1c20;color:#7fd39a;font:12px Geist,system-ui,sans-serif;white-space:nowrap;cursor:pointer;transition:background 140ms ease,border-color 140ms ease}.ds-stat:hover{background:rgba(255,255,255,.1)}.ds-count{font-family:\"Geist Mono\",monospace;font-weight:650;font-variant-numeric:tabular-nums}.ds-status-label{color:var(--muted,#b2b2bb)}.ds-pip{width:7px;height:7px;border-radius:50%;background:currentColor}.ds-stat:focus-visible{outline:2px solid var(--accent,#fdc700);outline-offset:4px}"
+    },
+    {
+      "name": "Library Panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "Opaque reading surface showing its real unconnected state.",
+      "html": "<section class=\"ds-panel\"><h1 class=\"ds-heading\">Library</h1><p class=\"ds-intro\">A shared place for what your agents know.</p><div class=\"ds-empty\"><h2 class=\"ds-title\">Your shelves are ready.</h2><p class=\"ds-copy\">No knowledge sources are connected to this campus yet.</p><span class=\"ds-connection\">Not connected</span></div></section>",
+      "css": ".ds-panel{max-width:288px;padding:28px;background:var(--panel,#101012);color:var(--text,#fafafa);border:0;border-radius:var(--radius,14px);box-shadow:var(--shadow,0 12px 32px rgb(0 0 0 / 28%));font-family:Geist,system-ui,sans-serif}.ds-heading{margin:0;font-size:28px;line-height:1.15;font-weight:600;letter-spacing:-.035em}.ds-intro{margin:12px 0 32px;color:var(--muted,#b2b2bb);font-size:15px;line-height:1.6}.ds-empty{padding:24px 0 28px;border-top:1px solid var(--line,#2c2c30);border-bottom:1px solid var(--line,#2c2c30)}.ds-title{margin:0 0 10px;font-weight:550;font-size:21px;letter-spacing:-.02em}.ds-copy{margin:0;font-size:14px;line-height:1.65;color:var(--muted,#b2b2bb)}.ds-connection{display:inline-flex;margin-top:18px;padding:5px 8px;background:#242429;border-radius:5px;font-size:12px;color:var(--muted,#b2b2bb)}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Nodexeus Campus",
+    "overview": "The campus is a spatial workspace: the world carries activity and the interface supplies readable wayfinding and inspection. The user-approved Nodexeus identity anchors the shell with the official arch mark, ink, white, restrained amber, Geist Sans, and Geist Mono.\n\nOpaque panels and compact controls give information a stable foreground over the rendered landscape. The permanent Library shares the campus's architectural language; its open-book roof and amber trim identify a place, while its drawer explains its current unconnected state. The visual system distinguishes local session activity from future platform capabilities.",
+    "keyCharacteristics": [
+      "Spatial world with an opaque, quiet interface.",
+      "Amber wayfinding with distinct semantic activity colors.",
+      "Geist for reading; Geist Mono for paths, counts, and timing.",
+      "Permanent landmarks and reversible inspection drawers."
+    ],
+    "rules": [
+      {
+        "name": "The Amber Wayfinding Rule",
+        "body": "Use amber for brand actions and orientation; preserve distinct colors for operational states.",
+        "section": "colors"
+      },
+      {
+        "name": "The Readable State Rule",
+        "body": "Keep status labels visible at compact and mobile widths; color and counts accompany the words.",
+        "section": "typography"
+      },
+      {
+        "name": "The Opaque Foreground Rule",
+        "body": "Use opaque panels for readable interface content above the world.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do use the official Nodexeus identity assets and locally shipped Geist fonts.",
+      "Do keep the spatial world readable beside quiet, opaque controls.",
+      "Do pair semantic color with visible labels and preserve keyboard focus behavior.",
+      "Do represent Library connection and retrieval state truthfully."
+    ],
+    "donts": [
+      "Don't treat the upstream crew character as the Nodexeus logo or mascot.",
+      "Don't imply that knowledge sources, shared memory, or backend retrieval are connected in the current Library.",
+      "Don't replace operational status colors with amber merely to match the brand."
+    ]
+  }
+}
