@@ -18,6 +18,7 @@ const parent = (id, subagents) => ({
   lastActivityAt: 1000,
   running: false,
   unread: true,
+  needsAttention: true,
   canOpen: true,
   ref: { sessionId: 'abc' },
   subagents,
@@ -36,6 +37,7 @@ test('an errand is working, and never the one asking for you', () => {
   const [, errand] = withErrands([parent('p1', [{ id: 'a', task: 't' }])])
   assert.equal(errand.running, true)
   assert.equal(errand.unread, false, 'the parent carries the ?, not the errand — or it counts twice')
+  assert.equal(errand.needsAttention, false)
   assert.equal(errand.canOpen, false, 'a subagent has no session of its own to resume')
 })
 

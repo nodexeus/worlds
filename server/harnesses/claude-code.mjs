@@ -19,6 +19,8 @@ import { existsSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import { exists, findExecutable, jsonLines, listDirs, listFiles, num, readHead, readTail } from '../lib/fsutil.mjs'
+import { recentClaudeSessions } from '../lib/claude-activity.mjs'
+import { readClaudeTurn } from '../lib/claude-turn.mjs'
 
 const HOME = os.homedir()
 
@@ -235,44 +237,6 @@ async function scanTranscripts() {
   return byId
 }
 
-/** How much of a transcript's end it takes to see whose turn it is. One record is plenty. */
-const TAIL_BYTES = 64 * 1024
-
-/**
- * Whether a transcript ends with the turn handed back to you.
- *
- * A live process is not the same thing as work in progress. The CLI holds its process open while
- * it sits at the prompt, so "the pid exists and the file moved recently" marks a thread that
- * finished four minutes ago and asked you a question as *working* — an astronaut hammering away
- * at a thread whose whole point is that it is waiting.
- *
- * The transcript says which it is. A last assistant message that called a tool is mid-turn; one
- * that called nothing has handed the turn back and the reply is yours. `stop_reason` alone will
- * not do — it is `end_turn` on a main thread's last message and empty on some others — so what
- * the message *called* is the half worth testing.
- *
- * Only threads that could plausibly be running pay for this, so it costs one small read each.
- */
-async function awaitingReply(file) {
-  let records
-  try {
-    records = jsonLines(await readTail(file, TAIL_BYTES))
-  } catch {
-    return false
-  }
-  for (let i = records.length - 1; i >= 0; i--) {
-    const r = records[i]
-    // A user turn, a tool result or an attachment all mean the model speaks next — whatever the
-    // process is doing, it is not waiting on anyone.
-    if (r.type === 'user') return false
-    if (r.type !== 'assistant') continue
-    const content = r.message?.content
-    const calling = Array.isArray(content) && content.some((c) => c?.type === 'tool_use')
-    return !calling && r.message?.stop_reason !== 'tool_use'
-  }
-  return false
-}
-
 /** Transcript metadata is expensive to parse, so keep it until the file changes. */
 const metaCache = new Map()
 async function transcriptMeta(entry) {
@@ -359,9 +323,9 @@ async function scanSubagents(livePending) {
         const stat = await fsp.stat(file).catch(() => null)
         if (!stat || stat.mtimeMs < cutoff) continue
         // A subagent that has handed its answer back is finished however recently it wrote —
-        // the same question `awaitingReply` asks of a thread, put to the errand's own transcript.
+        // the same completion check used for a thread, put to the errand's own transcript.
         seen.add(file)
-        if (await awaitingReply(file)) continue
+        if ((await readClaudeTurn(file, true)).ended) continue
         const out = byParent.get(parent) || []
         out.push({
           id: path.basename(file, '.jsonl'),
@@ -471,10 +435,15 @@ function toThread(t) {
 async function scanThreads() {
   // The subagent walk needs the live set, and waiting for it here would serialise scans the
   // README says must never block — so it is handed the promise and waits on it itself.
-  const livePending = scanLiveSessions()
+  const transcriptsPending = scanTranscripts()
+  // Docker Desktop cannot probe macOS/Windows PIDs. Opt into bounded transcript
+  // inference there; native installs retain the stricter live-process check.
+  const livePending = process.env.BOT_CROSSING_CLAUDE_ACTIVITY === 'transcript'
+    ? transcriptsPending.then(recentClaudeSessions)
+    : scanLiveSessions()
   const [{ records: desktop, deleted }, transcripts, live, subagents] = await Promise.all([
     scanDesktopSessions(),
-    scanTranscripts(),
+    transcriptsPending,
     livePending,
     scanSubagents(livePending),
   ])
@@ -610,13 +579,15 @@ async function scanThreads() {
     const seenAt = thread.recordActivityAt ?? thread.lastActivityAt
     thread.unread = thread.desktopSessionIds.length > 0 && seenAt > thread.lastFocusedAt
     const fresh = now - thread.lastActivityAt < ACTIVE_WINDOW_MS
-    const waiting =
-      thread.hasLiveProcess && fresh && thread.transcriptFile ? await awaitingReply(thread.transcriptFile) : false
-    thread.running = thread.hasLiveProcess && fresh && !waiting
-    // A thread that handed the turn back wants you, whether or not the desktop app has ever seen
-    // it — the only way a terminal-only thread can ask for anything at all.
-    if (waiting) thread.unread = true
+    const turn = thread.transcriptFile ? await readClaudeTurn(thread.transcriptFile) : { ended: false, needsAttention: false }
     const errands = subagents.get(thread.cliSessionId)
+    thread.needsAttention = turn.needsAttention
+    // A parent giving a progress update can still have a reviewer doing work.
+    // Explicit input requests pause the parent; unread replies alone never do.
+    thread.running = !turn.needsAttention && Boolean(
+      (thread.hasLiveProcess && fresh && !turn.ended) || errands?.length
+    )
+    if (turn.ended || turn.needsAttention) thread.unread = true
     if (errands) thread.subagents = errands
   }
   return threads.map(toThread)

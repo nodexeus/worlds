@@ -94,6 +94,7 @@ what earns a repo its own zone, and `lastActivityAt` is what sorts the whole map
 | `lastFocusedAt` | number | Epoch ms, `0` if unknowable |
 | `running` | boolean | Working **right now** — the bot hammers away |
 | `unread` | boolean | Moved on since you last looked — the bot stops and holds a `?` |
+| `needsAttention` | boolean | Optional explicit request for human input. When present, controls the `?` instead of `unread`; completed replies are not requests. |
 | `hasError` | boolean | Errored — the bot slumps, red eyes |
 | `starred` / `routine` / `prState` | | Optional extras; `prState: 'merged'` triggers the confetti |
 | `archived` | boolean | Archived in the harness's own records. Read-only — reporting it is all an adapter does |

@@ -50,6 +50,7 @@ export function withErrands(list) {
         // parent is, and a `?` over both would double-count the one thread that wants an answer.
         running: true,
         unread: false,
+        needsAttention: false,
         hasError: false,
         prState: null,
         archived: false,

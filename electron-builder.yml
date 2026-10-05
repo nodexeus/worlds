@@ -1,0 +1,25 @@
+appId: local.botcrossing.desktop
+productName: Bot Crossing
+directories:
+  output: release
+  buildResources: desktop/assets
+files:
+  - dist/**/*
+  - server/**/*
+  - desktop/**/*
+  - package.json
+  - LICENSE
+  - TRADEMARKS.md
+  - '!desktop/assets/*.iconset/**/*'
+asar: true
+npmRebuild: false
+mac:
+  category: public.app-category.developer-tools
+  icon: desktop/assets/icon.icns
+  identity: null
+  target:
+    - target: dir
+      arch: arm64
+dmg:
+  title: Bot Crossing
+  artifactName: Bot-Crossing-${version}-${arch}.dmg

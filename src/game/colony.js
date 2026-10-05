@@ -35,13 +35,13 @@ import { liveThreadsForColony } from './hidden-projects.js'
  * The colony: everything that turns a list of agent threads into a place.
  *
  * The mapping is the whole game. It is a strict precedence rather than a set of independent
- * flags — errored, then running, then merged, then unread — so an astronaut can only ever be
+ * flags — errored, then running, then merged, then needs input — so an astronaut can only ever be
  * telling you one thing, and the loudest true thing wins.
  *
  *   errored        → blocked, red eyes, a `!` over its head
  *   running        → hammering away at its building, sparks flying
  *   PR merged      → celebrating, confetti, a `✓`
- *   unread         → stopped and waiting on you, a bobbing `?` — click it to open the thread
+ *   needs input    → stopped and waiting on you, a bobbing `?` — click it to open the thread
  *   long idle      → asleep on the job
  *   anything else  → pottering about its plot
  *
@@ -82,7 +82,7 @@ export function statusFor(thread, now = Date.now()) {
   if (thread.hasError) return 'blocked'
   if (thread.running) return 'working'
   if (thread.prState === 'MERGED') return 'celebrating'
-  if (thread.unread) return 'waiting'
+  if (thread.needsAttention ?? thread.unread) return 'waiting'
   if (now - thread.lastActivityAt > STALE_MS) return 'sleeping'
   return 'idle'
 }
@@ -1089,7 +1089,7 @@ export class Colony {
   /** A site somebody is standing at: running, or stopped waiting on you. */
   _isActive(id) {
     const thread = this.threads.get(id)
-    return Boolean(thread && (thread.running || thread.unread || thread.hasError))
+    return Boolean(thread && (thread.running || (thread.needsAttention ?? thread.unread) || thread.hasError))
   }
 
   _badgeFor(agent) {

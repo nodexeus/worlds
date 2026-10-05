@@ -16,11 +16,19 @@ is the only file it writes anywhere.
 
 ## Run it
 
+**macOS desktop app:** open **Bot Crossing.app** from Applications. See
+[the desktop guide](docs/desktop.md) for menu-bar controls, login startup, data migration,
+and building the `.app` or `.dmg`.
+
 ```bash
 npm install && npm run dev
 ```
 
 Needs Node 22.13 or newer. `npm test` runs the suite.
+
+**Docker:** run `docker compose up --build -d --wait`, then open
+<http://localhost:5274>. See [the Docker guide](docs/docker.md) for session mounts,
+persistent storage, and container limitations. Codex and Claude Code CLI sessions are mounted read-only.
 
 `npm run dev` is the whole thing: the API lives inside the Vite dev server, so there is no
 second process. For a built version, `npm start` (build + serve) or `npm run serve` if

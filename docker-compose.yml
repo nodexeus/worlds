@@ -1,0 +1,36 @@
+services:
+  bot-crossing:
+    build: .
+    init: true
+    environment:
+      BOT_CROSSING_CLAUDE_ACTIVITY: transcript
+    ports:
+      - "127.0.0.1:${BOT_CROSSING_PORT:-5274}:5274"
+    volumes:
+      - colony-data:/app/data
+      - type: bind
+        source: ${CODEX_HOME:-${HOME}/.codex}
+        target: /home/node/.codex
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${CLAUDE_CONFIG_DIR:-${HOME}/.claude}
+        target: /home/node/.claude
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - --input-type=module
+        - -e
+        - "const r = await fetch('http://127.0.0.1:5274/api/state'); if (!r.ok) process.exit(1)"
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+volumes:
+  colony-data:

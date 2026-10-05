@@ -25,6 +25,7 @@ import {
 } from './game/api.js'
 import { hideProject, hiddenCatalog, unhideProject } from './game/hidden-projects.js'
 import { withErrands } from './game/errands.js'
+import { connectDesktopLifecycle } from './core/desktop-lifecycle.js'
 
 /**
  * Boot and the outer game loop.
@@ -916,7 +917,7 @@ function applyThreads(list) {
   const viewed = state.viewedAt || {}
   threads = list.map((t) => {
     const at = viewed[t.id]
-    return at && t.lastActivityAt <= at ? { ...t, unread: false } : t
+    return at && t.lastActivityAt <= at ? { ...t, unread: false, needsAttention: false } : t
   })
   list = threads
   const archivedSet = new Set(state.archived)
@@ -1172,6 +1173,13 @@ function soundWorld() {
 
 engine.start()
 boot()
+connectDesktopLifecycle({
+  desktop: window.botCrossingDesktop, engine, refresh: poll,
+  flush: async () => {
+    clearTimeout(pendingSave)
+    state = await saveState(state)
+  },
+})
 
 // Handy for poking at the running colony from the console.
 window.botCrossing = { engine, rig, colony, settings, hud, ambience, poll, get threads() { return threads } }

@@ -1,0 +1,15 @@
+# Allow only the files needed to build and serve the app.
+**
+!Dockerfile
+!package.json
+!package-lock.json
+!index.html
+!vite.config.js
+!src/
+!src/**
+!server/
+!server/**
+!tools/
+!tools/**
+!public/
+!public/**

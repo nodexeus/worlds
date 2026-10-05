@@ -16,6 +16,12 @@ assets-src
 .DS_Store
 *.log
 
+# Personal Docker session mounts and local port configuration.
+compose.override.yaml
+.env
+release/
+desktop/assets/*.iconset/
+
 # Local capture output — not part of the project.
 recordings
 
