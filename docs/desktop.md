@@ -1,15 +1,15 @@
-# Bot Crossing for macOS
+# Nodexeus Worlds for macOS
 
-Open **Bot Crossing.app** from Applications. Node, npm, Docker, and a terminal are not
+Open **Nodexeus Worlds.app** from Applications. Node, npm, Docker, and a terminal are not
 needed to run the packaged app. This build targets Apple Silicon Macs.
 
 - Closing the window keeps the scanner running in the menu bar by default.
-- Choose **Show Colony** from the menu bar or click the Dock icon to return.
-- **Bot Crossing → Keep Running in Menu Bar** controls close behavior.
-- **Bot Crossing → Open at Login** starts it in the background at the next login. This
+- Choose **Show Campus** from the menu bar or click the Dock icon to return.
+- **Nodexeus Worlds → Keep Running in Menu Bar** controls close behavior.
+- **Nodexeus Worlds → Open at Login** starts it in the background at the next login. This
   is off by default. It uses an app-owned per-user LaunchAgent, which also works with
   this unsigned local build. Disable it before moving or removing the app.
-- **Quit Bot Crossing** (⌘Q) saves the colony and stops the scanner.
+- **Quit Nodexeus Worlds** (⌘Q) saves the colony and stops the scanner.
 - Rendering and audio pause when the window is hidden or minimized; the scanner continues.
 
 The scanner reads the same local harness stores as the browser version and uses native
@@ -17,6 +17,8 @@ process detection. Claude/Codex CLI binaries are still needed for the app's term
 actions; they are not needed just to view sessions.
 
 ## Data and migration
+
+For a new development machine, follow the [handoff and transfer checklist](HANDOFF.md).
 
 Colony data, desktop preferences, browser storage, and logs live in:
 
@@ -45,14 +47,14 @@ Requires Node 22.13 or newer for development:
 ```bash
 npm ci
 npm run desktop:dev       # Build and launch with Electron
-npm run desktop:package   # release/mac-arm64/Bot Crossing.app
+npm run desktop:package   # release/mac-arm64/Nodexeus Worlds.app
 npm run desktop:dist      # Also build the .dmg installer
 npm run test:desktop      # Storage, login, navigation, lifecycle, HTTP, tray status
 npm run test:electron     # Real Electron utility process and native PID checks
 ```
 
 App artwork is checked in. To regenerate it on macOS, run `npm run desktop:icons`
-(requires the Swift command-line tools). It reuses the existing astronaut favicon.
+(requires the Swift command-line tools). It rasterizes the official Nodexeus SVG mark.
 
 The packaged renderer is sandboxed and uses a stable `bot-crossing://app` origin. Its
 private loopback API uses a random port and per-launch credential held outside the renderer.
@@ -93,3 +95,20 @@ Verified with 43 focused activity/attention/errand tests, five existing Claude a
 and the Electron utility-process test. The installed rebuild kept the reviewing session working
 without an attention flag; its remaining visible attention indicator belonged to a different session
 whose latest reply explicitly asked the user to choose the next task.
+
+## Rebrand compatibility
+
+The app is named Nodexeus Worlds. Its data directory, internal protocol, session partition,
+and launch-agent identifier retain their previous values so existing layouts, archives,
+and preferences remain available. The Library is a clearly unconnected product surface;
+no platform credentials or memory sources are requested by this release.
+
+## Campus Library
+
+The permanent Library sits beside the arrival hab. Click its building or the Library
+shortcut to focus it and open the knowledge drawer. Escape returns to Campus. It remains
+on the map independently of sessions and is protected from workspace allocation and dragging.
+Sources and memory are not connected in this release.
+
+A workspace previously occupying the Library's reserved cell is relocated once by the existing
+allocator. Other valid saved positions remain stable.

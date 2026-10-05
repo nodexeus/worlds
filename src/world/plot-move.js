@@ -17,7 +17,10 @@ export const HEX_DIRS = [
 ]
 
 /** The lattice cell the ship owns. Nothing else may be placed there. */
-export const SHIP_CELL = { q: -2, r: 1 }
+export const SHIP_CELL = Object.freeze({ q: -2, r: 1 })
+/** Permanent shared knowledge building, adjacent to the arrival hab. */
+export const LIBRARY_CELL = Object.freeze({ q: -1, r: 1 })
+export const CORE_CELLS = Object.freeze([SHIP_CELL, LIBRARY_CELL])
 
 export const ORIGIN = { q: 0, r: 0 }
 
@@ -55,8 +58,8 @@ export function isConnected(out) {
   const cells = new Map()
   for (const [, list] of out) for (const c of list) cells.set(cellKey(c.q, c.r), c)
   if (cells.size < 2) return true
-  const ship = cellKey(SHIP_CELL.q, SHIP_CELL.r)
-  const passable = new Set([...cells.keys(), ship])
+  const core = new Set(CORE_CELLS.map(c => cellKey(c.q, c.r)))
+  const passable = new Set([...cells.keys(), ...core])
   const [start] = cells.keys()
   const seen = new Set([start])
   const queue = [cells.get(start)]
@@ -72,7 +75,7 @@ export function isConnected(out) {
   }
   // The ship is a stepping stone, not a member: it does not have to be reached for the colony
   // to be whole, and it does not count toward what has to be.
-  seen.delete(ship)
+  for (const key of core) if (!cells.has(key)) seen.delete(key)
   return seen.size === cells.size
 }
 
@@ -101,10 +104,10 @@ export function fits(layout, name, dq, dr) {
     if (id === name) continue
     for (const c of list) occupied.add(cellKey(c.q, c.r))
   }
-  const ship = cellKey(SHIP_CELL.q, SHIP_CELL.r)
+  const core = new Set(CORE_CELLS.map(c => cellKey(c.q, c.r)))
   for (const c of moved) {
     const k = cellKey(c.q, c.r)
-    if (k === ship || occupied.has(k)) return false
+    if (core.has(k) || occupied.has(k)) return false
     if (hexDistance(c, ORIGIN) >= POOL_RINGS) return false
   }
   return true
@@ -133,7 +136,7 @@ export function moveIsValid(layout, name, dq, dr) {
 export function componentsOf(layout) {
   const owner = new Map()
   for (const [name, list] of layout) for (const c of list) owner.set(cellKey(c.q, c.r), name)
-  const ship = cellKey(SHIP_CELL.q, SHIP_CELL.r)
+  const core = new Set(CORE_CELLS.map(c => cellKey(c.q, c.r)))
 
   const groups = []
   const placed = new Set()
@@ -153,7 +156,7 @@ export function componentsOf(layout) {
         const k = cellKey(n.q, n.r)
         if (seen.has(k)) continue
         const who = owner.get(k)
-        if (!who && k !== ship) continue
+        if (!who && !core.has(k)) continue
         seen.add(k)
         if (who && !placed.has(who)) {
           placed.add(who)
@@ -174,7 +177,7 @@ function touchesOthers(layout, name) {
     if (id === name) continue
     for (const c of list) others.add(cellKey(c.q, c.r))
   }
-  others.add(cellKey(SHIP_CELL.q, SHIP_CELL.r))
+  for (const c of CORE_CELLS) others.add(cellKey(c.q, c.r))
   for (const c of layout.get(name)) {
     for (const [dq, dr] of HEX_DIRS) if (others.has(cellKey(c.q + dq, c.r + dr))) return true
   }
@@ -247,7 +250,7 @@ export function planMove(layout, name, dq, dr) {
 
   const stranded = groups.filter((g) => g !== anchor).sort((a, b) => b.size - a.size)
 
-  const ship = cellKey(SHIP_CELL.q, SHIP_CELL.r)
+  const core = new Set(CORE_CELLS.map(c => cellKey(c.q, c.r)))
   const placed = new Set()
   for (const zone of anchor) for (const c of after.get(zone)) placed.add(cellKey(c.q, c.r))
 
@@ -262,7 +265,7 @@ export function planMove(layout, name, dq, dr) {
         const q = c.q + o.dq
         const r = c.r + o.dr
         const k = cellKey(q, r)
-        if (k === ship || placed.has(k)) return false
+        if (core.has(k) || placed.has(k)) return false
         if (hexDistance({ q, r }, ORIGIN) >= POOL_RINGS) return false
         if (touches) continue
         for (const [nq, nr] of HEX_DIRS) {

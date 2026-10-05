@@ -38,7 +38,7 @@ export async function setLoginEnabled(enabled, { home, appPath }) {
     if (await isLoginEnabled(home)) await fs.unlink(target)
     return
   }
-  if (!path.isAbsolute(appPath) || !appPath.endsWith('.app')) throw new Error('Install Bot Crossing.app before enabling login startup')
+  if (!path.isAbsolute(appPath) || !appPath.endsWith('.app')) throw new Error('Install Nodexeus Worlds.app before enabling login startup')
   await fs.mkdir(path.dirname(target), { recursive: true })
   const content = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

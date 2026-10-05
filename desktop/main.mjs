@@ -9,7 +9,7 @@ import { isAppUrl, isExternalUrl } from './runtime.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const APP_ORIGIN = 'bot-crossing://app'
-app.setName('Bot Crossing')
+app.setName('Nodexeus Worlds')
 app.setPath('userData', process.env.BOT_CROSSING_DESKTOP_DATA || path.join(app.getPath('appData'), 'Bot Crossing'))
 protocol.registerSchemesAsPrivileged([
   { scheme: 'bot-crossing', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
@@ -58,7 +58,7 @@ function syncVisibility() {
  */
 function fail(error) {
   log(error.stack || error.message)
-  dialog.showErrorBox('Bot Crossing could not continue', `${error.message}\n\nLogs: ${logFile}`)
+  dialog.showErrorBox('Nodexeus Worlds could not continue', `${error.message}\n\nLogs: ${logFile}`)
   app.quit()
 }
 
@@ -69,7 +69,7 @@ async function start() {
   await fs.mkdir(userData, { recursive: true })
   const existingLog = await fs.stat(logFile).catch(() => null)
   if (existingLog?.size > 1024 * 1024) await fs.rename(logFile, `${logFile}.previous`)
-  log(`Starting Bot Crossing ${app.getVersion()} (Electron ${process.versions.electron}, Node ${process.versions.node})`)
+  log(`Starting Nodexeus Worlds ${app.getVersion()} (Electron ${process.versions.electron}, Node ${process.versions.node})`)
   preferences = await readPreferences(userData)
   await importColony(process.env.BOT_CROSSING_IMPORT_COLONY || path.join(root, 'data', 'colony.json'), userData)
   menus = await installMenus({ root, userData, preferences, show: showColony, logFile })
@@ -101,7 +101,7 @@ async function start() {
 
   window = new BrowserWindow({
     width: 1280, height: 860, minWidth: 800, minHeight: 600, show: false,
-    title: 'Bot Crossing', backgroundColor: '#101725',
+    title: 'Nodexeus Worlds', backgroundColor: '#050506',
     icon: path.join(root, 'desktop', 'assets', 'icon.png'),
     webPreferences: { preload: path.join(root, 'desktop', 'preload.cjs'),
       session: browserSession, nodeIntegration: false, contextIsolation: true, sandbox: true,
