@@ -30,6 +30,9 @@ const STEPS = [
   // than atlas-mapped, and the packer bakes those colours into vertices. The list of what
   // is kept, and the recolours that turn an oak into a cherry tree, live in there.
   ['tools/build-nature.mjs', 'assets-src/kenney_nature-kit/Models/GLTF format', 'public/assets/nature.glb'],
+  // Quaternius' Modular Sci-Fi MegaKit is a third kind again: PBR trim sheets and whole
+  // models kept for cloning, so it has a packer of its own too.
+  ['tools/build-megakit.mjs', 'assets-src/Modular SciFi MegaKit[Standard]', 'public/assets/megakit.glb'],
   ['tools/build-crew.mjs'],
 ]
 

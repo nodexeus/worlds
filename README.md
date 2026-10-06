@@ -535,8 +535,9 @@ plus the project's own shaders on top of them.
 | [KayKit : Character Animations](https://kaylousberg.itch.io/kaykit-character-animations) | The bots' bodies and all fifteen animation clips they play | CC0 |
 | [KayKit : Forest Nature Pack](https://kaylousberg.itch.io/kaykit-forest) | Terra's trees, bushes and grass, and the boulders on every world | CC0 |
 | [Kenney : Nature Kit](https://kenney.nl/assets/nature-kit) | Palms, cacti, pines, autumn and jungle canopies, cherry trees — everything the Forest pack does not have | CC0 |
+| [Quaternius : Modular Sci-Fi MegaKit](https://quaternius.com/packs/modularscifimegakit.html) (Standard) | Steel walls, platforms, stairs, rails and columns for the Nodexeus campus world | CC0 |
 
-CC0 asks for nothing, but crediting Kay and Kenney costs nothing either. If you rebuild the
+CC0 asks for nothing, but crediting Kay, Kenney and Quaternius costs nothing either. If you rebuild the
 assets, all the packs go in `assets-src/` (see below).
 
 Kenney's kit is built differently from KayKit's: rather than one gradient atlas that every
@@ -610,6 +611,13 @@ mkdir -p assets-src && cd assets-src
 # download the FREE tier of the KayKit packs and Kenney's Nature Kit from the links above,
 # then unzip in place (kenney_nature-kit/Models/GLTF format/ is what the packer reads)
 ```
+
+The MegaKit unzips to `assets-src/Modular SciFi MegaKit[Standard]/`. It has a packer of its own,
+`tools/build-megakit.mjs`, because it is built a third way: its models share a few PBR trim
+sheets and are kept whole for the app to clone, where the other kits are baked down to one
+geometry and one material. The packer centres each model on its own footprint, shrinks the
+2048px sheets to 1024px, drops the one model that ships with corrupt geometry, and removes the
+pack's own fictional-company logo decals.
 
 `npm run assets` runs `tools/build-assets.mjs`, which drives `build-kit.mjs` once per model
 pack — merging a directory of single-model `.gltf` files into one document with one material
