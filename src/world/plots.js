@@ -493,9 +493,10 @@ export class Plot {
 
     this._buildDeck()
     this._buildBorder()
-    this._buildPosts()
+    // A deck that is somebody else's stage, not a workspace, is left clear.
+    if (!style?.bare) this._buildPosts()
     this.slots = this._buildSlots()
-    this._buildClutter()
+    if (!style?.bare) this._buildClutter()
   }
 
   /** One merged slab of hex tiles. */
