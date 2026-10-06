@@ -64,7 +64,7 @@ engine.setPlanetGrade(PLANETS[settings.get('planet')]?.grade)
 const rig = new CameraRig(engine.camera, engine.canvas, settings)
 const colony = new Colony(engine.scene, settings, engine.camera, engine.renderer)
 
-let state = { archived: [], archivedAt: {}, opened: [], plots: {}, seen: {}, hiddenProjects: [], viewedAt: {} }
+let state = { archived: [], archivedAt: {}, opened: [], plots: {}, levels: {}, seen: {}, hiddenProjects: [], viewedAt: {} }
 let threads = []
 /** Last legend built for the bottom bar, kept so the open zone's chip can light up between polls. */
 let legendProjects = []
@@ -77,6 +77,7 @@ let hoverId = null
 let statusCursor = 0
 let pendingSave = 0
 const hoverGround = new THREE.Vector3()
+const hoverRaised = new THREE.Vector3()
 
 // ── actions the HUD can trigger ────────────────────────────────────────────────────────
 
@@ -508,7 +509,19 @@ function plotUnder(e, p) {
   const label = colony.pickLabel(p.x, p.y)
   if (label) return label
   const ground = rig.groundPoint(e.clientX, e.clientY, hoverGround)
-  return ground ? colony.plotAt(ground.x, ground.z) : null
+  if (!ground) return null
+  // A raised deck is nearer the camera than the ground behind it, so the point the ray
+  // reaches on the ground belongs to whatever is behind the deck. Each level that exists is
+  // tried from the top down, at its own height, and the first deck actually hit wins.
+  for (const height of colony.deckHeights()) {
+    if (height <= DECK_TOP) break
+    const up = rig.pointAtHeight(e.clientX, e.clientY, height, hoverRaised)
+    const plot = up ? colony.plotAt(up.x, up.z) : null
+    if (plot && Math.abs(DECK_TOP + plot.elev - height) < 1e-6) return plot
+  }
+  const plot = colony.plotAt(ground.x, ground.z)
+  // Under a raised deck's footprint as seen from straight above, but the ray passed below it.
+  return plot && plot.elev > 0 ? null : plot
 }
 
 // ── plot dragging ─────────────────────────────────────────────────────────────────────
@@ -976,10 +989,13 @@ function applyThreads(list) {
   // Zones only move when their own footprint changes, and when one does the colony file
   // learns about it — so the map you built up a memory of survives a reload.
   const layout = colony.layoutForSave()
-  const signature = JSON.stringify(layout)
+  const levels = colony.levelsForSave()
+  // The level each zone stands on is part of the same memory, and is saved with it.
+  const signature = JSON.stringify([layout, levels])
   if (signature !== lastLayout) {
     lastLayout = signature
     state.plots = layout
+    state.levels = levels
     queueSave()
   }
 }
@@ -1073,6 +1089,7 @@ async function boot() {
         state = s
         // Before the first roster: zones come back to the ground they were on last time.
         colony.restoreLayout(state.plots)
+        colony.restoreLevels(state.levels)
         // And the settings, but only for a browser that has none of its own — an explicit
         // choice made here always outranks the file.
         if (!hasStoredSettings() && state.settings) settings.applyAll(state.settings)

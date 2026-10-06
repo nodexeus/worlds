@@ -23,6 +23,7 @@ import {
   PLOT_CELL,
 } from '../world/plots.js'
 import { CORE_CELLS, LIBRARY_CELL, translateCells } from '../world/plot-move.js'
+import { levelFor, readLevels } from '../world/plot-levels.js'
 import { createBuilding, buildingUniforms, Scaffolds } from '../world/buildings.js'
 import { Ship } from '../world/ship.js'
 import { Library } from '../world/library.js'
@@ -147,6 +148,8 @@ export class Colony {
      * when a new one starts. Seeded from the colony file by `restoreLayout`.
      */
     this.plotCells = new Map()
+    /** Workspace name → the raised level it stands on, remembered alongside the layout. */
+    this.plotLevels = new Map()
     this.buildings = new Map()
     this.buildingSurfaces = new BuildingSurfaces(this.buildings, (x, z) => this.surfaceAt(x, z))
     this.threads = new Map()
@@ -637,6 +640,8 @@ export class Colony {
       this.plotCells.set(name, cells)
     }
     while (this.plotCells.size > LAYOUT_MEMORY) this.plotCells.delete(this.plotCells.keys().next().value)
+    // A level is remembered for exactly as long as the ground is.
+    for (const name of this.plotLevels.keys()) if (!this.plotCells.has(name)) this.plotLevels.delete(name)
 
     const wanted = new Map()
     for (const [name, cells] of layout) wanted.set(name, `${name}:${cells.map((c) => `${c.q},${c.r}`).join('/')}`)
@@ -660,13 +665,16 @@ export class Colony {
       const cells = layout.get(name)
       if (!cells?.length) return
       const accent = this._pickAccent(name)
-      const plot = new Plot({ id: name, name, index, cells, accent, style: this.planet.plot })
+      // Decided the first time a workspace is placed, then remembered like its ground.
+      const level = levelFor(name, this.plotLevels, this.planet.plot?.levels)
+      if (this.planet.plot?.levels > 1) this.plotLevels.set(name, level)
+      const plot = new Plot({ id: name, name, index, cells, accent, style: this.planet.plot, level })
       plot.signature = wanted.get(name)
       this.plots.set(name, plot)
       this.plotGroup.add(plot.group)
 
       const label = createLabel(name, accent)
-      label.position.set(plot.labelAnchor.x, 3.2, plot.labelAnchor.z)
+      label.position.set(plot.labelAnchor.x, 3.2 + plot.elev, plot.labelAnchor.z)
       plot.label = label
       this.labelGroup.add(label)
     })
@@ -713,7 +721,7 @@ export class Colony {
     // On a world whose decks stand apart, a cell is only decked as far as its plot's own
     // outline goes; the strip between two workspaces is ground.
     const plot = this.deckedCells?.get(`${cell.q},${cell.r}`)
-    if (plot && (!plot.style?.gap || plot.containsWorld(x, z))) return DECK_TOP
+    if (plot && (!plot.style?.gap || plot.containsWorld(x, z))) return DECK_TOP + plot.elev
     return terrainHeight(x, z, this.planet)
   }
 
@@ -932,6 +940,21 @@ export class Colony {
     this.plotCells = clean
   }
 
+  /** The remembered level of each workspace, out of the colony file. See `plot-levels.js`. */
+  restoreLevels(saved) {
+    this.plotLevels = readLevels(saved)
+  }
+
+  levelsForSave() {
+    return Object.fromEntries(this.plotLevels)
+  }
+
+  /** Every height a deck stands at right now, highest first. For pointing at raised ones. */
+  deckHeights() {
+    const heights = new Set(this.plotOrder.map((plot) => DECK_TOP + plot.elev))
+    return [...heights].sort((a, b) => b - a)
+  }
+
   /** The same, on the way out. */
   layoutForSave() {
     const out = {}
@@ -992,8 +1015,9 @@ export class Colony {
   setPlotLift(name, dy) {
     const plot = this.plots.get(name)
     if (!plot) return
-    plot.group.position.y = dy
-    if (plot.label) plot.label.position.y = 3.2 + dy
+    // Lifted from wherever it stands: a raised workspace is carried at its own height.
+    plot.group.position.y = plot.elev + dy
+    if (plot.label) plot.label.position.y = 3.2 + plot.elev + dy
     const faded = dy > 0
     plot.group.traverse((o) => {
       if (!o.isMesh) return
@@ -1001,7 +1025,7 @@ export class Colony {
       o.material.opacity = faded ? 0.55 : 1
     })
     for (const entry of this.buildings.values()) {
-      if (entry.plot === name) entry.mesh.position.y = DECK_TOP + dy
+      if (entry.plot === name) entry.mesh.position.y = DECK_TOP + plot.elev + dy
     }
   }
 

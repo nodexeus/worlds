@@ -123,6 +123,7 @@ export function mergeState(base, local, remote) {
     archivedAt: mergeMap(b.archivedAt, l.archivedAt, r.archivedAt),
     opened: mergeSet(b.opened, l.opened, r.opened),
     plots: mergeMap(b.plots, l.plots, r.plots),
+    levels: mergeMap(b.levels, l.levels, r.levels),
     seen: mergeMap(b.seen, l.seen, r.seen),
     hiddenProjects: mergeSet(b.hiddenProjects, l.hiddenProjects, r.hiddenProjects),
     viewedAt: mergeMap(b.viewedAt, l.viewedAt, r.viewedAt),
