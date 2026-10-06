@@ -23,7 +23,8 @@ import {
   PLOT_CELL,
 } from '../world/plots.js'
 import { CORE_CELLS, LIBRARY_CELL, translateCells } from '../world/plot-move.js'
-import { levelFor, readLevels } from '../world/plot-levels.js'
+import { readLevels, settleLevels } from '../world/plot-levels.js'
+import { HEX_DIRS } from '../world/plot-move.js'
 import { planCrossings } from '../world/crossings.js'
 import { Crossings } from '../world/crossing-models.js'
 import { loadModels } from '../world/kit.js'
@@ -682,6 +683,14 @@ export class Colony {
     const wanted = new Map()
     for (const [name, cells] of layout) wanted.set(name, `${name}:${cells.map((c) => `${c.q},${c.r}`).join('/')}`)
 
+    // Levels are settled for the whole campus at once, so that no workspace is left with
+    // nobody near enough in height to be joined to. On a campus that is already connected
+    // this changes nothing; a workspace it does move is rebuilt like any other that changed.
+    const levels = this._settleLevels(layout)
+    for (const [name, plot] of this.plots) {
+      if (levels.has(name) && levels.get(name) !== plot.level) plot.signature = null
+    }
+
     // A plot is rebuilt whenever its own footprint moved, and left completely alone
     // whenever it did not.
     for (const [name, plot] of this.plots) {
@@ -701,9 +710,7 @@ export class Colony {
       const cells = layout.get(name)
       if (!cells?.length) return
       const accent = this._pickAccent(name)
-      // Decided the first time a workspace is placed, then remembered like its ground.
-      const level = levelFor(name, this.plotLevels, this.planet.plot?.levels)
-      if (this.planet.plot?.levels > 1) this.plotLevels.set(name, level)
+      const level = levels.get(name) || 0
       const plot = new Plot({ id: name, name, index, cells, accent, style: this.planet.plot, level })
       plot.signature = wanted.get(name)
       this.plots.set(name, plot)
@@ -734,6 +741,34 @@ export class Colony {
     }
     this._syncLabels()
     this._syncCrossings()
+  }
+
+  /**
+   * The level of every workspace in `layout`, remembered from here on. See `settleLevels`.
+   * Empty on a world without levels, where what is remembered is left untouched for the next
+   * world that has them.
+   *
+   * @param {Map<string, Array<{q: number, r: number}>>} layout
+   * @returns {Map<string, number>}
+   */
+  _settleLevels(layout) {
+    const count = this.planet.plot?.levels
+    if (!(count > 1)) return new Map()
+    const owner = new Map()
+    for (const [name, cells] of layout) for (const cell of cells) owner.set(`${cell.q},${cell.r}`, name)
+    const plots = [...layout].map(([name, cells]) => {
+      const neighbours = new Set()
+      for (const cell of cells) {
+        for (const [dq, dr] of HEX_DIRS) {
+          const other = owner.get(`${cell.q + dq},${cell.r + dr}`)
+          if (other && other !== name) neighbours.add(other)
+        }
+      }
+      return { id: name, neighbours }
+    })
+    const levels = settleLevels(plots, this.plotLevels, count)
+    for (const [name, level] of levels) this.plotLevels.set(name, level)
+    return levels
   }
 
   /**
