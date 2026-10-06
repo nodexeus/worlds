@@ -98,3 +98,30 @@ test('/api/new-session with via: terminal starts the bare CLI in that folder', p
     })
   )
 })
+
+test('/api/open with a terminal picked by id opens that one and no other', posixOnly, async () => {
+  await withFakes(({ dir, claude, kitty }) =>
+    withPlatform('linux', async () => {
+      const alacritty = await fakeExecutable(dir, 'alacritty')
+      await withServer(async ({ call }) => {
+        const ref = { cliSessionId: UUID, cwd: dir }
+        const res = await post(call, '/api/open', { harness: 'claude-code', ref, via: 'terminal', terminal: 'alacritty' })
+        assert.equal(res.status, 200)
+        assert.deepEqual(await alacritty.argv(), ['--working-directory', dir, '-e', claude.file, '--resume', UUID])
+        assert.equal(await kitty.called(), false, 'the environment names kitty, and the pick still wins')
+      })
+    })
+  )
+})
+
+test('/api/terminals lists what is installed as ids and names', posixOnly, async () => {
+  await withFakes(() =>
+    withPlatform('linux', () =>
+      withServer(async ({ call }) => {
+        const res = await call('/api/terminals')
+        assert.equal(res.status, 200)
+        assert.deepEqual(await res.json(), { terminals: [{ id: 'kitty', name: 'kitty' }] })
+      })
+    )
+  )
+})

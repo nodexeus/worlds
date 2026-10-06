@@ -17,6 +17,7 @@ import { Ambience } from './audio/ambience.js'
 import { shorelinePoints } from './world/planet.js'
 import { shipPosition } from './world/plots.js'
 import {
+  fetchTerminals,
   fetchThreads,
   fetchState,
   saveState,
@@ -177,7 +178,7 @@ const actions = {
     }
     try {
       const harness = harnessForProject(name)
-      const shown = await newSession(folder, harness, settings.get('openIn'))
+      const shown = await newSession(folder, harness, ...openChoice())
       const label = harnessLabel(harness)
       hud.toast(`New thread in ${name} — ${shown.via === 'terminal' ? `${label} in a terminal` : `opening ${label}`}`)
       // It lands as an astronaut walking down the ramp, once it has a record to scan.
@@ -256,7 +257,7 @@ const actions = {
     const thread = threads.find((t) => t.id === selectedId)
     if (!thread) return
     try {
-      const shown = await openThread(thread, settings.get('openIn'))
+      const shown = await openThread(thread, ...openChoice())
       colony.astronauts.celebrate(thread.id)
       const name = thread.harnessName || 'your harness'
       hud.toast(shown.via === 'terminal' ? `Opened ${name} in a terminal` : `Opened in ${name}`)
@@ -1011,6 +1012,16 @@ function chimeForNewWaiting(list, archivedSet, hiddenSet) {
   for (const id of waiting) waitingBefore.add(id)
 }
 
+/**
+ * Split the `openIn` setting into what the server is asked for: the desktop app or a terminal,
+ * and which terminal when one was picked by name.
+ * @returns {[string, string | undefined]}
+ */
+function openChoice() {
+  const [via, terminal] = String(settings.get('openIn')).split(':')
+  return [via === 'terminal' ? 'terminal' : 'app', terminal || undefined]
+}
+
 let polling = false
 async function poll() {
   if (polling) return
@@ -1042,6 +1053,10 @@ function queueSave() {
 }
 
 async function boot() {
+  // Not awaited: the list only fills in a settings row, and a server that cannot answer leaves
+  // the plain "Terminal" choice it started with.
+  fetchTerminals().then((res) => hud.setTerminals(res.terminals || []), () => {})
+
   // The model kit and the crew rig both have to be in hand before the first roster arrives:
   // buildings and the ground scatter are assembled out of the kit synchronously the moment
   // a thread shows up, and the crew's body mesh is built from the rig. Fetched alongside

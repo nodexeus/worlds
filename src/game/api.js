@@ -16,6 +16,9 @@ const post = (url, payload) =>
 
 export const fetchThreads = () => req('/api/threads')
 
+/** The terminals installed on this machine, as `{ id, name }`, for the settings list. */
+export const fetchTerminals = () => req('/api/terminals')
+
 /**
  * The colony file, and the base every later save is measured against.
  *
@@ -105,9 +108,10 @@ export async function saveState(state) {
  * thread again, and the browser only ever passes it straight back. Nothing in the UI knows
  * what a Claude Code session id, or a Codex rollout id, actually looks like.
  */
-export const openThread = (thread, via) => post('/api/open', { harness: thread.harness, ref: thread.ref, via })
+export const openThread = (thread, via, terminal) =>
+  post('/api/open', { harness: thread.harness, ref: thread.ref, via, terminal })
 
 /** A brand new thread in a repo, via that harness's own new-session deep link. */
-export const newSession = (folder, harness, via) => post('/api/new-session', { folder, harness, via })
+export const newSession = (folder, harness, via, terminal) => post('/api/new-session', { folder, harness, via, terminal })
 
 export const revealFolder = (folder) => post('/api/reveal', { folder })

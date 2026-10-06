@@ -8,6 +8,7 @@
  */
 import { spawn } from 'node:child_process'
 import fsp from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import { findExecutable } from './fsutil.mjs'
 import { openInTerminalWindows } from './win-terminal.mjs'
@@ -45,6 +46,38 @@ const GENERAL_ORDER = [
   'gnome-terminal', 'konsole', 'xfce4-terminal', 'mate-terminal', 'kitty', 'alacritty', 'ghostty',
   'wezterm', 'foot', 'terminator', 'ptyxis', 'kgx', 'xterm', 'uxterm', 'urxvt', 'rxvt', 'st',
 ]
+
+/** What the settings list calls each one. A terminal missing here is listed by its own name. */
+const LABELS = {
+  'gnome-terminal': 'GNOME Terminal', kgx: 'GNOME Console', ptyxis: 'Ptyxis', konsole: 'Konsole',
+  'xfce4-terminal': 'Xfce Terminal', 'mate-terminal': 'MATE Terminal', alacritty: 'Alacritty',
+  ghostty: 'Ghostty', wezterm: 'WezTerm', terminator: 'Terminator', urxvt: 'rxvt-unicode',
+}
+
+/**
+ * macOS terminals, found as application bundles because that is how they are installed there:
+ * none of them puts a binary on `PATH` by default, and a Finder-launched app would not see
+ * the user's `PATH` or `$TERMINAL` anyway.
+ *
+ * They are started through `open`, never by running the binary inside the bundle. The ones
+ * marked `script` take no command line at all: Terminal, iTerm and Warp only run a command
+ * they are handed as a `.command` file. The rest take the same flags as on Linux, passed after
+ * `--args`.
+ */
+const MAC_APPS = [
+  { id: 'apple-terminal', name: 'Terminal', bundle: 'Terminal.app', script: true },
+  { id: 'iterm', name: 'iTerm', bundle: 'iTerm.app', script: true },
+  { id: 'warp', name: 'Warp', bundle: 'Warp.app', script: true },
+  { id: 'ghostty', name: 'Ghostty', bundle: 'Ghostty.app' },
+  { id: 'kitty', name: 'kitty', bundle: 'kitty.app' },
+  { id: 'alacritty', name: 'Alacritty', bundle: 'Alacritty.app' },
+  { id: 'wezterm', name: 'WezTerm', bundle: 'WezTerm.app' },
+]
+
+const macAppDirs = () => ['/Applications', '/System/Applications/Utilities', path.join(os.homedir(), 'Applications')]
+
+/** How long a launch script is left on disk for the terminal to pick up. */
+const SCRIPT_TTL_MS = 60000
 
 /**
  * A terminal that ships with the desktop first. `XDG_CURRENT_DESKTOP` is a colon list, such as
@@ -134,6 +167,80 @@ function trySpawn(cmd, args, cwd) {
 }
 
 /**
+ * The terminals on this machine that can be driven, in the order the settings list shows them.
+ *
+ * A binary on `PATH` wins over an application bundle of the same name, since that is the one
+ * the user put there on purpose. `appDirs` is only ever passed by the tests.
+ *
+ * @param {{appDirs?: string[]}} [options]
+ * @returns {Promise<Array<{id: string, name: string, exec?: string, app?: string, script?: boolean}>>}
+ */
+async function installedTerminals({ appDirs } = {}) {
+  if (process.platform === 'win32') return []
+  const found = []
+  if (process.platform === 'darwin') {
+    for (const app of MAC_APPS) {
+      for (const dir of appDirs || macAppDirs()) {
+        const bundle = path.join(dir, app.bundle)
+        const stat = await fsp.stat(bundle).catch(() => null)
+        if (!stat?.isDirectory()) continue
+        found.push({ id: app.id, name: app.name, app: bundle, script: Boolean(app.script) })
+        break
+      }
+    }
+  }
+  for (const name of new Set([...desktopOrder(), ...GENERAL_ORDER])) {
+    const exec = await findExecutable(name)
+    if (!exec) continue
+    const bundled = found.find((t) => t.id === name)
+    if (bundled) Object.assign(bundled, { exec, app: undefined })
+    else found.push({ id: name, name: LABELS[name] || name, exec })
+  }
+  return found
+}
+
+/**
+ * The same list for the page: an id to send back and a name to show, and nothing else. Paths
+ * stay on this side, so the page can only ever choose among terminals found here.
+ *
+ * @param {{appDirs?: string[]}} [options]
+ * @returns {Promise<Array<{id: string, name: string}>>}
+ */
+export async function listTerminals(options) {
+  return (await installedTerminals(options)).map(({ id, name }) => ({ id, name }))
+}
+
+const quote = (text) => `'${text.replaceAll("'", `'\\''`)}'`
+
+/**
+ * The script a `.command` terminal is handed. Every word is single-quoted, the one shell
+ * quoting with no escapes to get wrong, so the argv arrives exactly as the adapter built it.
+ *
+ * @param {string[]} argv
+ * @param {string} cwd
+ * @returns {string}
+ */
+export function launchScript(argv, cwd) {
+  return ['#!/bin/sh', `cd -- ${quote(cwd)} || exit 1`, `exec ${argv.map(quote).join(' ')}`, ''].join('\n')
+}
+
+/** Write that script somewhere only this user can read, and clear it away afterwards. */
+async function writeLaunchScript(argv, cwd) {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'nodexeus-worlds-open-'))
+  const file = path.join(dir, 'open-thread.command')
+  await fsp.writeFile(file, launchScript(argv, cwd), { mode: 0o700 })
+  setTimeout(() => void fsp.rm(dir, { recursive: true, force: true }).catch(() => {}), SCRIPT_TTL_MS).unref()
+  return file
+}
+
+/** Start one terminal from the installed list. */
+async function launchInstalled(terminal, argv, cwd, opener) {
+  if (terminal.exec) return trySpawn(terminal.exec, TERMINALS[terminal.id](cwd, argv), cwd)
+  if (terminal.script) return trySpawn(opener, ['-a', terminal.app, await writeLaunchScript(argv, cwd)], cwd)
+  return trySpawn(opener, ['-n', '-a', terminal.app, '--args', ...TERMINALS[terminal.id](cwd, argv)], cwd)
+}
+
+/**
  * Run `argv` in a new terminal window with `cwd` as its working directory.
  *
  * The caller has already resolved both: `argv[0]` is an absolute executable and `cwd` an
@@ -149,10 +256,18 @@ function trySpawn(cmd, args, cwd) {
  * opens a window on the wrong command — worse than moving on to a terminal we do know.
  *
  * On macOS the desktop walk finds nothing, so only a named terminal works there — kitty,
- * alacritty, ghostty and wezterm take the same flags on both. Terminal.app and iTerm are not
- * driven: `open -a` cannot hand them an argv without a shell string in between.
+ * alacritty, ghostty and wezterm take the same flags on both.
+ *
+ * `options.terminal` is an id from `listTerminals`, chosen in the settings. It skips the walk
+ * entirely: that terminal is started or the call fails, because opening a different one after
+ * somebody picked theirs reads as the setting being ignored. `appDirs` and `opener` are only
+ * ever passed by the tests.
+ *
+ * @param {string[]} argv
+ * @param {string} cwd
+ * @param {{terminal?: string, appDirs?: string[], opener?: string}} [options]
  */
-export async function openInTerminal(argv, cwd) {
+export async function openInTerminal(argv, cwd, { terminal, appDirs, opener = '/usr/bin/open' } = {}) {
   // Windows shares none of the trivia below — no PATH walk over sixteen emulators, no display
   // to check — so it is a different file entirely, reached through the same door. The caller
   // asks for a terminal and does not learn which platform it is on.
@@ -165,6 +280,15 @@ export async function openInTerminal(argv, cwd) {
   // A macOS session always has a window server; only Linux can be headless in a way worth naming.
   if (process.platform === 'linux' && !(await hasDisplay())) {
     return { ok: false, error: 'No graphical display to open a terminal on' }
+  }
+
+  if (terminal) {
+    const chosen = (await installedTerminals({ appDirs })).find((t) => t.id === terminal)
+    if (!chosen) {
+      return { ok: false, error: 'That terminal is not installed on this machine any more. Pick another in Settings' }
+    }
+    const result = await launchInstalled(chosen, argv, cwd, opener)
+    return result.ok ? { ok: true } : { ok: false, error: `Could not open ${chosen.name} (${result.error})` }
   }
 
   const preferred = [

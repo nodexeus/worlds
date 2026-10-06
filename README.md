@@ -819,14 +819,18 @@ that a machine on a VPN or a mesh network is reachable by everything else on it 
 
 ### Picking the terminal
 
-`BOT_CROSSING_TERMINAL` names the emulator a thread opens in, ahead of `$TERMINAL` and whatever the desktop has:
+**Settings → Open threads in** lists the desktop app and every terminal found on this machine. Pick one and threads open there.
+On macOS that is Terminal, iTerm, Warp, Ghostty, kitty, Alacritty and WezTerm, found as apps in `/Applications` or `~/Applications`; on Linux it is the known emulators on `PATH`.
+A terminal picked this way is the only one tried: if it has since been removed, opening a thread says so and nothing else opens in its place.
+
+Without a pick (the older **Terminal (automatic)** setting, or the HTTP API called with `via: "terminal"` alone), `BOT_CROSSING_TERMINAL` names the emulator, ahead of `$TERMINAL` and whatever the desktop has:
 
 ```bash
 BOT_CROSSING_TERMINAL=kitty npm start
 ```
 
 A name on `PATH` or an absolute path, and it has to be one whose flags are known — gnome-terminal, konsole, kitty, alacritty, ghostty, wezterm, foot, xterm and their relatives — since one that is not is skipped rather than guessed at.
-On macOS only a named terminal works; point it at a real binary rather than an `.app`.
+On macOS the automatic route only works with a named terminal, pointed at a real binary rather than an `.app`, and the packaged app does not see variables set in a shell profile. Use the settings list there instead.
 Windows is not supported yet.
 
 What it touches on disk, in full:

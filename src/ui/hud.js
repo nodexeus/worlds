@@ -247,18 +247,18 @@ export class Hud {
     const view = group('View')
     // The server refuses terminals on Windows, so a choice there would only ever toast an error.
     if (!IS_WIN) {
-      view.append(
-        this._select(
-          'Open threads in',
-          'openIn',
-          [
-            ['app', 'Desktop app'],
-            ['terminal', 'Terminal'],
-          ],
-          'Terminal runs the harness’s own CLI in a new window, so the CLI has to be installed. ' +
-            'BOT_CROSSING_TERMINAL or $TERMINAL picks the emulator.'
-        )
+      const openIn = this._select(
+        'Open threads in',
+        'openIn',
+        [
+          ['app', 'Desktop app'],
+          ['terminal', 'Terminal'],
+        ],
+        'A terminal runs the harness’s own CLI in a new window, so the CLI has to be installed.'
       )
+      // Kept so `setTerminals` can swap the placeholder for what is actually installed.
+      this.openInSelect = openIn.querySelector('select')
+      view.append(openIn)
     }
     view.append(
       this._toggle(
@@ -352,6 +352,35 @@ export class Hud {
       },
     })
     return row
+  }
+
+  /**
+   * Offer the terminals this machine has, once the server has said which those are.
+   *
+   * The stored choice always stays in the list, even when it is no longer installed or is the
+   * older "whichever is found" setting: a select that silently shows something other than what
+   * is saved would hide why threads stopped opening.
+   *
+   * @param {Array<{id: string, name: string}>} terminals
+   */
+  setTerminals(terminals) {
+    const sel = this.openInSelect
+    if (!sel) return
+    const current = String(this.settings.get('openIn'))
+    const options = [['app', 'Desktop app'], ...terminals.map((t) => [`terminal:${t.id}`, t.name])]
+    if (!terminals.length || current === 'terminal') options.push(['terminal', 'Terminal (automatic)'])
+    if (!options.some(([value]) => value === current)) {
+      options.push([current, `${current.replace(/^terminal:/, '')} (not installed)`])
+    }
+    sel.replaceChildren(
+      ...options.map(([value, text]) => {
+        const o = document.createElement('option')
+        o.value = value
+        o.textContent = text
+        return o
+      })
+    )
+    sel.value = current
   }
 
   _select(label, key, options, hint) {
