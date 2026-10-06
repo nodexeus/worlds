@@ -1012,8 +1012,12 @@ function chimeForNewWaiting(list, archivedSet, hiddenSet) {
 }
 
 let polling = false
+// Off until boot has the model kit in hand. The desktop shell asks for a refresh the moment
+// its window is shown, which is before the kit has loaded, and a roster that arrives first
+// would try to assemble buildings out of an empty kit.
+let assetsSettled = false
 async function poll() {
-  if (polling) return
+  if (polling || !assetsSettled) return
   polling = true
   try {
     const res = await fetchThreads()
@@ -1074,6 +1078,7 @@ async function boot() {
   colony.astronauts.setRig(crewRig())
   if (!kitError) colony.onAssetsReady()
 
+  assetsSettled = true
   await poll()
   setInterval(poll, POLL_MS)
   window.addEventListener('focus', poll)
