@@ -202,6 +202,53 @@ export function kitUsesVertexColors(kit = 'base') {
   return Boolean(KITS[kit]?.vertexColors)
 }
 
+// ── whole models ──────────────────────────────────────────────────────────────────────
+//
+// The MegaKit is not atlased: its models share a few PBR trim sheets and keep their own
+// materials, so they cannot be baked into the one-geometry, one-material buildings above.
+// They are held whole instead and cloned, each already centred on its footprint and standing
+// on y=0 (see `tools/build-megakit.mjs`).
+
+const MODELS = new Map()
+let loadingModels = null
+
+/**
+ * Load the whole-model kit. Separate from `loadKit` because only a world that builds from it
+ * needs it, and it is the largest file the app has. Idempotent, like `loadKit`.
+ */
+export function loadModels() {
+  if (!loadingModels) {
+    loadingModels = new GLTFLoader()
+      .loadAsync(`${import.meta.env.BASE_URL}assets/megakit.glb`)
+      .then((gltf) => {
+        for (const node of gltf.scene.children) {
+          node.traverse((o) => {
+            if (!o.isMesh) return
+            o.castShadow = true
+            o.receiveShadow = true
+          })
+          MODELS.set(node.name, node)
+        }
+        return MODELS
+      })
+  }
+  return loadingModels
+}
+
+/**
+ * A fresh copy of a whole model, free to be moved, turned and scaled. Geometry and materials
+ * are shared with every other copy, so do not dispose them. Unknown names throw.
+ */
+export function model(name) {
+  const source = MODELS.get(name)
+  if (!source) throw new Error(`kit: no model named "${name}"`)
+  return source.clone()
+}
+
+export function hasModel(name) {
+  return MODELS.has(name)
+}
+
 /** Whether a kit has finished loading, so a recipe can fall back rather than throw. */
 export function kitReady(kit = 'base') {
   return (KITS[kit]?.parts.size ?? 0) > 0
