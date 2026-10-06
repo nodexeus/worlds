@@ -24,6 +24,10 @@ import {
 } from '../world/plots.js'
 import { CORE_CELLS, LIBRARY_CELL, translateCells } from '../world/plot-move.js'
 import { levelFor, readLevels } from '../world/plot-levels.js'
+import { planCrossings } from '../world/crossings.js'
+import { Crossings } from '../world/crossing-models.js'
+import { loadModels } from '../world/kit.js'
+import { loadGate } from '../world/gate.js'
 import { createBuilding, buildingUniforms, Scaffolds } from '../world/buildings.js'
 import { Ship } from '../world/ship.js'
 import { Library } from '../world/library.js'
@@ -159,7 +163,11 @@ export class Colony {
     this.worldGroup.name = 'world'
     scene.add(this.worldGroup)
 
+    this.crossings = new Crossings(scene)
+    /** Which workspaces are joined, and where. Empty on a world without crossings. */
+    this.crossingPlan = []
     this.ship = new Ship(scene, shipPosition())
+    this._applyArrival()
     const librarySite = hexToWorld(LIBRARY_CELL.q, LIBRARY_CELL.r)
     this.library = new Library(scene, new THREE.Vector3(librarySite.x, 0, librarySite.z))
     this.libraryLabel = createLabel('Library', 0xfdc700)
@@ -449,6 +457,33 @@ export class Colony {
     this._buildTerrain()
   }
 
+  /**
+   * What stands where the crew arrive: the lander on most worlds, the gate on one that has
+   * one. Both live in the ship's group, which keeps its place, its heading and its door, so
+   * arrivals and departures need to know nothing about which of the two is showing.
+   */
+  _applyArrival() {
+    const wanted = this.planet.gate || null
+    for (const child of this.ship.group.children) {
+      if (child !== this.gate) child.visible = !wanted
+    }
+    if (this.gate) {
+      this.gate.visible = Boolean(wanted)
+      if (wanted) this.gate.scale.setScalar(wanted.scale)
+    } else if (wanted) {
+      loadGate().then((gate) => {
+        if (this.gate) return
+        this.gate = gate
+        this.ship.group.add(gate)
+        // Whatever the world is by the time it has loaded.
+        this._applyArrival()
+      }, () => {
+        // No gate to show: put the lander back so the crew do not walk out of thin air.
+        for (const child of this.ship.group.children) child.visible = true
+      })
+    }
+  }
+
   setPlanet(id) {
     const planet = PLANETS[id]
     if (!planet || planet === this.planet) return
@@ -460,6 +495,7 @@ export class Colony {
       this.usedAccents.clear()
     }
     this.planet = planet
+    this._applyArrival()
     this.reflections.invalidate()
     this._applyPlanetTint()
     this.sky.setPlanet(planet)
@@ -697,6 +733,36 @@ export class Colony {
       for (const cell of plot.cells) this.deckedCells.set(`${cell.q},${cell.r}`, plot)
     }
     this._syncLabels()
+    this._syncCrossings()
+  }
+
+  /**
+   * Keep the walkways and staircases in step with the plots. Planned from the plots alone,
+   * and only redrawn when that plan actually changes.
+   */
+  _syncCrossings() {
+    const style = this.planet.plot
+    const plan = style?.crossings
+      ? planCrossings(this.plotOrder.map((plot) => ({ id: plot.id, cells: plot.cells, level: plot.level })))
+      : []
+    const signature = JSON.stringify(plan)
+    if (signature === this._crossingSignature) return
+    this._crossingSignature = signature
+    this.crossingPlan = plan
+    if (!plan.length) {
+      this.crossings.clear()
+      return
+    }
+    // The kit is only fetched by a world that builds from it. By the time it arrives the
+    // plan may have moved on, so what is drawn is whatever the plan is by then.
+    loadModels().then(() => {
+      if (this._crossingSignature !== signature) return
+      this.crossings.build(plan, {
+        gap: style.gap,
+        levelStep: style.levelStep,
+        elevation: (id) => this.plots.get(id)?.elev || 0,
+      })
+    }, () => {})
   }
 
   /**
@@ -1329,6 +1395,7 @@ export class Colony {
     this.rock?.dispose()
     this.water?.dispose()
     this.ship.dispose()
+    this.crossings.dispose()
     this.library.dispose()
     this.libraryLabel.removeFromParent()
     this.libraryLabel.userData.dispose()

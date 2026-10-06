@@ -33,6 +33,8 @@ const STEPS = [
   // Quaternius' Modular Sci-Fi MegaKit is a third kind again: PBR trim sheets and whole
   // models kept for cloning, so it has a packer of its own too.
   ['tools/build-megakit.mjs', 'assets-src/Modular SciFi MegaKit[Standard]', 'public/assets/megakit.glb'],
+  // The campus gate is the project's own model; packing only shrinks its baked maps.
+  ['tools/build-gate.mjs', 'design/campus/nodexeus-gate.glb', 'public/assets/gate.glb'],
   ['tools/build-crew.mjs'],
 ]
 
