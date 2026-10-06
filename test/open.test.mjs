@@ -77,13 +77,17 @@ test('/api/open with via: terminal and no CLI is a 400 that names the CLI', posi
   // Codex rather than Claude Code: this machine may well have a real `claude` in an install dir.
   const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'bot-crossing-nocli-'))
   try {
-    await withEnv({ PATH: dir }, () =>
-      withServer(async ({ call }) => {
-        const body = { harness: 'codex', ref: { sessionId: UUID, cwd: dir }, via: 'terminal' }
-        const res = await post(call, '/api/open', body)
-        assert.equal(res.status, 400)
-        assert.match((await res.json()).error, /CLI/)
-      })
+    // As Linux, so that a Mac which does have the CLI in an install dir cannot fall through to
+    // opening its real Terminal: there, an installed app is the automatic route's last resort.
+    await withEnv({ PATH: dir, DISPLAY: ':0' }, () =>
+      withPlatform('linux', () =>
+        withServer(async ({ call }) => {
+          const body = { harness: 'codex', ref: { sessionId: UUID, cwd: dir }, via: 'terminal' }
+          const res = await post(call, '/api/open', body)
+          assert.equal(res.status, 400)
+          assert.match((await res.json()).error, /CLI/)
+        })
+      )
     )
   } finally {
     await fsp.rm(dir, { recursive: true, force: true })
@@ -96,5 +100,32 @@ test('/api/new-session with via: terminal starts the bare CLI in that folder', p
       await post(call, '/api/new-session', { harness: 'claude-code', folder: dir, via: 'terminal' })
       assert.deepEqual(await kitty.argv(), [`--directory=${dir}`, claude.file])
     })
+  )
+})
+
+test('/api/open with a terminal picked by id opens that one and no other', posixOnly, async () => {
+  await withFakes(({ dir, claude, kitty }) =>
+    withPlatform('linux', async () => {
+      const alacritty = await fakeExecutable(dir, 'alacritty')
+      await withServer(async ({ call }) => {
+        const ref = { cliSessionId: UUID, cwd: dir }
+        const res = await post(call, '/api/open', { harness: 'claude-code', ref, via: 'terminal', terminal: 'alacritty' })
+        assert.equal(res.status, 200)
+        assert.deepEqual(await alacritty.argv(), ['--working-directory', dir, '-e', claude.file, '--resume', UUID])
+        assert.equal(await kitty.called(), false, 'the environment names kitty, and the pick still wins')
+      })
+    })
+  )
+})
+
+test('/api/terminals lists what is installed as ids and names', posixOnly, async () => {
+  await withFakes(() =>
+    withPlatform('linux', () =>
+      withServer(async ({ call }) => {
+        const res = await call('/api/terminals')
+        assert.equal(res.status, 200)
+        assert.deepEqual(await res.json(), { terminals: [{ id: 'kitty', name: 'kitty' }] })
+      })
+    )
   )
 })

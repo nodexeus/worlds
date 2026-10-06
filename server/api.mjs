@@ -4,7 +4,7 @@ import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { schemeHasHandler, schemeOf } from './lib/xdg.mjs'
-import { openInTerminal } from './lib/terminal.mjs'
+import { listTerminals, openInTerminal } from './lib/terminal.mjs'
 import { focusWindowOfPid } from './lib/windows.mjs'
 import {
   defaultHarness,
@@ -182,7 +182,7 @@ async function resolveFolder(folder) {
  * `claude --resume` looks a session up under the folder it ran in, and a terminal that opens on
  * "No conversation found" and closes is worse than an error toast.
  */
-async function runInTerminal(command) {
+async function runInTerminal(command, terminal) {
   if (!command.cwd) return { ok: false, error: 'That thread has no folder on record to resume in' }
   const cwd = await resolveFolder(command.cwd)
   if (!cwd) return { ok: false, error: 'The folder that thread ran in is not on this machine any more' }
@@ -190,7 +190,7 @@ async function runInTerminal(command) {
   // terminal gets the blame; say what is actually wrong instead.
   const enterable = await fsp.access(cwd, fsp.constants.X_OK).then(() => true, () => false)
   if (!enterable) return { ok: false, error: 'The folder that thread ran in cannot be entered' }
-  const opened = await openInTerminal(command.argv, cwd)
+  const opened = await openInTerminal(command.argv, cwd, { terminal })
   return opened.ok ? { ok: true, via: 'terminal' } : opened
 }
 
@@ -209,7 +209,7 @@ async function runInTerminal(command) {
  * first; failing that, the harness's own CLI runs in a terminal, from the `command` the adapter
  * offered alongside the URL; failing that, the page is told so.
  */
-export async function present(result, via = 'app') {
+export async function present(result, via = 'app', terminal = '') {
   // Only the reason reaches the page: a failure may still carry the adapter's command.
   if (!result || !result.ok) return { ok: false, error: result?.error || 'Nothing to open' }
 
@@ -221,7 +221,7 @@ export async function present(result, via = 'app') {
           'That harness’s CLI was not found on this machine — install it, or set “Open threads in” back to the desktop app',
       }
     }
-    return runInTerminal(result.command)
+    return runInTerminal(result.command, terminal)
   }
 
   // A `pid` names a live process whose thread already has a window on this machine — a session
@@ -254,6 +254,8 @@ export async function present(result, via = 'app') {
 }
 
 const viaOf = (body) => (body?.via === 'terminal' ? 'terminal' : 'app')
+/** Which terminal, as an id from `/api/terminals`. Anything else means "whichever is found". */
+const terminalOf = (body) => (typeof body?.terminal === 'string' && body.terminal.length <= 128 ? body.terminal : '')
 
 /**
  * Mark the threads the colony has retired.
@@ -406,6 +408,10 @@ export async function apiMiddleware(req, res, next) {
       return send(res, 200, { harnesses: await harnessStatus() })
     }
 
+    if (url.pathname === '/api/terminals' && req.method === 'GET') {
+      return send(res, 200, { terminals: await listTerminals() })
+    }
+
     if (url.pathname === '/api/state' && req.method === 'GET') {
       return send(res, 200, await readState())
     }
@@ -439,7 +445,7 @@ export async function apiMiddleware(req, res, next) {
 
     if (url.pathname === '/api/open' && req.method === 'POST') {
       const body = await readJsonBody(req)
-      const shown = await present(await harnessOpenThread(body.harness, body.ref), viaOf(body))
+      const shown = await present(await harnessOpenThread(body.harness, body.ref), viaOf(body), terminalOf(body))
       return send(res, shown.ok ? 200 : 400, shown)
     }
 
@@ -453,7 +459,7 @@ export async function apiMiddleware(req, res, next) {
         return send(res, 200, { ok: true })
       }
       const harness = body.harness || (await defaultHarness())
-      const shown = await present(await harnessNewSession(harness, dir), viaOf(body))
+      const shown = await present(await harnessNewSession(harness, dir), viaOf(body), terminalOf(body))
       return send(res, shown.ok ? 200 : 400, shown)
     }
 

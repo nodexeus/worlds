@@ -199,7 +199,9 @@ const DEFAULTS = {
   reducedMotion: false,
 
   // Opening
-  openIn: 'app', // 'app' | 'terminal' — the harness's desktop app, or its CLI in a new window
+  // 'app' | 'terminal' | 'terminal:<id>': the harness's desktop app, or its CLI in a new window of
+  // whichever terminal is found, or of one particular terminal from the server's installed list.
+  openIn: 'app',
 }
 
 /** Keys whose change forces a full rebuild of the world (terrain, scatter, sky). */
