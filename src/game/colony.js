@@ -449,6 +449,13 @@ export class Colony {
   setPlanet(id) {
     const planet = PLANETS[id]
     if (!planet || planet === this.planet) return
+    // Plots are styled by the world they were raised on. When that styling changes, every
+    // one of them is stale: clearing the signature is what makes the next roster pass
+    // rebuild it, and releasing the accents lets the new world's palette be dealt afresh.
+    if (planet.plot !== this.planet.plot) {
+      for (const plot of this.plots.values()) plot.signature = null
+      this.usedAccents.clear()
+    }
     this.planet = planet
     this.reflections.invalidate()
     this._applyPlanetTint()
@@ -653,7 +660,7 @@ export class Colony {
       const cells = layout.get(name)
       if (!cells?.length) return
       const accent = this._pickAccent(name)
-      const plot = new Plot({ id: name, name, index, cells, accent })
+      const plot = new Plot({ id: name, name, index, cells, accent, style: this.planet.plot })
       plot.signature = wanted.get(name)
       this.plots.set(name, plot)
       this.plotGroup.add(plot.group)
@@ -677,9 +684,9 @@ export class Colony {
     }
     // Which hex cells are decked. Ground height is asked for once per moving agent per
     // frame, so it wants to be a lookup rather than a scan over every plot's every tile.
-    this.deckedCells = new Set()
+    this.deckedCells = new Map()
     for (const plot of this.plotOrder) {
-      for (const cell of plot.cells) this.deckedCells.add(`${cell.q},${cell.r}`)
+      for (const cell of plot.cells) this.deckedCells.set(`${cell.q},${cell.r}`, plot)
     }
     this._syncLabels()
   }
@@ -703,7 +710,10 @@ export class Colony {
 
   groundAt(x, z) {
     const cell = worldToHex(x, z)
-    if (this.deckedCells?.has(`${cell.q},${cell.r}`)) return DECK_TOP
+    // On a world whose decks stand apart, a cell is only decked as far as its plot's own
+    // outline goes; the strip between two workspaces is ground.
+    const plot = this.deckedCells?.get(`${cell.q},${cell.r}`)
+    if (plot && (!plot.style?.gap || plot.containsWorld(x, z))) return DECK_TOP
     return terrainHeight(x, z, this.planet)
   }
 
@@ -716,6 +726,10 @@ export class Colony {
 
   /** A stable colour per repo, probing forward on a collision so no two plots match. */
   _pickAccent(name) {
+    // A world may bring a palette of its own. Those are short and meant to repeat, so the
+    // chase for a colour nobody else has only applies to the stock one.
+    const own = this.planet.plot?.palette
+    if (own) return own[hashString(name) % own.length]
     const start = hashString(name) % PLOT_PALETTE.length
     for (let i = 0; i < PLOT_PALETTE.length; i++) {
       const accent = PLOT_PALETTE[(start + i) % PLOT_PALETTE.length]
@@ -859,7 +873,9 @@ export class Colony {
         }
       }
     }
-    return bestD <= PLOT_CELL * PLOT_CELL ? best : null
+    if (bestD > PLOT_CELL * PLOT_CELL) return null
+    // Between two workspaces that stand apart there is no plot to be over.
+    return best.style?.gap && !best.containsWorld(x, z) ? null : best
   }
 
   /**
@@ -1026,20 +1042,15 @@ export class Colony {
     // Outward points straight off the zone for a building on its edge, and an astronaut
     // standing in the neighbouring repo's yard reads as belonging to that repo. The inside
     // of its own plot is always the better answer when the outside is somebody else's.
-    const onPlot = (v) => {
-      const cell = worldToHex(v.x, v.z)
-      return plot.cellKeys.has(`${cell.q},${cell.r}`)
-    }
+    const onPlot = (v) => plot.containsWorld(v.x, v.z)
     if (!onPlot(site)) {
       const inward = new THREE.Vector3(b.x - Math.cos(a) * stand, 0, b.z - Math.sin(a) * stand)
       if (onPlot(inward)) site = inward
     }
     // Pick against the complete, current map, including scaffolds about to rise. A grid
     // cell alone is insufficient: it can still be inside a building's keep-out radius.
-    const free = this.nav?.nearestClear(site.x, site.z, PLOT_CELL, (x, z) => {
-      const cell = worldToHex(x, z)
-      return plot.cellKeys.has(`${cell.q},${cell.r}`)
-    }) || this.nav?.nearestClear(site.x, site.z, PLOT_CELL * 2)
+    const free = this.nav?.nearestClear(site.x, site.z, PLOT_CELL, (x, z) => plot.containsWorld(x, z)) ||
+      this.nav?.nearestClear(site.x, site.z, PLOT_CELL * 2)
     if (free) site.set(free.x, 0, free.z)
     return site
   }
@@ -1185,7 +1196,7 @@ export class Colony {
     const full = this.settings.get('particles') === 'full'
     const focus = this.sky.focus
     const c = this._c
-    const living = this.planet.scatter !== 'rocks'
+    const living = this.planet.scatter !== 'rocks' && this.planet.scatter !== 'none'
     const fireflies = living && night > 0.35
     // Buildings within reach of the view. Everything else is off screen or too far to read.
     const reach = full ? 48 : 34
