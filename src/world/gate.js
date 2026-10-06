@@ -10,7 +10,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
  */
 
 /** How hard the baked lights glow. Above one, so the bloom pass picks the amber out. */
-const GLOW = 2.4
+const GLOW = 1.5
 
 let loading = null
 
