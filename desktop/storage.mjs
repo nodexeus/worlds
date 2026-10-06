@@ -57,7 +57,7 @@ export async function importColony(source, userData) {
   }
   const value = JSON.parse(text)
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid colony file')
-  for (const key of ['settings', 'plots', 'seen', 'viewedAt', 'archivedAt']) {
+  for (const key of ['settings', 'plots', 'levels', 'seen', 'viewedAt', 'archivedAt']) {
     if (key === 'settings' && value[key] === null) continue
     if (key in value && (!value[key] || typeof value[key] !== 'object' || Array.isArray(value[key]))) {
       throw new Error(`Invalid colony ${key}`)

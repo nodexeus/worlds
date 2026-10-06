@@ -493,4 +493,18 @@ export class CameraRig {
     this._ray.setFromCamera(this._ndc, this.camera)
     return this._ray.ray.intersectPlane(this._plane, out) ? out : null
   }
+
+  /**
+   * Where a screen point lands on the horizontal plane at `height`. The ground is not the
+   * only thing to point at: a raised deck is hit above it, and nearer the camera.
+   */
+  pointAtHeight(clientX, clientY, height, out = new THREE.Vector3()) {
+    const rect = this.dom.getBoundingClientRect()
+    if (!rect.width || !rect.height) return null
+    this._ndc.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1)
+    this._ray.setFromCamera(this._ndc, this.camera)
+    this._raised ||= new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
+    this._raised.constant = -height
+    return this._ray.ray.intersectPlane(this._raised, out) ? out : null
+  }
 }

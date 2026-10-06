@@ -60,6 +60,9 @@ export const PLANETS = {
     plot: {
       // Half the clear distance between two workspaces.
       gap: 1.5,
+      // Workspaces stand on one of three levels, this far apart.
+      levels: 3,
+      levelStep: 1.35,
       // Narrower decks, so the ring of building slots is drawn in to stay on them.
       ring: 0.42,
       deck: { color: 0x26262b, roughness: 0.34, metalness: 0.8 },

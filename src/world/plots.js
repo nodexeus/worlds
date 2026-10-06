@@ -356,8 +356,9 @@ function kerbUv(geo) {
 const APOTHEM = TILE * Math.sqrt(3) / 2
 
 /**
- * A deck tile cut to an arbitrary convex outline, already in place at (cx, cz) with its top
- * face at `DECK_TOP`.
+ * A deck tile cut to an arbitrary convex outline, already in place at (cx, cz). By default its
+ * top face is at `DECK_TOP` and it is as deep as any deck; a raised workspace's block passes
+ * its own.
  *
  * Built by hand, face by face, so that every face has a real normal and a UV gradient of its
  * own. The deck is normal-mapped, and a face with neither shades to an invalid value that the
@@ -368,12 +369,11 @@ const APOTHEM = TILE * Math.sqrt(3) / 2
  *
  * @param {Array<[number, number]>} outline  corners in the tile's own frame, as [x, z]
  */
-function outlinePrism(outline, cx, cz) {
+function outlinePrism(outline, cx, cz, top = DECK_TOP, height = DECK_HEIGHT) {
   const positions = []
   const normals = []
   const uvs = []
-  const top = DECK_TOP
-  const foot = DECK_TOP - DECK_HEIGHT
+  const foot = top - height
   const push = (x, y, z, nx, ny, nz, u, v) => {
     positions.push(cx + x, y, cz + z)
     normals.push(nx, ny, nz)
@@ -405,7 +405,7 @@ function outlinePrism(outline, cx, cz) {
     // Lifted off zero for the reason given in `planarUv`: a rim this shallow should sample
     // the middle of a plate, not the seam along the texture's edge.
     const v0 = 0.25
-    const v1 = 0.25 + DECK_HEIGHT / DECK_TEXTURE_SCALE
+    const v1 = 0.25 + height / DECK_TEXTURE_SCALE
     push(ax, foot, az, nx, 0, nz, u0, v0)
     push(bx, top, bz, nx, 0, nz, u1, v1)
     push(ax, top, az, nx, 0, nz, u0, v1)
@@ -435,14 +435,19 @@ export class Plot {
    * @param {object|null} [options.style]  the world's `plot` styling, if it has any: `gap`
    *   pulls every outside edge in so the workspace stands clear of its neighbours, `deck`
    *   overrides the slab's colour and surface, and `ring` moves the building slots.
+   * @param {number} [options.level]  which raised level the workspace stands on, on a world
+   *   whose styling has `levels`; each level is `levelStep` above the one below.
    */
-  constructor({ id, name, index, cells, accent, style = null }) {
+  constructor({ id, name, index, cells, accent, style = null, level = 0 }) {
     this.id = id
     this.name = name
     this.index = index
     this.cells = cells
     this.accent = accent
     this.style = style
+    this.level = style?.levels > 1 ? level : 0
+    /** How far above the ground this workspace's deck stands. Zero on most worlds. */
+    this.elev = this.level * (style?.levelStep || 0)
     this.cellKeys = new Set(cells.map((c) => key(c.q, c.r)))
     // How far each tile's six edges are pulled inboard: an outside edge by the world's gap,
     // an edge shared with another of this plot's tiles not at all. See `deck-shape.js`.
@@ -483,6 +488,7 @@ export class Plot {
 
     this.group = new THREE.Group()
     this.group.position.copy(this.center)
+    this.group.position.y = this.elev
     this.group.name = `plot:${id}`
 
     this._buildDeck()
@@ -539,6 +545,40 @@ export class Plot {
     )
     this.deck.receiveShadow = true
     this.group.add(this.deck)
+    this._buildBlock()
+  }
+
+  /**
+   * What a raised workspace stands on: a block of dark steel from under its deck down to the
+   * ground, set a little inside the deck's edge so the deck reads as a slab resting on it.
+   */
+  _buildBlock() {
+    if (!(this.elev > 0)) return
+    const SETBACK = 0.35
+    const parts = this.localCenters.map(({ x, z }, i) =>
+      // Shared edges are left where they are, so the blocks under one workspace join too.
+      outlinePrism(
+        tileOutline(APOTHEM, this.insets[i].map((inset) => (inset > 0 ? inset + SETBACK : 0))),
+        x, z, DECK_TOP - DECK_HEIGHT + 0.02, this.elev
+      )
+    )
+    const plate = deckSurface()
+    this.block = new THREE.Mesh(
+      BufferGeometryUtils.mergeGeometries(parts),
+      new THREE.MeshStandardMaterial({
+        color: 0x1b1b20,
+        map: plate.map,
+        normalMap: plate.normalMap,
+        roughnessMap: plate.roughnessMap,
+        normalScale: new THREE.Vector2(0.5, 0.5),
+        roughness: 0.5,
+        metalness: 0.65,
+      })
+    )
+    parts.forEach((g) => g.dispose())
+    this.block.castShadow = true
+    this.block.receiveShadow = true
+    this.group.add(this.block)
   }
 
   /**
@@ -752,7 +792,7 @@ export class Plot {
 
   worldSlot(index, out = new THREE.Vector3()) {
     const s = this.slotFor(index)
-    return out.set(this.center.x + s.x, DECK_TOP, this.center.z + s.z)
+    return out.set(this.center.x + s.x, DECK_TOP + this.elev, this.center.z + s.z)
   }
 
   /** Night lighting, plus a pulse on the border when this plot holds something urgent. */
