@@ -1,20 +1,26 @@
 # Nodexeus Worlds handoff
 
 Recorded 2026-10-05. This guide carries development context between machines.
-GitHub issues and pull requests remain the source of truth for delivery status.
+Linear is the source of truth for delivery status; GitHub hosts the code and pull requests.
 
 ## Repository and tracking
 
 - Clone `git@github.com:nodexeus/worlds.git`; use its `main` branch.
 - `origin` is the Nodexeus fork. The optional `upstream` remote is
   `https://github.com/Station-Sciences/bot-crossing.git`.
-- Create issues and PRs only in the Nodexeus fork. Do not write to upstream tracking.
-- [PR #4](https://github.com/nodexeus/worlds/pull/4) contains the branded campus and Library.
-  [Parent #1](https://github.com/nodexeus/worlds/issues/1) links branding #2 and Library #3.
-- [Nodexeus Worlds project](https://github.com/orgs/nodexeus/projects/2) tracks workflow,
-  priority, dates, and issue types. Do not duplicate its existing items.
-- Keep work linked to issues, use issue references in commits, and closing references in
-  PRs. Do not add a co-author line unless requested. Future work needs its own scoped plan.
+- Track all work in the Linear [worlds project](https://linear.app/nodexeus/project/worlds-be8ea2816608)
+  (team Nodexeus, issue prefix `NODEX`). Search it before creating an item, and set a
+  label, priority, and status on every issue.
+- Open PRs only in the Nodexeus fork. Do not write to upstream tracking.
+- Name branches `<issue-id>-<short-kebab-summary>`, reference the issue in commits, and
+  put the closing reference (`Closes NODEX-123`) in the PR description only.
+  Do not add a co-author line unless requested. Future work needs its own scoped plan.
+- History before the move to Linear lives on GitHub and is complete:
+  [PR #4](https://github.com/nodexeus/worlds/pull/4) (merged 2026-10-05) delivered the
+  branded campus and Library, closing [parent #1](https://github.com/nodexeus/worlds/issues/1),
+  branding #2, and Library #3. The
+  [GitHub project](https://github.com/orgs/nodexeus/projects/2) holds only those items.
+  Do not open new GitHub issues or copy the closed ones into Linear.
 
 ## Documentation map
 
@@ -77,12 +83,22 @@ CLI tools are needed for terminal-opening actions. Credentials should be configu
 through each tool, not committed to this public repository.
 
 Browser development uses ignored `data/colony.json`; Docker uses its named volume.
-Neither is automatically synchronized with the Electron data directory. Personal
-`compose.override.yaml`, `.env`, and any licensed audio overrides also need a separate
-transfer or recreation. See the runtime guides before importing data.
+Neither stays synchronized with the Electron data directory. The one exception is a
+one-time import: when the desktop data folder has no `colony.json`, the app copies one in
+at launch. A development run (`npm run desktop:dev`) takes the checkout's
+`data/colony.json`; any run takes the file named by `BOT_CROSSING_IMPORT_COLONY` (an
+absolute path). An existing desktop colony is never overwritten, so copying the data
+folder first, as above, skips the import. See the runtime guides before importing data.
 
-Re-enable Open at Login from the app on the new machine. Do not copy the old LaunchAgent
-blindly: its application path belongs to the old installation.
+Other ignored, machine-local files need a separate transfer or recreation if you use
+them: `compose.override.yaml`, `.env`, licensed audio overrides in `public/audio/`,
+character design source in `design/character/`, and `.claude/settings.local.json`
+(which holds personal paths, so recreate it instead of copying).
+
+Re-enable Open at Login from the app on the new machine. The login job is
+`~/Library/LaunchAgents/local.botcrossing.desktop.plist`, which sits outside the data
+folder and is not carried by the transfer above. Do not copy it: its application path
+belongs to the old installation.
 
 ## Current scope and next decisions
 
