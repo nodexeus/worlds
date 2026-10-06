@@ -30,6 +30,8 @@ const STEPS = [
   // than atlas-mapped, and the packer bakes those colours into vertices. The list of what
   // is kept, and the recolours that turn an oak into a cherry tree, live in there.
   ['tools/build-nature.mjs', 'assets-src/kenney_nature-kit/Models/GLTF format', 'public/assets/nature.glb'],
+  // The campus gate is the project's own model; packing only shrinks its baked maps.
+  ['tools/build-gate.mjs', 'design/campus/nodexeus-gate.glb', 'public/assets/gate.glb'],
   ['tools/build-crew.mjs'],
 ]
 

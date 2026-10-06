@@ -57,6 +57,9 @@ export const PLANETS = {
     },
     grade: { saturation: 0.9, warmth: 0.04 },
     buildingTint: 0x8a8a96,
+    // The crew arrive through the Nodexeus gate here, not out of the lander. The model is
+    // eight units across; this brings it down to stand comfortably on its own tile.
+    gate: { scale: 0.82 },
     plot: {
       // Half the clear distance between two workspaces.
       gap: 1.5,
