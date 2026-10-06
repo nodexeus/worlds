@@ -6,6 +6,7 @@ import { mulberry } from './planet.js'
 import { withCurve } from '../core/curve.js'
 import { OVERLAY_LAYER } from '../core/engine.js'
 import { BUILDING_RADIUS } from './buildings.js'
+import { edgeAngle, edgeSegments, onTile, tileOutline } from './deck-shape.js'
 import { HEX_DIRS, SHIP_CELL, CORE_CELLS, ORIGIN, POOL_RINGS, cellKey as key, hexDistance, isConnected } from './plot-move.js'
 
 /**
@@ -351,6 +352,75 @@ function kerbUv(geo) {
   uv.needsUpdate = true
 }
 
+/** Centre of a deck tile to the middle of one of its edges. */
+const APOTHEM = TILE * Math.sqrt(3) / 2
+
+/**
+ * A deck tile cut to an arbitrary convex outline, already in place at (cx, cz) with its top
+ * face at `DECK_TOP`.
+ *
+ * Built by hand, face by face, so that every face has a real normal and a UV gradient of its
+ * own. The deck is normal-mapped, and a face with neither shades to an invalid value that the
+ * bloom pass then smears over the whole frame.
+ *
+ * UVs follow `planarUv`: the top is projected straight down in world space so the plate
+ * pattern runs across tiles, and the rim is unrolled along the outline at the same density.
+ *
+ * @param {Array<[number, number]>} outline  corners in the tile's own frame, as [x, z]
+ */
+function outlinePrism(outline, cx, cz) {
+  const positions = []
+  const normals = []
+  const uvs = []
+  const top = DECK_TOP
+  const foot = DECK_TOP - DECK_HEIGHT
+  const push = (x, y, z, nx, ny, nz, u, v) => {
+    positions.push(cx + x, y, cz + z)
+    normals.push(nx, ny, nz)
+    uvs.push(u, v)
+  }
+  // Wound so the top faces up whichever way round the outline was handed over.
+  let area = 0
+  outline.forEach(([x, z], i) => {
+    const [nx, nz] = outline[(i + 1) % outline.length]
+    area += x * nz - nx * z
+  })
+  const ring = area > 0 ? [...outline].reverse() : outline
+
+  for (let i = 1; i < ring.length - 1; i++) {
+    for (const [x, z] of [ring[0], ring[i], ring[i + 1]]) {
+      push(x, top, z, 0, 1, 0, (cx + x) / DECK_TEXTURE_SCALE, (cz + z) / DECK_TEXTURE_SCALE)
+    }
+  }
+  let along = 0
+  for (let i = 0; i < ring.length; i++) {
+    const [ax, az] = ring[i]
+    const [bx, bz] = ring[(i + 1) % ring.length]
+    const run = Math.hypot(bx - ax, bz - az)
+    if (run < 1e-6) continue
+    const nx = -(bz - az) / run
+    const nz = (bx - ax) / run
+    const u0 = along / DECK_TEXTURE_SCALE
+    const u1 = (along + run) / DECK_TEXTURE_SCALE
+    // Lifted off zero for the reason given in `planarUv`: a rim this shallow should sample
+    // the middle of a plate, not the seam along the texture's edge.
+    const v0 = 0.25
+    const v1 = 0.25 + DECK_HEIGHT / DECK_TEXTURE_SCALE
+    push(ax, foot, az, nx, 0, nz, u0, v0)
+    push(bx, top, bz, nx, 0, nz, u1, v1)
+    push(ax, top, az, nx, 0, nz, u0, v1)
+    push(ax, foot, az, nx, 0, nz, u0, v0)
+    push(bx, foot, bz, nx, 0, nz, u1, v0)
+    push(bx, top, bz, nx, 0, nz, u1, v1)
+    along += run
+  }
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3))
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
+  return geo
+}
+
 function hexPrism(radius, height) {
   const geo = new THREE.CylinderGeometry(radius, radius, height, 6)
   geo.rotateY(HEX_PHASE)
@@ -360,13 +430,25 @@ function hexPrism(radius, height) {
 // ── plot mesh ─────────────────────────────────────────────────────────────────────────
 
 export class Plot {
-  constructor({ id, name, index, cells, accent }) {
+  /**
+   * @param {object} options
+   * @param {object|null} [options.style]  the world's `plot` styling, if it has any: `gap`
+   *   pulls every outside edge in so the workspace stands clear of its neighbours, `deck`
+   *   overrides the slab's colour and surface, and `ring` moves the building slots.
+   */
+  constructor({ id, name, index, cells, accent, style = null }) {
     this.id = id
     this.name = name
     this.index = index
     this.cells = cells
     this.accent = accent
+    this.style = style
     this.cellKeys = new Set(cells.map((c) => key(c.q, c.r)))
+    // How far each tile's six edges are pulled inboard: an outside edge by the world's gap,
+    // an edge shared with another of this plot's tiles not at all. See `deck-shape.js`.
+    this.insets = cells.map((cell) =>
+      EDGE_TO_DIR.map((d) => (style?.gap && !this.cellKeys.has(key(cell.q + HEX_DIRS[d][0], cell.r + HEX_DIRS[d][1])) ? style.gap : 0))
+    )
 
     // The plot's origin is its **root** tile — the one it was seeded on and never gives up
     // — rather than the centroid of whatever cells it holds this minute. A zone that gains
@@ -416,7 +498,10 @@ export class Plot {
     // tile's own centre, so it has to be at the origin when that is worked out. The top's
     // projection takes the tile's offset explicitly, which keeps the plate pattern running
     // continuously across a whole plot.
-    const parts = this.localCenters.map(({ x, z }) => {
+    const parts = this.localCenters.map(({ x, z }, i) => {
+      // A world that separates its workspaces gets each tile cut to its own outline. That
+      // prism carries its own UVs, laid out the same way `planarUv` lays out a plain one.
+      if (this.style?.gap) return outlinePrism(tileOutline(APOTHEM, this.insets[i]), x, z)
       const geo = hexPrism(TILE, DECK_HEIGHT)
       planarUv(geo, DECK_TEXTURE_SCALE, x, z, DECK_HEIGHT)
       // Positioned by its *top* face rather than by its middle: everything on a plot is
@@ -436,7 +521,9 @@ export class Plot {
     // rather than compete with them — but its rim faces sideways, so whatever the top reads
     // as in full sun the edge reads as one stop darker, and a backdrop that goes to nothing
     // at the plot boundary just looks like a hole.
-    const color = new THREE.Color(this.accent).offsetHSL(0, -0.38, 0).multiplyScalar(0.9)
+    const color = this.style?.deck
+      ? new THREE.Color(this.style.deck.color)
+      : new THREE.Color(this.accent).offsetHSL(0, -0.38, 0).multiplyScalar(0.9)
     const plate = deckSurface()
     this.deck = new THREE.Mesh(
       geo,
@@ -446,8 +533,8 @@ export class Plot {
         normalMap: plate.normalMap,
         roughnessMap: plate.roughnessMap,
         normalScale: new THREE.Vector2(0.7, 0.7),
-        roughness: 0.82,
-        metalness: 0.18,
+        roughness: this.style?.deck?.roughness ?? 0.82,
+        metalness: this.style?.deck?.metalness ?? 0.18,
       })
     )
     this.deck.receiveShadow = true
@@ -476,6 +563,27 @@ export class Plot {
 
     this.cells.forEach((cell, i) => {
       const { x, z } = this.localCenters[i]
+      if (this.style?.gap) {
+        // The outside edges are no longer all one length, so each bar is cut to the stretch
+        // of outline it actually runs along, set just inboard of it as on any other world.
+        const outside = [0, 1, 2, 3, 4, 5].filter((edge) => this.insets[i][edge] > 0)
+        for (const { edge, a, b } of edgeSegments(APOTHEM, this.insets[i], outside)) {
+          const angle = edgeAngle(edge)
+          const back = inset + width / 2
+          const length = Math.hypot(b[0] - a[0], b[1] - a[1]) - back
+          if (length <= 0) continue
+          const geo = new THREE.BoxGeometry(width, 0.14, length)
+          kerbUv(geo)
+          geo.rotateY(-angle)
+          geo.translate(
+            x + (a[0] + b[0]) / 2 - Math.cos(angle) * back,
+            DECK_TOP + 0.07,
+            z + (a[1] + b[1]) / 2 - Math.sin(angle) * back
+          )
+          parts.push(geo)
+        }
+        return
+      }
       for (let edge = 0; edge < 6; edge++) {
         const dir = HEX_DIRS[EDGE_TO_DIR[edge]]
         if (this.cellKeys.has(key(cell.q + dir[0], cell.r + dir[1]))) continue
@@ -621,7 +729,9 @@ export class Plot {
       slots.push({ x, z })
       for (let i = 0; i < 6; i++) {
         const a = (Math.PI / 3) * i + Math.PI / 6
-        slots.push({ x: x + Math.cos(a) * TILE * 0.58, z: z + Math.sin(a) * TILE * 0.58 })
+        // A world with narrower decks draws the ring in so a building still stands on one.
+        const ring = TILE * (this.style?.ring ?? 0.58)
+        slots.push({ x: x + Math.cos(a) * ring, z: z + Math.sin(a) * ring })
       }
     }
     return slots
@@ -633,14 +743,7 @@ export class Plot {
 
   /** A complete circular footprint must fit on one of the deck's actual hex faces. */
   containsLocal(x, z, radius = 0) {
-    const apothem = TILE * Math.sqrt(3) / 2 - radius
-    return this.localCenters.some((c) => {
-      for (let i = 0; i < 6; i++) {
-        const a = i * Math.PI / 3 + Math.PI / 6
-        if ((x - c.x) * Math.cos(a) + (z - c.z) * Math.sin(a) > apothem) return false
-      }
-      return true
-    })
+    return this.localCenters.some((c, i) => onTile(x - c.x, z - c.z, APOTHEM, this.insets?.[i], radius))
   }
 
   containsWorld(x, z, radius = 0) {

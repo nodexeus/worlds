@@ -28,6 +28,46 @@ import { withCurve } from '../core/curve.js'
 const DRONES = { count: 3 }
 
 export const PLANETS = {
+  /**
+   * The Nodexeus campus: blackened steel under a dusk sky, and the one world whose workspaces
+   * stand apart. `plot` is what asks for that; see `Plot` in plots.js for what each field does.
+   */
+  campus: {
+    id: 'campus',
+    name: 'Campus',
+    blurb: 'Blackened steel decks under a dusk sky.',
+    ground: { low: 0x131316, high: 0x26262b, tint: 0x303037 },
+    rock: 0x141416,
+    horizon: 0x1a1d27,
+    sky: { top: 0x10141f, bottom: 0x4a5066 },
+    fog: { color: 0x0b0c10, near: 80, far: 230 },
+    sun: { color: 0xfff4e6, intensity: 4.6, night: 0.2 },
+    ambient: { sky: 0xb4bcd8, ground: 0x4a443a, intensity: 3.0 },
+    atmosphere: 0,
+    // A poured floor, not a landscape: no craters, barely any relief, nothing growing on it.
+    craters: 0,
+    roughness: 0.12,
+    scatter: 'none',
+    companion: { name: 'Anode', color: 0x2a2a30, size: 2.0, glow: 0x56565e },
+    dust: 0,
+    fauna: { drones: DRONES },
+    audio: {
+      beds: [{ sound: 'lunar-silence', gain: 0.5 }],
+      events: [],
+    },
+    grade: { saturation: 0.9, warmth: 0.04 },
+    buildingTint: 0x8a8a96,
+    plot: {
+      // Half the clear distance between two workspaces.
+      gap: 1.5,
+      // Narrower decks, so the ring of building slots is drawn in to stay on them.
+      ring: 0.42,
+      deck: { color: 0x26262b, roughness: 0.34, metalness: 0.8 },
+      // One accent for every workspace: on this world the kerb is brand amber, and a
+      // workspace is told from its neighbours by standing apart from them.
+      palette: [0xfdc700],
+    },
+  },
   moon: {
     id: 'moon',
     name: 'Luna',
@@ -530,7 +570,7 @@ export const PLANETS = {
 }
 
 /** Display order for the picker: home first, then outward, then the pretty ones. */
-export const PLANET_ORDER = ['moon', 'mars', 'terra', 'beach', 'ocean', 'jungle', 'desert', 'tundra', 'autumn', 'sakura', 'volcanic', 'sky']
+export const PLANET_ORDER = ['campus', 'moon', 'mars', 'terra', 'beach', 'ocean', 'jungle', 'desert', 'tundra', 'autumn', 'sakura', 'volcanic', 'sky']
 
 export const GROUND_SIZE = 340
 /** Everything inside this radius is the buildable colony, and is kept nearly flat. */
@@ -984,7 +1024,7 @@ export function createScatter(planet, density, keepClear = [], seed = 4242, insi
   group.name = 'scatter'
   // Islands have much less usable ground. Concentrate a smaller budget into groves.
   const count = Math.round(SCATTER_BUDGET * THREE.MathUtils.clamp(density, 0, 1) * (planet.shape === 'island' ? 0.5 : 1))
-  if (count <= 0) return group
+  if (count <= 0 || planet.scatter === 'none') return group
 
   const rand = mulberry(seed)
   const isFlora = planet.scatter !== 'rocks'

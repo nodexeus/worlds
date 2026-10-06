@@ -1127,6 +1127,9 @@ settings.onChange((changed, scope) => {
   if (changed.has('followSelected')) rig.setFollow(settings.get('followSelected') ? colony.agentFor(selectedId) : null)
   // Folding dormant repos away changes which threads are on the map, so the colony has to be
   // rebuilt from the list rather than merely re-rendered.
+  // So does moving to a world that styles its plots differently: they are rebuilt by the
+  // roster pass, not by the planet switch itself.
+  if (changed.has('planet')) applyThreads(threads)
   if (changed.has('hideDormant')) applyThreads(threads)
   if (changed.has('maxAgents')) applyThreads(threads)
 })
