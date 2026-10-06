@@ -27,6 +27,15 @@ import { withCurve } from '../core/curve.js'
 
 const DRONES = { count: 3 }
 
+/** How far apart the campus world's levels stand. */
+const CAMPUS_LEVEL_STEP = 1.35
+/**
+ * Run over rise of the MegaKit's two-metre stair (2.07 m over 1.01 m). Kept here as a plain
+ * number, and checked against the kit's own in `crossing-models.js`, because that module
+ * cannot be imported from this one without a cycle.
+ */
+const STAIR_RUN_PER_RISE = 2.07 / 1.01
+
 export const PLANETS = {
   /**
    * The Nodexeus campus: blackened steel under a dusk sky, and the one world whose workspaces
@@ -61,11 +70,14 @@ export const PLANETS = {
     // eight units across; this brings it down to stand comfortably on its own tile.
     gate: { scale: 0.82 },
     plot: {
-      // Half the clear distance between two workspaces.
-      gap: 1.5,
       // Workspaces stand on one of three levels, this far apart.
       levels: 3,
-      levelStep: 1.35,
+      levelStep: CAMPUS_LEVEL_STEP,
+      // Half the clear distance between two workspaces: set so that one flight of the kit's
+      // stair, scaled to climb a level, spans the gap exactly.
+      gap: (STAIR_RUN_PER_RISE * CAMPUS_LEVEL_STEP) / 2,
+      // Neighbouring workspaces are joined by walkways and staircases.
+      crossings: true,
       // Narrower decks, so the ring of building slots is drawn in to stay on them.
       ring: 0.42,
       deck: { color: 0x26262b, roughness: 0.34, metalness: 0.8 },
