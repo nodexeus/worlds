@@ -820,7 +820,7 @@ that a machine on a VPN or a mesh network is reachable by everything else on it 
 ### Picking the terminal
 
 **Settings → Open threads in** lists the desktop app and every terminal found on this machine. Pick one and threads open there.
-On macOS that is Terminal, iTerm, Warp, Ghostty, kitty, Alacritty and WezTerm, found as apps in `/Applications` or `~/Applications`; on Linux it is the known emulators on `PATH`.
+On macOS that is any app in `/Applications` or `~/Applications` that declares itself the shell for `.command` scripts (Terminal, iTerm, Warp, and forks or newcomers that do the same), plus Ghostty, kitty, Alacritty and WezTerm, which are driven by their own flags. On Linux it is the known emulators on `PATH`.
 A terminal picked this way is the only one tried: if it has since been removed, opening a thread says so and nothing else opens in its place.
 
 Without a pick (the older **Terminal (automatic)** setting, or the HTTP API called with `via: "terminal"` alone), `BOT_CROSSING_TERMINAL` names the emulator, ahead of `$TERMINAL` and whatever the desktop has:

@@ -90,23 +90,40 @@ test('a missing DISPLAY is a refusal on Linux and nothing at all on macOS', posi
 
 // ── a terminal picked from the installed list ─────────────────────────────────
 
-/** An empty directory named like an application bundle is all detection looks for. */
-async function fakeApp(dir, bundle) {
+const macOnly = { skip: process.platform !== 'darwin' }
+
+/**
+ * A directory named like an application bundle. `shellFor` gives it an `Info.plist` declaring
+ * itself the shell for that file extension, which is all detection reads.
+ */
+async function fakeApp(dir, bundle, { shellFor } = {}) {
   const app = path.join(dir, bundle)
-  await fsp.mkdir(app)
+  await fsp.mkdir(path.join(app, 'Contents'), { recursive: true })
+  if (shellFor) {
+    await fsp.writeFile(
+      path.join(app, 'Contents', 'Info.plist'),
+      `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict><key>CFBundleDocumentTypes</key><array><dict>
+<key>CFBundleTypeRole</key><string>Shell</string>
+<key>CFBundleTypeExtensions</key><array><string>${shellFor}</string></array>
+</dict></array></dict></plist>
+`
+    )
+  }
   return app
 }
 
-test('listTerminals finds macOS app bundles and offers only an id and a name', posixOnly, async () => {
+// Reads real plists with `plutil`, so it only runs where there is one.
+test('listTerminals finds any macOS app that declares itself a shell for .command files', macOnly, async () => {
   await withTmp(async (dir) => {
-    await fakeApp(dir, 'Warp.app')
+    await fakeApp(dir, 'Zap.app', { shellFor: 'command' })
     await fakeApp(dir, 'Ghostty.app')
-    const found = await withPlatform('darwin', () =>
-      withEnv(nothingInstalled(dir), () => listTerminals({ appDirs: [dir] }))
-    )
+    await fakeApp(dir, 'Notes.app')
+    await fakeApp(dir, 'Chat.app', { shellFor: 'chattoken' })
+    const found = await withEnv(nothingInstalled(dir), () => listTerminals({ appDirs: [dir] }))
     assert.deepEqual(found, [
-      { id: 'warp', name: 'Warp' },
-      { id: 'ghostty', name: 'Ghostty' },
+      { id: 'Ghostty.app', name: 'Ghostty' },
+      { id: 'Zap.app', name: 'Zap' },
     ])
   })
 })
@@ -138,7 +155,7 @@ test('a picked terminal that is not installed fails rather than opening another'
   await withTmp(async (dir) => {
     const kitty = await fakeExecutable(dir, 'kitty')
     const result = await withPlatform('linux', () =>
-      withEnv(nothingInstalled(dir), () => openInTerminal(ARGV, dir, { terminal: 'warp' }))
+      withEnv(nothingInstalled(dir), () => openInTerminal(ARGV, dir, { terminal: 'Zap.app' }))
     )
     assert.equal(result.ok, false)
     assert.match(result.error, /not installed/)
@@ -148,12 +165,12 @@ test('a picked terminal that is not installed fails rather than opening another'
 
 test('a macOS terminal that takes no argv is handed a script through open', posixOnly, async () => {
   await withTmp(async (dir) => {
-    const app = await fakeApp(dir, 'Warp.app')
+    const app = await fakeApp(dir, 'Terminal.app')
     const opener = await fakeExecutable(dir, 'open')
     const argv = ['/bin/echo', "it's", 'two words']
     const result = await withPlatform('darwin', () =>
       withEnv(nothingInstalled(dir), () =>
-        openInTerminal(argv, dir, { terminal: 'warp', appDirs: [dir], opener: opener.file })
+        openInTerminal(argv, dir, { terminal: 'Terminal.app', appDirs: [dir], opener: opener.file })
       )
     )
     assert.equal(result.ok, true)
@@ -175,7 +192,7 @@ test('a macOS terminal that takes flags gets them after --args', posixOnly, asyn
     const opener = await fakeExecutable(dir, 'open')
     const result = await withPlatform('darwin', () =>
       withEnv(nothingInstalled(dir), () =>
-        openInTerminal(ARGV, dir, { terminal: 'ghostty', appDirs: [dir], opener: opener.file })
+        openInTerminal(ARGV, dir, { terminal: 'Ghostty.app', appDirs: [dir], opener: opener.file })
       )
     )
     assert.equal(result.ok, true)

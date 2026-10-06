@@ -1018,8 +1018,9 @@ function chimeForNewWaiting(list, archivedSet, hiddenSet) {
  * @returns {[string, string | undefined]}
  */
 function openChoice() {
-  const [via, terminal] = String(settings.get('openIn')).split(':')
-  return [via === 'terminal' ? 'terminal' : 'app', terminal || undefined]
+  const value = String(settings.get('openIn'))
+  if (value !== 'terminal' && !value.startsWith('terminal:')) return ['app', undefined]
+  return ['terminal', value.slice('terminal:'.length) || undefined]
 }
 
 let polling = false

@@ -370,7 +370,7 @@ export class Hud {
     const options = [['app', 'Desktop app'], ...terminals.map((t) => [`terminal:${t.id}`, t.name])]
     if (!terminals.length || current === 'terminal') options.push(['terminal', 'Terminal (automatic)'])
     if (!options.some(([value]) => value === current)) {
-      options.push([current, `${current.replace(/^terminal:/, '')} (not installed)`])
+      options.push([current, `${current.replace(/^terminal:/, '').replace(/\.app$/, '')} (not installed)`])
     }
     sel.replaceChildren(
       ...options.map(([value, text]) => {

@@ -255,7 +255,7 @@ export async function present(result, via = 'app', terminal = '') {
 
 const viaOf = (body) => (body?.via === 'terminal' ? 'terminal' : 'app')
 /** Which terminal, as an id from `/api/terminals`. Anything else means "whichever is found". */
-const terminalOf = (body) => (typeof body?.terminal === 'string' && body.terminal.length <= 64 ? body.terminal : '')
+const terminalOf = (body) => (typeof body?.terminal === 'string' && body.terminal.length <= 128 ? body.terminal : '')
 
 /**
  * Mark the threads the colony has retired.

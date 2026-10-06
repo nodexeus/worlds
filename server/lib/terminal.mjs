@@ -6,7 +6,7 @@
  * particular harness — an adapter never imports it. An adapter hands the server an argv; the
  * server decides whether a terminal is the right place for it.
  */
-import { spawn } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import fsp from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -55,26 +55,26 @@ const LABELS = {
 }
 
 /**
- * macOS terminals, found as application bundles because that is how they are installed there:
- * none of them puts a binary on `PATH` by default, and a Finder-launched app would not see
- * the user's `PATH` or `$TERMINAL` anyway.
+ * macOS terminals are found as application bundles, because that is how they are installed
+ * there: none of them puts a binary on `PATH` by default, and a Finder-launched app would not
+ * see the user's `PATH` or `$TERMINAL` anyway.
  *
- * They are started through `open`, never by running the binary inside the bundle. The ones
- * marked `script` take no command line at all: Terminal, iTerm and Warp only run a command
- * they are handed as a `.command` file. The rest take the same flags as on Linux, passed after
- * `--args`.
+ * Nothing is matched by product name except the four below, which take the same flags as on
+ * Linux. Every other terminal is recognised by what its own `Info.plist` declares: a bundle
+ * that says it is the *shell* for `.command` scripts can be handed one, whatever it is called.
+ * That is what lets a fork or a terminal nobody has heard of show up without a release here.
  */
-const MAC_APPS = [
-  { id: 'apple-terminal', name: 'Terminal', bundle: 'Terminal.app', script: true },
-  { id: 'iterm', name: 'iTerm', bundle: 'iTerm.app', script: true },
-  { id: 'warp', name: 'Warp', bundle: 'Warp.app', script: true },
-  { id: 'ghostty', name: 'Ghostty', bundle: 'Ghostty.app' },
-  { id: 'kitty', name: 'kitty', bundle: 'kitty.app' },
-  { id: 'alacritty', name: 'Alacritty', bundle: 'Alacritty.app' },
-  { id: 'wezterm', name: 'WezTerm', bundle: 'WezTerm.app' },
+const MAC_FLAG_APPS = { 'Ghostty.app': 'ghostty', 'kitty.app': 'kitty', 'Alacritty.app': 'alacritty', 'WezTerm.app': 'wezterm' }
+/** Offered even when the plist cannot be read: these two are known to run a `.command`. */
+const MAC_SCRIPT_APPS = new Set(['Terminal.app', 'iTerm.app'])
+
+const macAppDirs = () => [
+  '/Applications', '/Applications/Utilities', '/System/Applications/Utilities', path.join(os.homedir(), 'Applications'),
 ]
 
-const macAppDirs = () => ['/Applications', '/System/Applications/Utilities', path.join(os.homedir(), 'Applications')]
+/** How long one sweep of the application folders is trusted before the next request repeats it. */
+const MAC_SCAN_TTL_MS = 30000
+let macScan = null
 
 /** How long a launch script is left on disk for the terminal to pick up. */
 const SCRIPT_TTL_MS = 60000
@@ -167,34 +167,71 @@ function trySpawn(cmd, args, cwd) {
 }
 
 /**
+ * Does this bundle declare itself the shell for `.command` scripts? `plutil` does the reading
+ * because an `Info.plist` is as often binary as XML. Any failure is a plain "no".
+ */
+function runsShellScripts(bundle) {
+  return new Promise((resolve) => {
+    const plist = path.join(bundle, 'Contents', 'Info.plist')
+    const args = ['-extract', 'CFBundleDocumentTypes', 'json', '-o', '-', plist]
+    execFile('/usr/bin/plutil', args, { timeout: 2000 }, (err, stdout) => {
+      if (err) return resolve(false)
+      try {
+        const types = JSON.parse(stdout)
+        resolve(Array.isArray(types) && types.some((type) =>
+          type?.CFBundleTypeRole === 'Shell' &&
+          ((type.LSItemContentTypes || []).includes('com.apple.terminal.shell-script') ||
+            (type.CFBundleTypeExtensions || []).includes('command'))))
+      } catch {
+        resolve(false)
+      }
+    })
+  })
+}
+
+/** Every terminal among the application bundles in `dirs`, by name. The first folder wins a tie. */
+async function scanMacApps(dirs) {
+  const bundles = new Map()
+  for (const dir of dirs) {
+    for (const entry of await fsp.readdir(dir).catch(() => [])) {
+      if (entry.endsWith('.app') && !bundles.has(entry)) bundles.set(entry, path.join(dir, entry))
+    }
+  }
+  const found = await Promise.all([...bundles].map(async ([entry, app]) => {
+    const base = { id: entry, name: entry.slice(0, -'.app'.length), app }
+    if (MAC_FLAG_APPS[entry]) return { ...base, flags: MAC_FLAG_APPS[entry] }
+    if (MAC_SCRIPT_APPS.has(entry) || (await runsShellScripts(app))) return { ...base, script: true }
+    return null
+  }))
+  return found.filter(Boolean).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+}
+
+/**
  * The terminals on this machine that can be driven, in the order the settings list shows them.
  *
- * A binary on `PATH` wins over an application bundle of the same name, since that is the one
- * the user put there on purpose. `appDirs` is only ever passed by the tests.
+ * A binary on `PATH` wins over an application bundle of the same terminal, since that is the
+ * one the user put there on purpose. `appDirs` is only ever passed by the tests, which also
+ * keeps them clear of the cache.
  *
  * @param {{appDirs?: string[]}} [options]
- * @returns {Promise<Array<{id: string, name: string, exec?: string, app?: string, script?: boolean}>>}
+ * @returns {Promise<Array<{id: string, name: string, flags?: string, exec?: string, app?: string, script?: boolean}>>}
  */
 async function installedTerminals({ appDirs } = {}) {
   if (process.platform === 'win32') return []
-  const found = []
+  let found = []
   if (process.platform === 'darwin') {
-    for (const app of MAC_APPS) {
-      for (const dir of appDirs || macAppDirs()) {
-        const bundle = path.join(dir, app.bundle)
-        const stat = await fsp.stat(bundle).catch(() => null)
-        if (!stat?.isDirectory()) continue
-        found.push({ id: app.id, name: app.name, app: bundle, script: Boolean(app.script) })
-        break
-      }
+    if (appDirs) found = await scanMacApps(appDirs)
+    else {
+      if (!macScan || Date.now() - macScan.at > MAC_SCAN_TTL_MS) macScan = { at: Date.now(), list: scanMacApps(macAppDirs()) }
+      found = (await macScan.list).map((t) => ({ ...t }))
     }
   }
   for (const name of new Set([...desktopOrder(), ...GENERAL_ORDER])) {
     const exec = await findExecutable(name)
     if (!exec) continue
-    const bundled = found.find((t) => t.id === name)
+    const bundled = found.find((t) => t.flags === name)
     if (bundled) Object.assign(bundled, { exec, app: undefined })
-    else found.push({ id: name, name: LABELS[name] || name, exec })
+    else found.push({ id: name, name: LABELS[name] || name, flags: name, exec })
   }
   return found
 }
@@ -235,9 +272,9 @@ async function writeLaunchScript(argv, cwd) {
 
 /** Start one terminal from the installed list. */
 async function launchInstalled(terminal, argv, cwd, opener) {
-  if (terminal.exec) return trySpawn(terminal.exec, TERMINALS[terminal.id](cwd, argv), cwd)
+  if (terminal.exec) return trySpawn(terminal.exec, TERMINALS[terminal.flags](cwd, argv), cwd)
   if (terminal.script) return trySpawn(opener, ['-a', terminal.app, await writeLaunchScript(argv, cwd)], cwd)
-  return trySpawn(opener, ['-n', '-a', terminal.app, '--args', ...TERMINALS[terminal.id](cwd, argv)], cwd)
+  return trySpawn(opener, ['-n', '-a', terminal.app, '--args', ...TERMINALS[terminal.flags](cwd, argv)], cwd)
 }
 
 /**
