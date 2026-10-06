@@ -77,13 +77,17 @@ test('/api/open with via: terminal and no CLI is a 400 that names the CLI', posi
   // Codex rather than Claude Code: this machine may well have a real `claude` in an install dir.
   const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'bot-crossing-nocli-'))
   try {
-    await withEnv({ PATH: dir }, () =>
-      withServer(async ({ call }) => {
-        const body = { harness: 'codex', ref: { sessionId: UUID, cwd: dir }, via: 'terminal' }
-        const res = await post(call, '/api/open', body)
-        assert.equal(res.status, 400)
-        assert.match((await res.json()).error, /CLI/)
-      })
+    // As Linux, so that a Mac which does have the CLI in an install dir cannot fall through to
+    // opening its real Terminal: there, an installed app is the automatic route's last resort.
+    await withEnv({ PATH: dir, DISPLAY: ':0' }, () =>
+      withPlatform('linux', () =>
+        withServer(async ({ call }) => {
+          const body = { harness: 'codex', ref: { sessionId: UUID, cwd: dir }, via: 'terminal' }
+          const res = await post(call, '/api/open', body)
+          assert.equal(res.status, 400)
+          assert.match((await res.json()).error, /CLI/)
+        })
+      )
     )
   } finally {
     await fsp.rm(dir, { recursive: true, force: true })

@@ -820,7 +820,7 @@ that a machine on a VPN or a mesh network is reachable by everything else on it 
 ### Picking the terminal
 
 **Settings → Open threads in** lists the desktop app and every terminal found on this machine. Pick one and threads open there.
-On macOS that is any app in `/Applications` or `~/Applications` that declares itself the shell for `.command` scripts (Terminal, iTerm, Warp, and forks or newcomers that do the same), plus Ghostty, kitty, Alacritty and WezTerm, which are driven by their own flags. On Linux it is the known emulators on `PATH`.
+On macOS that is any app in `/Applications` or `~/Applications` that declares itself the shell for `.command` scripts (Terminal, iTerm, and newcomers that do the same), plus Ghostty, kitty, Alacritty and WezTerm, which are driven by their own flags, and Warp and Zap, which are handed a temporary launch configuration in `~/.warp` or `~/.zap`. On Linux it is the known emulators on `PATH`.
 A terminal picked this way is the only one tried: if it has since been removed, opening a thread says so and nothing else opens in its place.
 
 Without a pick (the older **Terminal (automatic)** setting, or the HTTP API called with `via: "terminal"` alone), `BOT_CROSSING_TERMINAL` names the emulator, ahead of `$TERMINAL` and whatever the desktop has:
@@ -830,7 +830,7 @@ BOT_CROSSING_TERMINAL=kitty npm start
 ```
 
 A name on `PATH` or an absolute path, and it has to be one whose flags are known — gnome-terminal, konsole, kitty, alacritty, ghostty, wezterm, foot, xterm and their relatives — since one that is not is skipped rather than guessed at.
-On macOS the automatic route only works with a named terminal, pointed at a real binary rather than an `.app`, and the packaged app does not see variables set in a shell profile. Use the settings list there instead.
+On macOS a named terminal has to be a real binary rather than an `.app`, and the packaged app does not see variables set in a shell profile. With nothing named, the automatic route opens Terminal.
 Windows is not supported yet.
 
 What it touches on disk, in full:

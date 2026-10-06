@@ -7,6 +7,7 @@
  * server decides whether a terminal is the right place for it.
  */
 import { execFile, spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import fsp from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -60,13 +61,21 @@ const LABELS = {
  * see the user's `PATH` or `$TERMINAL` anyway.
  *
  * Nothing is matched by product name except the four below, which take the same flags as on
- * Linux. Every other terminal is recognised by what its own `Info.plist` declares: a bundle
- * that says it is the *shell* for `.command` scripts can be handed one, whatever it is called.
- * That is what lets a fork or a terminal nobody has heard of show up without a release here.
+ * Linux, and the Warp family further down, which needs a route of its own. Every other terminal
+ * is recognised by what its own `Info.plist` declares: a bundle that says it is the *shell* for
+ * `.command` scripts can be handed one, whatever it is called. That is what lets a terminal
+ * nobody has heard of show up without a release here.
  */
 const MAC_FLAG_APPS = { 'Ghostty.app': 'ghostty', 'kitty.app': 'kitty', 'Alacritty.app': 'alacritty', 'WezTerm.app': 'wezterm' }
 /** Offered even when the plist cannot be read: these two are known to run a `.command`. */
 const MAC_SCRIPT_APPS = new Set(['Terminal.app', 'iTerm.app'])
+/**
+ * Warp and its forks declare the shell role and do not honour it: once running, they open a
+ * `.command` in their editor instead of running it. What they do run is a launch configuration,
+ * a YAML file in `~/.<scheme>/launch_configurations` opened by `<scheme>://launch/<name>`. The
+ * value here is that scheme, which is also the name of the settings folder.
+ */
+const MAC_WARP_APPS = { 'Warp.app': 'warp', 'Zap.app': 'zap' }
 
 const macAppDirs = () => [
   '/Applications', '/Applications/Utilities', '/System/Applications/Utilities', path.join(os.homedir(), 'Applications'),
@@ -200,6 +209,7 @@ async function scanMacApps(dirs) {
   const found = await Promise.all([...bundles].map(async ([entry, app]) => {
     const base = { id: entry, name: entry.slice(0, -'.app'.length), app }
     if (MAC_FLAG_APPS[entry]) return { ...base, flags: MAC_FLAG_APPS[entry] }
+    if (MAC_WARP_APPS[entry]) return { ...base, warp: MAC_WARP_APPS[entry] }
     if (MAC_SCRIPT_APPS.has(entry) || (await runsShellScripts(app))) return { ...base, script: true }
     return null
   }))
@@ -270,9 +280,52 @@ async function writeLaunchScript(argv, cwd) {
   return file
 }
 
+/**
+ * The launch configuration a Warp-family terminal is handed: one window, one tab, in `cwd`,
+ * running the argv. JSON strings are YAML strings, which settles the YAML quoting; the command
+ * inside is single-quoted for the shell exactly as in `launchScript`.
+ *
+ * @param {string} name
+ * @param {string[]} argv
+ * @param {string} cwd
+ * @returns {string}
+ */
+export function warpLaunchConfig(name, argv, cwd) {
+  const exec = JSON.stringify(argv.map(quote).join(' '))
+  return [
+    '---',
+    `name: ${JSON.stringify(name)}`,
+    'windows:',
+    '  - tabs:',
+    '      - layout:',
+    `          cwd: ${JSON.stringify(cwd)}`,
+    '          commands:',
+    `            - exec: ${exec}`,
+    '',
+  ].join('\n')
+}
+
+/**
+ * Put that configuration where the terminal looks for them, under a name nothing else uses,
+ * and take it away again once the terminal has had time to read it.
+ */
+async function writeWarpLaunch(scheme, argv, cwd, home) {
+  const dir = path.join(home, `.${scheme}`, 'launch_configurations')
+  await fsp.mkdir(dir, { recursive: true })
+  const name = `nodexeus-worlds-${randomUUID()}`
+  const file = path.join(dir, `${name}.yaml`)
+  await fsp.writeFile(file, warpLaunchConfig(name, argv, cwd), { mode: 0o600 })
+  setTimeout(() => void fsp.rm(file, { force: true }).catch(() => {}), SCRIPT_TTL_MS).unref()
+  return name
+}
+
 /** Start one terminal from the installed list. */
-async function launchInstalled(terminal, argv, cwd, opener) {
+async function launchInstalled(terminal, argv, cwd, opener, home = os.homedir()) {
   if (terminal.exec) return trySpawn(terminal.exec, TERMINALS[terminal.flags](cwd, argv), cwd)
+  if (terminal.warp) {
+    const name = await writeWarpLaunch(terminal.warp, argv, cwd, home)
+    return trySpawn(opener, [`${terminal.warp}://launch/${name}`], cwd)
+  }
   if (terminal.script) return trySpawn(opener, ['-a', terminal.app, await writeLaunchScript(argv, cwd)], cwd)
   return trySpawn(opener, ['-n', '-a', terminal.app, '--args', ...TERMINALS[terminal.flags](cwd, argv)], cwd)
 }
@@ -292,19 +345,20 @@ async function launchInstalled(terminal, argv, cwd, opener) {
  * rest of the line" to xterm and "one string, which I will split" to tilix, and guessing wrong
  * opens a window on the wrong command — worse than moving on to a terminal we do know.
  *
- * On macOS the desktop walk finds nothing, so only a named terminal works there — kitty,
- * alacritty, ghostty and wezterm take the same flags on both.
+ * On macOS the desktop walk finds nothing, so a named terminal is tried first — kitty,
+ * alacritty, ghostty and wezterm take the same flags on both — and failing that an installed
+ * application: Terminal, which every Mac has, then any other.
  *
  * `options.terminal` is an id from `listTerminals`, chosen in the settings. It skips the walk
  * entirely: that terminal is started or the call fails, because opening a different one after
- * somebody picked theirs reads as the setting being ignored. `appDirs` and `opener` are only
- * ever passed by the tests.
+ * somebody picked theirs reads as the setting being ignored. `appDirs`, `opener` and `home` are
+ * only ever passed by the tests.
  *
  * @param {string[]} argv
  * @param {string} cwd
- * @param {{terminal?: string, appDirs?: string[], opener?: string}} [options]
+ * @param {{terminal?: string, appDirs?: string[], opener?: string, home?: string}} [options]
  */
-export async function openInTerminal(argv, cwd, { terminal, appDirs, opener = '/usr/bin/open' } = {}) {
+export async function openInTerminal(argv, cwd, { terminal, appDirs, opener = '/usr/bin/open', home } = {}) {
   // Windows shares none of the trivia below — no PATH walk over sixteen emulators, no display
   // to check — so it is a different file entirely, reached through the same door. The caller
   // asks for a terminal and does not learn which platform it is on.
@@ -324,7 +378,7 @@ export async function openInTerminal(argv, cwd, { terminal, appDirs, opener = '/
     if (!chosen) {
       return { ok: false, error: 'That terminal is not installed on this machine any more. Pick another in Settings' }
     }
-    const result = await launchInstalled(chosen, argv, cwd, opener)
+    const result = await launchInstalled(chosen, argv, cwd, opener, home)
     return result.ok ? { ok: true } : { ok: false, error: `Could not open ${chosen.name} (${result.error})` }
   }
 
@@ -363,6 +417,17 @@ export async function openInTerminal(argv, cwd, { terminal, appDirs, opener = '/
 
   if (ranOut) {
     return { ok: false, error: 'Gave up waiting for a terminal to open — is the display responding?' }
+  }
+  // Nothing was named and nothing is on `PATH`, which is every Mac that has not been set up for
+  // this. The system's own Terminal is always there, so it goes first, then whatever else is.
+  if (process.platform === 'darwin') {
+    const apps = (await installedTerminals({ appDirs })).filter((t) => t.app)
+    apps.sort((a, b) => (b.id === 'Terminal.app') - (a.id === 'Terminal.app'))
+    for (const app of apps) {
+      const result = await launchInstalled(app, argv, cwd, opener, home)
+      if (result.ok) return { ok: true }
+      lastError = result.error
+    }
   }
   return {
     ok: false,
