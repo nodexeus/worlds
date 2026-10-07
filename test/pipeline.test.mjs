@@ -102,21 +102,34 @@ test('feeders run from a trunk in to the edge of a deck, and end at a cabinet', 
   }
 })
 
-test('a colony that grows pushes the trunks out and changes nothing else about them', () => {
+test('the same colony always gets the same lines, and one that grows still gets two trunks clear of it', () => {
   const before = pipelineLayout(SPEC, COLONY)
+  assert.deepEqual(pipelineLayout(SPEC, COLONY), before)
   const after = pipelineLayout(SPEC, GROWN)
-  assert.deepEqual(pipelineLayout(SPEC, COLONY), before, 'the same colony always gets the same lines')
-  const moved = pipelineBerth(GROWN, SPEC.margin) - pipelineBerth(COLONY, SPEC.margin)
-  assert.ok(moved > 5)
-  assert.equal(after.pumps.length, before.pumps.length)
-  const a = of(before, 'trunk')
-  const b = of(after, 'trunk')
-  for (let k = 0; k < a.length; k++) {
-    assert.equal(b[k].samples.length, a[k].samples.length)
-    for (let i = 0; i < a[k].samples.length; i += 25) {
-      const shift = Math.hypot(b[k].samples[i].x - a[k].samples[i].x, b[k].samples[i].z - a[k].samples[i].z)
-      assert.ok(Math.abs(shift - moved) < 0.05, 'every point of it has moved straight out by as far as the berth grew')
-    }
+  assert.equal(of(after, 'trunk').length, 2)
+  const berth = pipelineBerth(GROWN, SPEC.margin)
+  for (const { samples } of of(after, 'trunk')) for (const p of samples) assert.ok(reach(p) >= berth)
+})
+
+test('a trunk keeps to the ground inside the canal, and crosses it only on its way out, squarely', () => {
+  const CANAL = 96
+  const spec = { ...SPEC, canal: CANAL }
+  const onCanal = (p) => Math.abs(Math.max(Math.abs(p.x), Math.abs(p.z)) - CANAL) < 3.8
+  const layout = pipelineLayout(spec, COLONY)
+  for (const { samples } of of(layout, 'trunk')) {
+    // Two crossings of a channel under eight metres wide, at two metres a sample: a dozen
+    // samples at most. A trunk running along the canal would have scores.
+    const over = samples.filter(onCanal).length
+    assert.ok(over > 0, 'it does cross')
+    assert.ok(over <= 12, `${over} samples of a trunk are over the canal`)
+    // Between its crossings it is inside the canal's square, and outside the colony's berth.
+    const berth = pipelineBerth(COLONY, spec.margin)
+    for (const p of samples) assert.ok(reach(p) >= berth)
+  }
+  // A colony too big to leave room inside takes its trunks out past the canal, clear of it.
+  const huge = cellsAt([[0, 0], [6, 0], [-6, 0], [0, 6], [0, -6], [6, -6], [-6, 6]])
+  for (const { samples } of of(pipelineLayout(spec, huge), 'trunk')) {
+    assert.ok(samples.filter(onCanal).length === 0, 'outside the canal altogether, never along it')
   }
 })
 

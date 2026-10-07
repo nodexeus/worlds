@@ -29,6 +29,12 @@ import { FOUNDRY_TEXTURE_SCALE, foundryFloorSurface } from './surfaces.js'
 
 const DRONES = { count: 3 }
 
+/**
+ * How far out the foundry floor's square canal runs. On a plate seam (a multiple of sixteen),
+ * and known to the coolant lines too, which keep to the ground inside it.
+ */
+const FOUNDRY_CANAL = 96
+
 /** How far apart the campus world's levels stand. */
 const CAMPUS_LEVEL_STEP = 1.35
 /**
@@ -60,8 +66,8 @@ export const PLANETS = {
     // A laid floor, not a landscape: no craters and barely any relief.
     craters: 0,
     roughness: 0.12,
-    // Coolant comes in by canal: a square channel well out from the campus, and four more
-    // running on from it to the horizon.
+    // Coolant comes in by canal: a square channel well out from the campus (`FOUNDRY_CANAL`),
+    // and four more running on from it to the horizon.
     shape: 'foundry',
     water: {
       level: -0.75,
@@ -79,7 +85,7 @@ export const PLANETS = {
     // Glass coolant lines cross the floor too, on their way from somewhere to somewhere else:
     // they pass the campus, `margin` clear of its outermost deck, and do not go round it. The
     // seed is what their wandering is drawn from. See pipeline.js.
-    pipeline: { margin: 16, seed: 0x71be },
+    pipeline: { margin: 16, seed: 0x71be, canal: FOUNDRY_CANAL },
     scatter: 'foundry',
     companion: { name: 'Anode', color: 0x2a2a30, size: 2.0, glow: 0x56565e },
     dust: 0,
@@ -954,7 +960,7 @@ function sampleHeight(x, z, field, planet) {
  * where one that runs across it comes out as a saw edge. The channels lie on the plate seams,
  * midway between conduits.
  */
-const FOUNDRY_CHANNEL = { ring: 80, half: 2.3, bank: 1.5, depth: 1.7 }
+const FOUNDRY_CHANNEL = { ring: FOUNDRY_CANAL, half: 2.3, bank: 1.5, depth: 1.7 }
 
 /** How fully (x, z) is inside a channel: 0 on the floor, 1 on a channel's bed. */
 function foundryChannel(x, z) {
@@ -966,6 +972,25 @@ function foundryChannel(x, z) {
   // Past the ring, the spokes: straight out along each axis.
   if (reach > ring) nearest = Math.min(nearest, ax, az)
   return 1 - THREE.MathUtils.smoothstep(nearest, half, half + bank)
+}
+
+/**
+ * Whether a thing `reach` across at (x, z) would have any of its footing on a canal or the
+ * slope of its bank. The floor is level everywhere else, so this is the whole test for
+ * whether something can be stood there without a corner of it hanging in the air.
+ *
+ * @param {object} planet
+ * @param {number} [reach]  how far from its middle the thing's footing goes
+ */
+export function onCanal(x, z, planet, reach = 0) {
+  if (planet.shape !== 'foundry') return false
+  if (foundryChannel(x, z) > 0) return true
+  if (reach <= 0) return false
+  for (let k = 0; k < 8; k++) {
+    const a = (k * Math.PI) / 4
+    if (foundryChannel(x + Math.cos(a) * reach, z + Math.sin(a) * reach) > 0) return true
+  }
+  return false
 }
 
 /** Craters only ever land outside the colony, so they never eat a build plot. */
@@ -1165,6 +1190,9 @@ const SCATTER = {
  */
 const SCATTER_SHARE = { foundry: 0.26 }
 
+/** How far from a canal's bank anything scattered keeps: the reach of the widest prop, and a pace. */
+const CANAL_GUARD = 3.2
+
 function fallbackShapes(isFlora) {
   const shapes = isFlora
     ? [new THREE.IcosahedronGeometry(0.5, 0), new THREE.ConeGeometry(0.42, 1.5, 5), new THREE.SphereGeometry(0.5, 6, 4)]
@@ -1283,6 +1311,9 @@ export function createScatter(planet, density, keepClear = [], seed = 4242, insi
     }
     if (keepClear.some((p) => Math.hypot(x - p.x, z - p.z) < p.r)) continue
     if (inside && !inside(x, z)) continue
+    // Nothing with a corner over a canal or on the slope down to one. Sized for the largest
+    // thing scattered, and a pace over.
+    if (onCanal(x, z, planet, CANAL_GUARD)) continue
 
     const mesh = meshes[which]
     const slot = fill[which]

@@ -31,6 +31,9 @@ const TRUNK = { height: 1.6, radius: 0.8, cradles: 4.6, scale: 1 }
 /** A feeder is the same pipe at about a third the size, on cradles to match. */
 const FEEDER = { height: 0.56, radius: 0.28, cradles: 3.0, scale: 0.35 }
 
+/** How far a trunk running beside a canal keeps from the middle of it. */
+const CANAL_CLEAR = 9
+
 /** How far apart a line is sampled. Short enough that a curve is a curve. */
 const STEP = 2
 
@@ -71,8 +74,9 @@ function sweep(points) {
 /**
  * Where everything stands.
  *
- * @param {{margin: number, seed: number}} spec  how far clear of the outermost deck's middle
- *   the trunks keep, and what decides their wandering
+ * @param {{margin: number, seed: number, canal?: number}} spec  how far clear of the outermost
+ *   deck's middle the trunks keep; what decides their wandering; and, on a world with a
+ *   square canal about its middle, how far out that canal runs
  * @param {Array<{x: number, z: number}>} cells  the middle of every deck tile
  * @param {(x: number, z: number) => boolean} [open]  whether there is floor at a point to stand
  *   something on. Where there is not (a canal), a line still crosses, but as a clear span:
@@ -99,25 +103,42 @@ export function pipelineLayout(spec, cells, open = () => true) {
   const pumps = []
   const cabinets = []
 
-  // The two trunks run roughly the same way, one each side of the colony. Roughly: a few
-  // degrees apart, so they are not a pair of rails, but few enough that they would only
-  // meet somewhere past the edge of the world.
-  const heading = rand() * Math.PI
+  // The two trunks run the same way, one each side of the colony, along one of the world's
+  // two axes. Which is the seed's choice; that it is an axis is the canal's. The canal is a
+  // square, square to the world, and a line that met a side of it at a slant would run along
+  // it for a long way, over coolant, with nothing to stand a cradle on.
+  const axis = rand() < 0.5 ? 0 : Math.PI / 2
+  const canal = spec.canal || 0
   ;[1, -1].forEach((side, which) => {
-    const angle = heading + (side > 0 ? 0 : (rand() - 0.5) * 0.5)
-    const ux = Math.cos(angle)
-    const uz = Math.sin(angle)
+    const ux = Math.cos(axis)
+    const uz = Math.sin(axis)
     // Out to this side of the trunk's own heading.
     const nx = -uz * side
     const nz = ux * side
-    // Clear of the berth by more than a curve drawn through these points can cut back.
-    const off = berth + 9 + rand() * 18
+    // Nearest the colony it may come, and (where there is a canal with room inside it) the
+    // furthest out: the trunk runs in the ground between the two. A colony grown too big to
+    // leave that room pushes the trunk out past the canal altogether.
+    const inner = berth + 9
+    const between = canal > 0 && inner + 10 <= canal - CANAL_CLEAR
+    const floor = canal > 0 && !between ? Math.max(inner, canal + CANAL_CLEAR) : inner
     const route = []
-    // The drawing is spent the same way however big the colony is, so a colony that grows
-    // moves a trunk out without changing a single one of its curves.
-    for (let t = -edge * 1.4; t < edge * 1.4; t += 26 + rand() * 40) {
-      const out = off + rand() * rand() * 46
+    let before = null
+    // The drawing is spent the same way however big the colony is.
+    for (let t = -edge * 1.4; t < edge * 1.4; ) {
+      const step = 26 + rand() * 40
+      const a = rand()
+      const b = rand()
+      let out
+      if (between && Math.abs(t) < canal) out = floor + a * (canal - CANAL_CLEAR - floor)
+      else if (between) out = 34 + a * (canal + 30 - 34)
+      else out = floor + a * 18 + a * b * 28
+      // Never across its own heading by more than it runs along it: that is what keeps a
+      // curve a curve, and what makes it cross a canal squarely, not at a graze.
+      if (before) out = Math.max(before.out - step * 0.6, Math.min(before.out + step * 0.6, out))
+      if (between && Math.abs(t) < canal) out = Math.max(floor, Math.min(canal - CANAL_CLEAR, out))
+      before = { out }
       route.push({ x: ux * t + nx * out, z: uz * t + nz * out })
+      t += step
     }
     const samples = sweep(route)
     lines.push({ kind: 'trunk', samples })
