@@ -28,8 +28,8 @@ import { GROUND_SIZE, mulberry } from './planet.js'
 
 /** How high the middle of a line runs above the floor, and how thick its glass is. */
 const TRUNK = { height: 1.6, radius: 0.8, cradles: 4.6, scale: 1 }
-/** A feeder is the same pipe at half the size, on cradles at half the size. */
-const FEEDER = { height: 0.8, radius: 0.4, cradles: 3.6, scale: 0.5 }
+/** A feeder is the same pipe at about a third the size, on cradles to match. */
+const FEEDER = { height: 0.56, radius: 0.28, cradles: 3.0, scale: 0.35 }
 
 /** How far apart a line is sampled. Short enough that a curve is a curve. */
 const STEP = 2
@@ -74,6 +74,9 @@ function sweep(points) {
  * @param {{margin: number, seed: number}} spec  how far clear of the outermost deck's middle
  *   the trunks keep, and what decides their wandering
  * @param {Array<{x: number, z: number}>} cells  the middle of every deck tile
+ * @param {(x: number, z: number) => boolean} [open]  whether there is floor at a point to stand
+ *   something on. Where there is not (a canal), a line still crosses, but as a clear span:
+ *   no cradle is stood there, and no pump house or coupling.
  * @returns {{
  *   lines: Array<{kind: 'trunk' | 'spur' | 'feeder', samples: Array<{x: number, z: number, angle: number, along: number}>}>,
  *   cradles: Array<{x: number, z: number, angle: number, scale: number}>,
@@ -82,8 +85,10 @@ function sweep(points) {
  *   cabinets: Array<{x: number, z: number, angle: number}>,
  * }} every `angle` is a turn about y.
  */
-export function pipelineLayout(spec, cells) {
+export function pipelineLayout(spec, cells, open = () => true) {
   const berth = pipelineBerth(cells, spec.margin)
+  // Room for something as big as a pump house, not just for its middle.
+  const room = (p, r) => [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]].every(([dx, dz]) => open(p.x + dx, p.z + dz))
   const rand = mulberry(spec.seed)
   // The feeders are drawn from a seed of their own: where they go depends on where the decks
   // are, and that must not change what the trunks draw.
@@ -127,13 +132,13 @@ export function pipelineLayout(spec, cells) {
       if (Math.abs(t) > edge * 0.8) continue
       const roll = rand()
       // A pump house in the line, the line going in at one port and out at the one opposite.
-      if (Math.abs(t) < edge * 0.5 && free(p, 60) && roll < 0.035) {
+      if (Math.abs(t) < edge * 0.5 && free(p, 60) && roll < 0.035 && room(p, 3)) {
         pumps.push({ x: p.x, z: p.z, angle: p.angle })
         last = p.along
         continue
       }
       // A spur: away from the colony, in a curve, to a pump house out on the floor.
-      if (free(p, 46) && roll > 0.975) {
+      if (free(p, 46) && roll > 0.975 && room(p, 2)) {
         const lean = (rand() - 0.5) * 0.9
         const dx = nx * Math.cos(lean) - nz * Math.sin(lean)
         const dz = nx * Math.sin(lean) + nz * Math.cos(lean)
@@ -145,6 +150,7 @@ export function pipelineLayout(spec, cells) {
           { x: p.x + dx * length, z: p.z + dz * length },
         ])
         const end = spur[spur.length - 1]
+        if (!room(end, 3)) continue
         joints.push({ x: p.x, z: p.z })
         pumps.push({ x: end.x, z: end.z, angle: end.angle })
         lines.push({ kind: 'spur', samples: spur })
@@ -186,7 +192,8 @@ export function pipelineLayout(spec, cells) {
     for (const p of line.samples) {
       if (p.along < next) continue
       next += size.cradles
-      if (taken.some(([q, room]) => Math.hypot(p.x - q.x, p.z - q.z) < room)) continue
+      if (taken.some(([q, clear]) => Math.hypot(p.x - q.x, p.z - q.z) < clear)) continue
+      if (!room(p, 1.2 * size.scale)) continue
       cradles.push({ x: p.x, z: p.z, angle: p.angle, scale: size.scale })
     }
   }
@@ -197,8 +204,8 @@ export function pipelineLayout(spec, cells) {
  * Discs that cover the lines, for whatever must not be put down under them.
  * @returns {Array<{x: number, z: number, r: number}>}
  */
-export function pipelineClearance(spec, cells) {
-  const { lines, joints, pumps, cabinets } = pipelineLayout(spec, cells)
+export function pipelineClearance(spec, cells, open) {
+  const { lines, joints, pumps, cabinets } = pipelineLayout(spec, cells, open)
   const out = [
     ...pumps.map((p) => ({ x: p.x, z: p.z, r: 5 })),
     ...joints.map((p) => ({ x: p.x, z: p.z, r: 3.4 })),
@@ -284,13 +291,14 @@ function coolant() {
  * @param {{margin: number, seed: number}} spec
  * @param {Array<{x: number, z: number}>} cells  the middle of every deck tile
  * @param {(x: number, z: number) => number} heightAt  the floor under a point
+ * @param {(x: number, z: number) => boolean} [open]  see `pipelineLayout`
  * @returns {THREE.Group | null} null if the models have not loaded
  */
-export function createPipeline(spec, cells, heightAt) {
+export function createPipeline(spec, cells, heightAt, open) {
   const models = { cradle: campusBuilding('cradle'), joint: campusBuilding('joint'), pump: campusBuilding('pump'), cabinet: campusBuilding('cabinet') }
   if (Object.values(models).some((m) => !m)) return null
 
-  const layout = pipelineLayout(spec, cells)
+  const layout = pipelineLayout(spec, cells, open)
   const group = new THREE.Group()
   group.name = 'pipeline'
 
