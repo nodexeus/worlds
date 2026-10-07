@@ -1,6 +1,6 @@
 import { SceneryReflections } from '../world/reflections.js'
 import * as THREE from 'three'
-import { terrainUniforms, PLANETS, createTerrain, createScatter, terrainHeight } from '../world/planet.js'
+import { onCanal, terrainUniforms, PLANETS, createTerrain, createScatter, terrainHeight } from '../world/planet.js'
 import { createWater } from '../world/water.js'
 import { Fauna } from '../world/fauna.js'
 import { BuildingSurfaces } from '../world/building-surfaces.js'
@@ -415,7 +415,7 @@ export class Colony {
   }
 
   /** Whether there is floor at a point, and not a canal or its bank, to stand something on. */
-  _floorOpen = (x, z) => terrainHeight(x, z, this.planet) > -0.15
+  _floorOpen = (x, z) => !onCanal(x, z, this.planet, 0.6)
 
   /**
    * The coolant lines, on a world that has them. Nothing until its models have loaded. Laid
