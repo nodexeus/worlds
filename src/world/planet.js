@@ -88,6 +88,8 @@ export const PLANETS = {
       buildingRadius: 1.6,
       // No lamp posts or crates: both stand exactly where the corners' buildings now do.
       bare: true,
+      // The project's own models where one has been made; the kit for the rest.
+      buildings: 'campus',
       // Baked steel plate: the maps hold the colour, the wear and how it shines.
       // Not fully metal: under a dark sky a pure mirror has nothing to show and goes black.
       deck: { surface: 'steel', color: 0xffffff, metalness: 0.72 },

@@ -927,7 +927,7 @@ export class Colony {
     const target = 1
 
     if (!entry) {
-      const mesh = createBuilding({ seed: hashString(thread.id), accent: plot.accent, fit: this.planet.plot?.buildingRadius })
+      const mesh = createBuilding({ seed: hashString(thread.id), accent: plot.accent, fit: this.planet.plot?.buildingRadius, set: this.planet.plot?.buildings })
       const pos = plot.worldSlot(index)
       mesh.position.copy(pos)
       mesh.rotation.y = ((hashString(thread.id) >>> 8) % 360) * (Math.PI / 180)

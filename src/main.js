@@ -10,6 +10,7 @@ import { PLANETS } from './world/planet.js'
 import { DECK_TOP, PLOT_CELL, hexToWorld, worldToHex } from './world/plots.js'
 import { planMove } from './world/plot-move.js'
 import { loadKit } from './world/kit.js'
+import { loadCampusBuildings } from './world/campus-buildings.js'
 import { crewRig, loadCrew } from './agents/crew.js'
 import { TIMES } from './world/sky.js'
 import { CURVE_FULL, bendPoint, installWorldCurve, setCurveView } from './core/curve.js'
@@ -1103,6 +1104,8 @@ async function boot() {
       }),
     settle(loadKit()),
     settle(loadCrew()),
+    // Not fatal: a building with no model of its own is drawn from the kit.
+    settle(loadCampusBuildings()),
   ])
   if (kitError || crewError) {
     hud.toast('Could not load the model assets — run `npm run assets`', 'err')
