@@ -42,10 +42,8 @@ const TABLE = {
   /** Thin, high and dusty — a tenth of an atmosphere does not carry a low rumble. */
   'mars-wind': { kind: 'bed', gain: 1 },
   'stream': { kind: 'bed', gain: 1 },
-  /** The campus: air on the move, a pad of pure tones that drifts, and coolant in the canals. */
-  'foundry-air': { kind: 'bed', gain: 1 },
+  /** The campus: a warm chord of pure tones that drifts. */
   'foundry-pad': { kind: 'bed', gain: 1 },
-  'coolant-flow': { kind: 'bed', gain: 1 },
 
   // One-shots — environment events, and the handful of sounds the colony itself makes.
   'gull': { kind: 'event', gain: 0.8 },
@@ -81,10 +79,8 @@ const TABLE = {
    * that must never grate: two soft marimba notes a fifth apart, and nothing else.
    */
   'chime-attention': { kind: 'event', gain: 0.6 },
-  /** Far-off plant on the campus floor: a vent letting go, a pump turning over, metal settling. */
-  'steam-vent': { kind: 'event', gain: 0.6 },
-  'pump-thump': { kind: 'event', gain: 0.6 },
-  'metal-knock': { kind: 'event', gain: 0.5 },
+  /** A soft bell, a long way off across the campus. */
+  'far-bell': { kind: 'event', gain: 0.5 },
   /**
    * What a robot says when you click it, in the voice of its kind: six phrases each. The rock
    * crew speak in low chords that slide and waver, and the sixth of theirs is a laugh; the
@@ -109,8 +105,7 @@ const TABLE = {
   'ship-hum': { kind: 'loop', gain: 1 },
   'drone-whine': { kind: 'loop', gain: 1 },
   'shore-lap': { kind: 'loop', gain: 1 },
-  /** The campus's own: an open gate holding a chord, and a drone that whirs. */
-  'gate-hum': { kind: 'loop', gain: 1 },
+  /** The campus's drone: one soft tone, heard from a long way down. */
   'drone-whir': { kind: 'loop', gain: 1 },
 }
 

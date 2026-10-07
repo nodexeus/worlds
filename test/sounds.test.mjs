@@ -44,12 +44,16 @@ test('each kind of robot has a voice, and no two kinds share one', () => {
   assert.ok(!ROBOT_VOICES.includes('select'), 'the stock crew keep the stock voice to themselves')
 })
 
-test('the campus has left the hum behind', () => {
+test('the campus is quiet: no noise beds, no hum at the gate, and the worlds that had a hum keep it', () => {
   const audio = PLANETS.campus.audio
-  assert.ok(!audio.beds.some((bed) => bed.sound === 'lunar-silence'))
-  assert.ok(audio.beds.length >= 2 && audio.events.length >= 2)
-  assert.equal(audio.gate, 'gate-hum')
+  const names = [...audio.beds, ...audio.events].map((entry) => entry.sound)
+  for (const gone of ['lunar-silence', 'foundry-air', 'coolant-flow', 'steam-vent', 'pump-thump', 'metal-knock']) {
+    assert.ok(!names.includes(gone), `the campus still plays "${gone}"`)
+    if (gone !== 'lunar-silence') assert.ok(!isSound(gone), `"${gone}" is still in the table with nothing using it`)
+  }
+  assert.equal(audio.gate, null, 'the gate is silent, and says so')
+  assert.ok(!isSound('gate-hum'))
   assert.equal(audio.drone, 'drone-whir')
-  // And the worlds that had it keep it.
   assert.ok(PLANETS.moon.audio.beds.some((bed) => bed.sound === 'lunar-silence'))
+  assert.equal(PLANETS.moon.audio.gate, undefined, 'a world that says nothing gets the lander\'s hum')
 })

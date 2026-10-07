@@ -96,23 +96,13 @@ export const PLANETS = {
       // time, with the sky empty for this many seconds between.
       aircraft: { every: [35, 80], flight: [1, 3] },
     },
-    // Not silence, and not a hum. Air moving through a built place, a pad of pure tones that
-    // drifts under it, the canals faintly, and now and then plant somewhere off across the
-    // floor. Nothing in it is periodic: a steady buzz in a machine world is a fault.
+    // Quiet. A warm chord that drifts, a bell far off now and then, and nothing else: no
+    // noise of any kind and nothing low, because here both read as a fault. The gate makes no
+    // sound at all (`gate: null`), and the drones are one soft tone each.
     audio: {
-      beds: [
-        { sound: 'foundry-air', gain: 0.5 },
-        { sound: 'foundry-pad', gain: 0.45 },
-        { sound: 'coolant-flow', gain: 0.3 },
-      ],
-      events: [
-        { sound: 'steam-vent', every: [16, 44], gain: 0.4, where: 'ring' },
-        { sound: 'pump-thump', every: [12, 34], gain: 0.4, where: 'ring' },
-        { sound: 'metal-knock', every: [20, 55], gain: 0.35, where: 'ring' },
-      ],
-      // What the gate and the drones sound like here, in place of the lander's idle and the
-      // stock rotor, both of which buzz.
-      gate: 'gate-hum',
+      beds: [{ sound: 'foundry-pad', gain: 0.5 }],
+      events: [{ sound: 'far-bell', every: [28, 75], gain: 0.4, where: 'ring' }],
+      gate: null,
       drone: 'drone-whir',
     },
     grade: { saturation: 0.9, warmth: 0.04 },

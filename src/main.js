@@ -1216,7 +1216,10 @@ function soundWorld() {
   // A world can say what its arrival point and its drones sound like; the lander's idle and
   // the stock rotor are the defaults.
   const voices = colony.planet.audio || {}
-  take('ship', voices.gate || 'ship-hum', shipSpot.x, colony.ship.group.position.y + 3, shipSpot.z, 0.7)
+  // `gate: null` is a world saying its arrival point is silent, which is not the same as
+  // not saying.
+  const gate = voices.gate === undefined ? 'ship-hum' : voices.gate
+  if (gate) take('ship', gate, shipSpot.x, colony.ship.group.position.y + 3, shipSpot.z, 0.7)
   colony.fauna.drones.forEach((d, i) => take(`drone:${i}`, voices.drone || 'drone-whine', d.x, d.y, d.z, d.busy ? 1 : 0.35))
   soundSources.length = n
 
