@@ -42,3 +42,6 @@ design/character
 # Local visual review evidence can contain private workspace and session names.
 .impeccable/review/
 .impeccable/hook.cache.json
+
+# Blender keeps a backup beside every save.
+*.blend1
