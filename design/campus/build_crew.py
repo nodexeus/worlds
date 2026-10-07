@@ -52,92 +52,101 @@ HEAD = 1.241
 CROWN = HEAD + 0.40
 R = 0.48
 
+def ball(bm, radius, matrix, scale=(1.0, 1.0, 1.0), keep=None, around=16, up=10):
+    """A sphere, squashed by `scale`. `keep` drops every vertex it answers False for, which
+    is how a plate is cut out of one: (x, y, z) on the unit sphere, before any squashing."""
+    made = bmesh.ops.create_uvsphere(bm, u_segments=around, v_segments=up, radius=1.0)["verts"]
+    if keep:
+        gone = [v for v in made if not keep(*v.co)]
+        made = [v for v in made if keep(*v.co)]
+        bmesh.ops.delete(bm, geom=gone, context="VERTS")
+    bmesh.ops.transform(bm, matrix=matrix @ Matrix.Diagonal((radius * scale[0], radius * scale[1], radius * scale[2], 1.0)), verts=made)
+
+
+def limb(bm, start, end, r0, r1=None, sides=12):
+    """A round limb from one point to another, closed with a ball at each end."""
+    r1 = r0 if r1 is None else r1
+    start, end = Vector(start), Vector(end)
+    run = end - start
+    made = bmesh.ops.create_cone(bm, cap_ends=False, segments=sides, radius1=r0, radius2=r1, depth=run.length)["verts"]
+    turn = Vector((0, 0, 1)).rotation_difference(run.normalized()).to_matrix().to_4x4()
+    bmesh.ops.transform(bm, matrix=Matrix.Translation((start + end) / 2) @ turn, verts=made)
+    ball(bm, r0, Matrix.Translation(start), around=sides, up=8)
+    ball(bm, r1, Matrix.Translation(end), around=sides, up=8)
+
+
+# Nothing here is a box. Every part is a ball, a round limb or a plate cut from a ball, so the
+# figure reads as a small person in a soft suit with armour over it, not as a toy made of bricks.
+
 # ---------- hips and belt ----------
-prism(part("hips", "suit"), 10, 0.27, 0.29, 0.40, 0.58, squash(1.0, 0.72))
-prism(part("hips", "dark"), 10, 0.31, 0.31, 0.555, 0.635, squash(1.0, 0.74))
-box(part("hips", "lamp"), 0.10, 0.02, 0.05, xyz(0, -0.232, 0.595))
+ball(part("hips", "suit"), 0.30, xyz(z=0.50), (1.0, 0.80, 0.62))
+prism(part("hips", "dark"), 20, 0.305, 0.315, 0.565, 0.635, squash(1.0, 0.80))
+prism(part("hips", "lamp"), 6, 0.045, 0.045, 0.0, 0.014, xyz(0, -0.248, 0.60, rx=QUARTER))
 for sx in (-1, 1):
-    box(part("hips", "dark"), 0.11, 0.10, 0.13, xyz(sx * 0.27, -0.10, 0.53))
-    box(part("hips", "dark"), 0.08, 0.14, 0.10, xyz(sx * 0.30, 0.06, 0.52))
+    ball(part("hips", "dark"), 0.085, xyz(sx * 0.27, -0.09, 0.53), (0.8, 0.8, 1.0))
 
 # ---------- torso ----------
-prism(part("spine", "suit"), 10, 0.27, 0.31, 0.60, 0.92, squash(1.0, 0.74))
-prism(part("chest", "suit"), 10, 0.33, 0.36, 0.90, 1.19, squash(1.0, 0.76))
-prism(part("chest", "suit"), 10, 0.36, 0.24, 1.19, 1.25, squash(1.0, 0.76))
-# The breastplate, with the core set in it.
-box(part("chest", "dark"), 0.44, 0.07, 0.25, xyz(0, -0.262, 1.055))
-box(part("chest", "dark"), 0.30, 0.06, 0.07, xyz(0, -0.258, 0.90))
-prism(part("chest", "lamp"), 6, 0.075, 0.075, 0.0, 0.02, xyz(0, -0.298, 1.075, rx=QUARTER))
-prism(part("chest", "dark"), 6, 0.10, 0.10, 0.0, 0.012, xyz(0, -0.296, 1.075, rx=QUARTER))
-for sx in (-1, 1):
-    box(part("chest", "lamp"), 0.07, 0.012, 0.022, xyz(sx * 0.15, -0.299, 0.975))
-    box(part("chest", "dark"), 0.05, 0.30, 0.20, xyz(sx * 0.335, 0.0, 1.03))
+ball(part("spine", "suit"), 0.31, xyz(z=0.76), (1.0, 0.80, 0.80))
+ball(part("chest", "suit"), 0.37, xyz(z=1.02), (1.0, 0.80, 0.72))
+# The breastplate: a plate cut from the same curve as the chest, standing a little off it.
+ball(part("chest", "dark"), 0.385, xyz(z=1.03), (1.0, 0.80, 0.72),
+     keep=lambda x, y, z: y < -0.42 and abs(x) < 0.72 and -0.55 < z < 0.62, around=24, up=14)
+prism(part("chest", "lamp"), 6, 0.07, 0.07, 0.0, 0.016, xyz(0, -0.304, 1.06, rx=QUARTER))
+prism(part("chest", "dark"), 6, 0.095, 0.095, 0.0, 0.008, xyz(0, -0.302, 1.06, rx=QUARTER))
 # The collar the helmet seals to.
-prism(part("chest", "dark"), 12, 0.25, 0.23, 1.235, 1.30)
+prism(part("chest", "dark"), 20, 0.25, 0.225, 1.215, 1.295)
 
 # ---------- the pack ----------
-prism(part("chest", "dark"), 6, 0.27, 0.25, 0.0, 0.17, xyz(0, 0.27, 1.00, rx=-QUARTER))
-prism(part("chest", "suit"), 6, 0.21, 0.19, 0.17, 0.21, xyz(0, 0.27, 1.00, rx=-QUARTER))
-prism(part("chest", "lamp"), 6, 0.085, 0.085, 0.21, 0.225, xyz(0, 0.27, 1.00, rx=-QUARTER))
+ball(part("chest", "dark"), 0.27, xyz(0, 0.27, 1.00), (1.0, 0.62, 1.08))
+prism(part("chest", "suit"), 6, 0.15, 0.13, 0.0, 0.03, xyz(0, 0.425, 1.01, rx=-QUARTER))
+prism(part("chest", "lamp"), 6, 0.075, 0.075, 0.03, 0.045, xyz(0, 0.425, 1.01, rx=-QUARTER))
 for sx in (-1, 1):
-    rod(part("chest", "dark"), (sx * 0.20, 0.36, 0.76), (sx * 0.20, 0.36, 1.26), 0.045, 8)
-    prism(part("chest", "lamp"), 8, 0.03, 0.03, 1.26, 1.275, xyz(sx * 0.20, 0.36))
-    box(part("chest", "dark"), 0.06, 0.34, 0.05, xyz(sx * 0.19, 0.10, 1.20))
+    limb(part("chest", "dark"), (sx * 0.20, 0.36, 0.84), (sx * 0.20, 0.36, 1.20), 0.055, sides=10)
+    ball(part("chest", "lamp"), 0.03, xyz(sx * 0.20, 0.36, 1.262))
 
 # ---------- arms, straight out along x in the rest pose ----------
 for side, sx in (("l", 1), ("r", -1)):
-    along = xyz(ry=sx * QUARTER)              # a prism drawn up z now runs out along x
     upper, lower, wrist = f"upperarm.{side}", f"lowerarm.{side}", f"wrist.{side}"
-    # Pauldron over the shoulder.
-    prism(part(upper, "dark"), 8, 0.155, 0.125, 0.15, 0.36, xyz(0, 0, 1.115) @ along @ squash(1.0, 1.0))
-    box(part(upper, "lamp"), 0.10, 0.012, 0.025, xyz(sx * 0.25, -0.143, 1.115))
-    prism(part(upper, "suit"), 8, 0.095, 0.09, 0.34, 0.455, xyz(0, 0, 1.107) @ along)
-    prism(part(lower, "dark"), 8, 0.105, 0.105, 0.43, 0.48, xyz(0, 0, 1.107) @ along)
-    prism(part(lower, "suit"), 8, 0.09, 0.115, 0.48, 0.63, xyz(0, 0, 1.107) @ along)
-    # The gauntlet cuff.
-    prism(part(lower, "dark"), 8, 0.135, 0.135, 0.62, 0.705, xyz(0, 0, 1.107) @ along)
-    box(part(lower, "lamp"), 0.05, 0.03, 0.012, xyz(sx * 0.662, 0, 1.243))
-    # A mitt, thumb forward.
-    box(part(wrist, "dark"), 0.17, 0.15, 0.13, xyz(sx * 0.795, 0, 1.107))
-    box(part(wrist, "dark"), 0.07, 0.06, 0.06, xyz(sx * 0.77, -0.095, 1.107))
+    ball(part(upper, "dark"), 0.155, xyz(sx * 0.235, 0, 1.118), (1.05, 1.0, 1.0))
+    limb(part(upper, "suit"), (sx * 0.30, 0, 1.107), (sx * 0.43, 0, 1.107), 0.092)
+    ball(part(lower, "dark"), 0.10, xyz(sx * 0.454, 0, 1.107))
+    limb(part(lower, "suit"), (sx * 0.50, 0, 1.107), (sx * 0.63, 0, 1.107), 0.088, 0.108)
+    # The gauntlet cuff, and a round mitt with a thumb.
+    limb(part(lower, "dark"), (sx * 0.645, 0, 1.107), (sx * 0.695, 0, 1.107), 0.125, sides=14)
+    prism(part(lower, "lamp"), 14, 0.128, 0.128, -0.008, 0.008, xyz(sx * 0.67, 0, 1.107, ry=sx * QUARTER))
+    ball(part(wrist, "dark"), 0.105, xyz(sx * 0.80, 0, 1.107), (1.12, 1.0, 0.92))
+    ball(part(wrist, "dark"), 0.048, xyz(sx * 0.775, -0.088, 1.107))
 
 # ---------- legs ----------
 for side, sx in (("l", 1), ("r", -1)):
     x = sx * 0.171
-    prism(part(f"upperleg.{side}", "suit"), 8, 0.10, 0.12, 0.30, 0.52, xyz(x))
-    prism(part(f"lowerleg.{side}", "suit"), 8, 0.115, 0.10, 0.13, 0.29, xyz(x))
-    box(part(f"lowerleg.{side}", "dark"), 0.15, 0.06, 0.13, xyz(x, -0.105, 0.295))
-    prism(part(f"lowerleg.{side}", "dark"), 8, 0.13, 0.13, 0.12, 0.17, xyz(x))
-    # A boot with some weight to it.
-    box(part(f"foot.{side}", "dark"), 0.22, 0.24, 0.13, xyz(x, -0.01, 0.065))
-    box(part(f"toes.{side}", "dark"), 0.22, 0.15, 0.10, xyz(x, -0.20, 0.05))
-    box(part(f"foot.{side}", "suit"), 0.224, 0.10, 0.03, xyz(x, 0.06, 0.125))
-    box(part(f"toes.{side}", "lamp"), 0.12, 0.012, 0.02, xyz(x, -0.276, 0.06))
+    limb(part(f"upperleg.{side}", "suit"), (x, 0, 0.50), (x, 0, 0.33), 0.112, 0.106)
+    ball(part(f"lowerleg.{side}", "dark"), 0.118, xyz(x, -0.012, 0.292), (1.0, 1.05, 0.88))
+    limb(part(f"lowerleg.{side}", "suit"), (x, 0, 0.26), (x, 0, 0.17), 0.10, 0.112)
+    prism(part(f"lowerleg.{side}", "dark"), 14, 0.126, 0.13, 0.115, 0.165, xyz(x))
+    prism(part(f"lowerleg.{side}", "lamp"), 14, 0.132, 0.132, 0.136, 0.146, xyz(x))
+    # A boot with some weight to it: a heel and a rounded toe.
+    ball(part(f"foot.{side}", "dark"), 0.135, xyz(x, 0.0, 0.085), (0.90, 1.05, 0.66))
+    ball(part(f"toes.{side}", "dark"), 0.125, xyz(x, -0.17, 0.075), (0.92, 1.15, 0.60))
 
 # ---------- the helmet's frame ----------
 head_dark, head_lamp = part("head", "dark"), part("head", "lamp")
 for sx in (-1, 1):
     # Ear pods, ringed.
-    prism(head_dark, 10, 0.15, 0.13, 0.0, 0.09, xyz(sx * (R - 0.03), 0, CROWN, ry=sx * QUARTER))
-    prism(head_lamp, 10, 0.085, 0.085, 0.09, 0.10, xyz(sx * (R - 0.03), 0, CROWN, ry=sx * QUARTER))
-    prism(head_dark, 10, 0.05, 0.05, 0.10, 0.115, xyz(sx * (R - 0.03), 0, CROWN, ry=sx * QUARTER))
-# A crest from brow to nape.
-for i in range(9):
-    a = math.radians(-58 + i * 22)
-    y, z = math.sin(a) * (R + 0.012), math.cos(a) * (R + 0.012)
-    box(head_dark, 0.10, 0.19, 0.035, xyz(0, y, CROWN + z, rx=-a))
+    ball(head_dark, 0.15, xyz(sx * (R - 0.01), 0, CROWN), (0.55, 1.0, 1.0))
+    prism(head_lamp, 14, 0.085, 0.085, 0.0, 0.012, xyz(sx * (R + 0.068), 0, CROWN, ry=sx * QUARTER))
+    prism(head_dark, 14, 0.05, 0.05, 0.012, 0.022, xyz(sx * (R + 0.068), 0, CROWN, ry=sx * QUARTER))
 # The bezel round the screen.
 RING = 0.76 * R + 0.012
 FRONT = -math.sqrt(R * R - (0.76 * R) ** 2) - 0.01
-for k in range(16):
-    a, b = k * TAU / 16, (k + 1) * TAU / 16
-    rod(head_dark, (math.cos(a) * RING, FRONT, CROWN + math.sin(a) * RING), (math.cos(b) * RING, FRONT, CROWN + math.sin(b) * RING), 0.03, 6)
-# A chin vent, and the aerial on the right pod.
-box(head_dark, 0.18, 0.07, 0.07, xyz(0, FRONT - 0.005, CROWN - RING - 0.02))
-for sx in (-0.045, 0.045):
-    box(head_lamp, 0.03, 0.012, 0.035, xyz(sx, FRONT - 0.043, CROWN - RING - 0.02))
-rod(head_dark, (-R - 0.02, 0.03, CROWN + 0.08), (-R - 0.05, 0.05, CROWN + 0.62), 0.016)
-prism(head_lamp, 8, 0.03, 0.03, 0.0, 0.05, xyz(-R - 0.05, 0.05, CROWN + 0.62))
+for k in range(24):
+    a, b = k * TAU / 24, (k + 1) * TAU / 24
+    rod(head_dark, (math.cos(a) * RING, FRONT, CROWN + math.sin(a) * RING), (math.cos(b) * RING, FRONT, CROWN + math.sin(b) * RING), 0.032, 8)
+# A band over the crown from the bezel to the nape, cut from the helmet's own curve.
+ball(head_dark, R + 0.014, xyz(z=CROWN), keep=lambda x, y, z: abs(x) < 0.13 and y > FRONT / R and z > -0.5, around=32, up=18)
+# The aerial, on the right pod.
+rod(head_dark, (-R - 0.03, 0.02, CROWN + 0.10), (-R - 0.05, 0.04, CROWN + 0.60), 0.014)
+ball(head_lamp, 0.032, xyz(-R - 0.05, 0.04, CROWN + 0.62))
 
 # ---------- stand-ins: what the game draws itself ----------
 stand = {"shell": bmesh.new(), "glass": bmesh.new(), "eyes": bmesh.new()}
@@ -172,7 +181,7 @@ def into(name, groups, materials, bevel=False):
             mesh.materials.append(material)
         for polygon in mesh.polygons:
             polygon.use_smooth = True
-        mesh.set_sharp_from_angle(angle=math.radians(42))
+        mesh.set_sharp_from_angle(angle=math.radians(55))
         made = bpy.data.objects.new(key, mesh)
         made.data.name = key
         collection.objects.link(made)
@@ -203,7 +212,7 @@ def preview(name, color, metallic=0.0, roughness=0.5, emission=None):
 
 SUIT = preview("Crew_Suit", (0.78, 0.78, 0.76), 0.0, 0.45)
 FINISH = {"suit": SUIT, "dark": bpy.data.materials["NX_Steel_Black"], "lamp": bpy.data.materials["NX_Amber_Light"]}
-crew, triangles = into("NX_Crew", parts, lambda key: FINISH[key.split("__")[1]], bevel=True)
+crew, triangles = into("NX_Crew", parts, lambda key: FINISH[key.split("__")[1]])
 STAND = {
     "shell": SUIT,
     "glass": preview("Crew_Glass", (0.01, 0.012, 0.02), 0.0, 0.08),
