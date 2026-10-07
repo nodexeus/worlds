@@ -630,29 +630,6 @@ class ShipHumVoice extends Voice {
   }
 }
 
-/**
- * A drone heard from a long way down: one soft tone with a flutter in it, and nothing else.
- * No noise in it, because filtered noise is static however it is shaped, and nothing slower
- * than a flutter, because the stock rotor's blade-pass chop is a buzz and five of them a field
- * of buzzes.
- */
-class WhirVoice extends Voice {
-  constructor(ctx, dest, noise, o) {
-    super(ctx, dest)
-    this.base = o.base
-    const now = ctx.currentTime
-    const tone = this.node(gain(ctx, 1, this.out))
-    this.sine = this.source(osc(ctx, 'sine', 392, tone, now))
-    const depth = this.node(gain(ctx, 0.12, tone.gain))
-    this.source(osc(ctx, 'sine', 13, depth, now))
-    this.out.gain.value = o.base
-  }
-
-  setLevel(level) {
-    this.sine.frequency.setTargetAtTime(392 * (0.94 + 0.12 * level), this.ctx.currentTime, 0.4)
-  }
-}
-
 /** A rotor: sine plus a little saw, amplitude-modulated at the blade-pass rate. */
 class DroneVoice extends Voice {
   constructor(ctx, dest, noise, o) {
@@ -1085,9 +1062,10 @@ export const GENERATORS = {
   'volcanic-hiss': (ctx, d, o, n) => new HissVoice(ctx, d, n, { base: 0.12 }),
   'lunar-silence': (ctx, d, o, n) => new HumVoice(ctx, d, n, { base: 0.07, freq: 48, radio: 0.05 }),
   // The campus: a warm chord in the middle of the range that never quite repeats. No noise in
-  // it and nothing low: the first try at this was air and a held hum, and both read as static
+  // it, nothing held, and nothing above the D over middle C, where a pure tone starts to hurt: the first try at this was air and a held hum, and both read as static
   // and buzz.
-  'foundry-pad': (ctx, d, o, n) => new PadVoice(ctx, d, n, { base: 0.07, tones: [196, 246.9, 293.7, 392, 493.9] }),
+  // The tones are an open fifth and its octaves, far enough apart that no two of them beat.
+  'foundry-pad': (ctx, d, o, n) => new PadVoice(ctx, d, n, { base: 0.06, tones: [110, 165, 220, 330] }),
 
   // One-shots
   'gull': oneShot(bird('gull')),
@@ -1133,6 +1111,5 @@ export const GENERATORS = {
   'work-hammer': (ctx, d, o, n) => new HammerVoice(ctx, d, n, { base: 0.5 }),
   'ship-hum': (ctx, d, o, n) => new ShipHumVoice(ctx, d, n, { base: 0.2 }),
   'drone-whine': (ctx, d, o, n) => new DroneVoice(ctx, d, n, { base: 0.22 }),
-  'drone-whir': (ctx, d, o, n) => new WhirVoice(ctx, d, n, { base: 0.022 }),
   'shore-lap': (ctx, d, o, n) => new ShoreVoice(ctx, d, n, { base: 0.4 }),
 }

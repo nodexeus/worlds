@@ -1220,7 +1220,8 @@ function soundWorld() {
   // not saying.
   const gate = voices.gate === undefined ? 'ship-hum' : voices.gate
   if (gate) take('ship', gate, shipSpot.x, colony.ship.group.position.y + 3, shipSpot.z, 0.7)
-  colony.fauna.drones.forEach((d, i) => take(`drone:${i}`, voices.drone || 'drone-whine', d.x, d.y, d.z, d.busy ? 1 : 0.35))
+  const drone = voices.drone === undefined ? 'drone-whine' : voices.drone
+  if (drone) colony.fauna.drones.forEach((d, i) => take(`drone:${i}`, drone, d.x, d.y, d.z, d.busy ? 1 : 0.35))
   soundSources.length = n
 
   let water = null

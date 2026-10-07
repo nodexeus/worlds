@@ -105,8 +105,6 @@ const TABLE = {
   'ship-hum': { kind: 'loop', gain: 1 },
   'drone-whine': { kind: 'loop', gain: 1 },
   'shore-lap': { kind: 'loop', gain: 1 },
-  /** The campus's drone: one soft tone, heard from a long way down. */
-  'drone-whir': { kind: 'loop', gain: 1 },
 }
 
 /** name → { kind, gain, synth(ctx, dest, opts, noise) → Voice } */

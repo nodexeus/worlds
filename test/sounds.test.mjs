@@ -53,7 +53,8 @@ test('the campus is quiet: no noise beds, no hum at the gate, and the worlds tha
   }
   assert.equal(audio.gate, null, 'the gate is silent, and says so')
   assert.ok(!isSound('gate-hum'))
-  assert.equal(audio.drone, 'drone-whir')
+  assert.equal(audio.drone, null, 'and so are the drones')
+  assert.ok(!isSound('drone-whir'))
   assert.ok(PLANETS.moon.audio.beds.some((bed) => bed.sound === 'lunar-silence'))
   assert.equal(PLANETS.moon.audio.gate, undefined, 'a world that says nothing gets the lander\'s hum')
 })

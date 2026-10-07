@@ -98,12 +98,13 @@ export const PLANETS = {
     },
     // Quiet. A warm chord that drifts, a bell far off now and then, and nothing else: no
     // noise of any kind and nothing low, because here both read as a fault. The gate makes no
-    // sound at all (`gate: null`), and the drones are one soft tone each.
+    // sound at all (`gate: null`) and nor do the drones: any tone that is simply held, however
+    // soft, wears on the ear in a few seconds.
     audio: {
       beds: [{ sound: 'foundry-pad', gain: 0.5 }],
       events: [{ sound: 'far-bell', every: [28, 75], gain: 0.4, where: 'ring' }],
       gate: null,
-      drone: 'drone-whir',
+      drone: null,
     },
     grade: { saturation: 0.9, warmth: 0.04 },
     buildingTint: 0x8a8a96,
