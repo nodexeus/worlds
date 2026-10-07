@@ -45,6 +45,7 @@ const BUILDINGS = {
   cabinet: 512,
   // The coolant line: seen close, where it passes the campus.
   cradle: 512,
+  band: 512,
   pump: 1024,
   joint: 512,
 }

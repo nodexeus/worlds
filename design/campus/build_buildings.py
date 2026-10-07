@@ -1092,6 +1092,20 @@ def cradle(p):
     rod(p.frame, (0, -0.95, 0.75), (0, -0.78, 1.30), 0.03)
 
 
+def band(p):
+    """
+    The collar of a cradle with no cradle under it: what the line wears where there is no floor
+    to stand one on, so the glass is banded at the same spacing all the way along.
+    """
+    h = PIPE_HEIGHT
+    prism(p.black, 16, 0.88, 0.88, -0.13, 0.13, xyz(0, 0, h, ry=math.pi / 2))
+    prism(p.steel, 16, 0.92, 0.92, -0.04, 0.04, xyz(0, 0, h, ry=math.pi / 2))
+    for k in range(8):
+        a = k * TAU / 8 + TAU / 16
+        for side in (-1, 1):
+            prism(p.fixing, 6, 0.035, 0.035, 0.13, 0.16, xyz(0, math.cos(a) * 0.80, h + math.sin(a) * 0.80, ry=side * math.pi / 2))
+
+
 def pump(p):
     """A pump house, where lines meet: a port on each side, whichever of them are used."""
     h = PIPE_HEIGHT
@@ -1158,7 +1172,7 @@ def joint(p):
         box(p.light, 0.02, 0.24, 0.07, at(i * TAU / 4 + TAU / 8, 0.60, 0.95))
 
 
-PIPELINE = {"cradle": cradle, "pump": pump, "joint": joint}
+PIPELINE = {"cradle": cradle, "band": band, "pump": pump, "joint": joint}
 
 PROPS = {"stack": stack, "pylon": pylon, "tanks": tanks, "manifold": manifold, "beacon": beacon, "cabinet": cabinet}
 

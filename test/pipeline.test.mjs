@@ -143,7 +143,7 @@ test('cradles stand under every line, and not on top of what else stands there',
   assert.ok(layout.cradles.some((c) => c.scale < 0.5), 'feeders have cradles their own size')
 })
 
-test('over a canal a line is a clear span: nothing is stood where there is no floor', () => {
+test('over a canal nothing is stood, and the line wears a band wherever a cradle would have been', () => {
   // A canal eight metres wide straight across the world, which both trunks have to cross.
   const canal = (x, z) => Math.abs(x + z * 0.3 - 12) < 4
   const open = (x, z) => !canal(x, z)
@@ -151,6 +151,14 @@ test('over a canal a line is a clear span: nothing is stood where there is no fl
   const layout = pipelineLayout(SPEC, COLONY, open)
   assert.ok(plain.cradles.some((c) => canal(c.x, c.z)), 'with no canal declared, cradles do stand there')
   for (const c of layout.cradles) assert.ok(open(c.x, c.z), 'no cradle over the canal')
+  assert.equal(plain.bands.length, 0, 'with floor everywhere there are no bands')
+  assert.ok(layout.bands.length > 0)
+  // Every place a cradle would have stood has one or the other: the spacing never breaks.
+  assert.equal(layout.cradles.length + layout.bands.length, plain.cradles.length)
+  for (const b of layout.bands) {
+    const near = [[0, 0], [1.2, 0], [-1.2, 0], [0, 1.2], [0, -1.2]].some(([dx, dz]) => canal(b.x + dx * b.scale, b.z + dz * b.scale))
+    assert.ok(near, 'a band is only where a cradle could not stand')
+  }
   for (const p of [...layout.pumps, ...layout.joints]) assert.ok(open(p.x, p.z), 'nor a pump house or a coupling')
   // The line itself still crosses.
   assert.ok(layout.lines.some((line) => line.samples.some((p) => canal(p.x, p.z))))

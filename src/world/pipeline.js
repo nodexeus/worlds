@@ -22,8 +22,10 @@ import { GROUND_SIZE, mulberry } from './planet.js'
  *
  * The glass and the coolant are swept along each line's own curve here, because glass curves
  * and a model of a straight length does not. Everything they rest on or run through is a model
- * of the project's own (`design/campus/build_buildings.py`): `cradle`, `pump`, the `joint` a
- * line branches at, and the `cabinet` a feeder ends in. Each is one instanced draw.
+ * of the project's own (`design/campus/build_buildings.py`): `cradle`; `band`, a cradle's
+ * collar alone, for where a line crosses a canal and there is no floor to stand one on;
+ * `pump`; the `joint` a line branches at; and the `cabinet` a feeder ends in. Each is one
+ * instanced draw.
  */
 
 /** How high the middle of a line runs above the floor, and how thick its glass is. */
@@ -79,11 +81,12 @@ function sweep(points) {
  *   square canal about its middle, how far out that canal runs
  * @param {Array<{x: number, z: number}>} cells  the middle of every deck tile
  * @param {(x: number, z: number) => boolean} [open]  whether there is floor at a point to stand
- *   something on. Where there is not (a canal), a line still crosses, but as a clear span:
- *   no cradle is stood there, and no pump house or coupling.
+ *   something on. Where there is not (a canal), a line still crosses, wearing a band
+ *   wherever a cradle would have stood, and no pump house or coupling is put there.
  * @returns {{
  *   lines: Array<{kind: 'trunk' | 'spur' | 'feeder', samples: Array<{x: number, z: number, angle: number, along: number}>}>,
  *   cradles: Array<{x: number, z: number, angle: number, scale: number}>,
+ *   bands: Array<{x: number, z: number, angle: number, scale: number}>,
  *   joints: Array<{x: number, z: number}>,
  *   pumps: Array<{x: number, z: number, angle: number}>,
  *   cabinets: Array<{x: number, z: number, angle: number}>,
@@ -206,6 +209,7 @@ export function pipelineLayout(spec, cells, open = () => true) {
 
   // Cradles under every line, but not where something else already stands.
   const cradles = []
+  const bands = []
   const taken = [...joints.map((p) => [p, 2.6]), ...pumps.map((p) => [p, 3.4]), ...cabinets.map((p) => [p, 1.6])]
   for (const line of lines) {
     const size = line.kind === 'feeder' ? FEEDER : TRUNK
@@ -214,11 +218,14 @@ export function pipelineLayout(spec, cells, open = () => true) {
       if (p.along < next) continue
       next += size.cradles
       if (taken.some(([q, clear]) => Math.hypot(p.x - q.x, p.z - q.z) < clear)) continue
-      if (!room(p, 1.2 * size.scale)) continue
-      cradles.push({ x: p.x, z: p.z, angle: p.angle, scale: size.scale })
+      // Where there is no floor for a cradle the line still gets its collar, so the glass is
+      // banded at the same spacing all the way along and nothing hangs in the air.
+      const place = { x: p.x, z: p.z, angle: p.angle, scale: size.scale }
+      if (room(p, 1.2 * size.scale)) cradles.push(place)
+      else bands.push(place)
     }
   }
-  return { lines, cradles, joints, pumps, cabinets }
+  return { lines, cradles, bands, joints, pumps, cabinets }
 }
 
 /**
@@ -316,7 +323,7 @@ function coolant() {
  * @returns {THREE.Group | null} null if the models have not loaded
  */
 export function createPipeline(spec, cells, heightAt, open) {
-  const models = { cradle: campusBuilding('cradle'), joint: campusBuilding('joint'), pump: campusBuilding('pump'), cabinet: campusBuilding('cabinet') }
+  const models = { cradle: campusBuilding('cradle'), band: campusBuilding('band'), joint: campusBuilding('joint'), pump: campusBuilding('pump'), cabinet: campusBuilding('cabinet') }
   if (Object.values(models).some((m) => !m)) return null
 
   const layout = pipelineLayout(spec, cells, open)
@@ -390,6 +397,7 @@ export function createPipeline(spec, cells, heightAt, open) {
   group.add(
     column,
     stand(models.cradle, layout.cradles),
+    stand(models.band, layout.bands),
     stand(models.joint, layout.joints),
     stand(models.pump, layout.pumps),
     stand(models.cabinet, layout.cabinets),
