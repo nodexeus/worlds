@@ -1064,8 +1064,9 @@ export const GENERATORS = {
   // The campus: a warm chord in the middle of the range that never quite repeats. No noise in
   // it, nothing held, and nothing above the D over middle C, where a pure tone starts to hurt: the first try at this was air and a held hum, and both read as static
   // and buzz.
-  // The tones are an open fifth and its octaves, far enough apart that no two of them beat.
-  'foundry-pad': (ctx, d, o, n) => new PadVoice(ctx, d, n, { base: 0.06, tones: [110, 165, 220, 330] }),
+  // Three tones and each a clear 110 Hz from the next: any two closer than that, down here,
+  // beat against each other fast enough to be heard as a buzz.
+  'foundry-pad': (ctx, d, o, n) => new PadVoice(ctx, d, n, { base: 0.06, tones: [110, 220, 330] }),
 
   // One-shots
   'gull': oneShot(bird('gull')),
