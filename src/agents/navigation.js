@@ -361,6 +361,33 @@ export class Navigation {
     return true
   }
 
+  /**
+   * Which waypoint of `path` someone standing at (x, z) should be walking at, given the one
+   * they were on. Waypoints already reached are passed over.
+   *
+   * Within `reached` of one counts only if the next can be walked to in a straight line from
+   * here. A corner turned half a step early is a wall met head on, with nothing to slide
+   * along, and asking for a new route hands back the same one. Within `on` counts whatever
+   * lies beyond, since the route was smoothed from exactly there.
+   *
+   * @param {Array<{x: number, z: number}>} path
+   * @param {number} at  index of the waypoint being walked at
+   * @param {number} x
+   * @param {number} z
+   * @param {number} reached
+   * @param {number} on
+   * @returns {number}
+   */
+  passWaypoints(path, at, x, z, reached, on) {
+    while (at < path.length - 1) {
+      const d = Math.hypot(path[at].x - x, path[at].z - z)
+      if (d > reached) break
+      if (d > on && !this.lineOfSight(x, z, path[at + 1].x, path[at + 1].z)) break
+      at++
+    }
+    return at
+  }
+
   // ── A* ──────────────────────────────────────────────────────────────────────────────
 
   /**

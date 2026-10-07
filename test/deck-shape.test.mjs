@@ -5,7 +5,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { edgeAngle, edgeSegments, onTile, tileOutline } from '../src/world/deck-shape.js'
+import { Navigation } from '../src/agents/navigation.js'
+import { edgeAngle, edgeSegments, onDeck, onTile, tileOutline } from '../src/world/deck-shape.js'
 
 const APOTHEM = 6
 const GAP = 1.5
@@ -70,4 +71,35 @@ test('only the edges asked for are reported, each with a real length', () => {
   const outside = edgeSegments(APOTHEM, insets, [1, 2, 4, 5])
   assert.deepEqual(outside.map((s) => s.edge), [1, 2, 4, 5])
   for (const segment of outside) assert.ok(length(segment) > 1)
+})
+
+/** Two tiles of one deck that share edge 0 of the first: every other edge faces a gap. */
+function pair() {
+  const [nx, nz] = [Math.cos(edgeAngle(0)), Math.sin(edgeAngle(0))]
+  const centres = [{ x: 0, z: 0 }, { x: nx * APOTHEM * 2, z: nz * APOTHEM * 2 }]
+  const insets = [Array(6).fill(GAP), Array(6).fill(GAP)]
+  insets[0][0] = 0
+  insets[1][3] = 0
+  return { centres, insets, nx, nz }
+}
+
+test('a margin is kept from the rim of a deck but not from the seam between its tiles', () => {
+  const { centres, insets, nx, nz } = pair()
+  const rim = APOTHEM - GAP
+  assert.equal(onDeck(nx * APOTHEM, nz * APOTHEM, APOTHEM, centres, insets, 0.2), true, 'on the seam')
+  assert.equal(onDeck(-nx * (rim - 0.1), -nz * (rim - 0.1), APOTHEM, centres, insets), true)
+  assert.equal(onDeck(-nx * (rim - 0.1), -nz * (rim - 0.1), APOTHEM, centres, insets, 0.2), false, 'too near the rim')
+  assert.equal(onDeck(-nx * (rim + 0.1), -nz * (rim + 0.1), APOTHEM, centres, insets), false, 'in the gap')
+})
+
+test('crew can walk from one tile of a deck to the next', () => {
+  // The seam runs at an angle to the route grid, and a margin held off it leaves a line of
+  // cells nobody can cross: the deck becomes one island per tile.
+  const { centres, insets } = pair()
+  const nav = new Navigation()
+  nav.rebuild([], (x, z) => onDeck(x, z, APOTHEM, centres, insets, 0.2))
+  const [from, to] = centres
+  const path = nav.findPath(from.x, from.z, to.x, to.z)
+  const end = path?.[path.length - 1]
+  assert.ok(end && Math.hypot(end.x - to.x, end.z - to.z) < 0.01, 'the route arrives')
 })

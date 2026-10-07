@@ -99,3 +99,25 @@ export function edgeSegments(apothem, insets, edges) {
   }
   return out
 }
+
+/**
+ * Whether (x, z) is on a deck of several tiles, and at least `margin` in from its outer rim.
+ *
+ * The margin is kept only from the edges that are pulled in, which are the ones facing a gap.
+ * A seam between two of the deck's own tiles is floor like any other: holding a margin off
+ * it, as `onTile` does with a radius, would cut one deck into as many islands as it has tiles.
+ *
+ * @param {number} x
+ * @param {number} z
+ * @param {number} apothem
+ * @param {Array<{x: number, z: number}>} centres  each tile's centre, in the frame of (x, z)
+ * @param {number[][]} [insets]  each tile's six insets; missing means a plain hexagon
+ * @param {number} [margin]
+ * @returns {boolean}
+ */
+export function onDeck(x, z, apothem, centres, insets = [], margin = 0) {
+  return centres.some((c, i) => {
+    const kept = insets[i]?.map((inset) => (inset > 0 ? inset + margin : 0))
+    return onTile(x - c.x, z - c.z, apothem, kept)
+  })
+}

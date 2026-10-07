@@ -138,7 +138,12 @@ export function transcriptProgress(thread) {
  */
 const PLAZA = '\u0000plaza'
 /** How much of a crossing's width the crew use: clear of the rails on either side. */
-const CROSSING_WALK = 0.85
+const CROSSING_WALK = 1.05
+/**
+ * How far round a crossing's mouth nobody may be given a place to stand. Somebody parked in
+ * a mouth is in everybody else's way, and there is only the one way through.
+ */
+const MOUTH_CLEAR = { along: 2.2, across: 1.7 }
 /** How far onto each deck a crossing's walkable strip reaches, so the two always join. */
 const CROSSING_OVERLAP = 0.6
 
@@ -874,6 +879,8 @@ export class Colony {
       shipDoor: () => this.ship.shipDoor(),
       shipAirlock: () => this.ship.shipAirlock(),
       groundAt: (x, z) => this.groundAt(x, z),
+      // Where nobody may settle: a walkway or a staircase is the only way through.
+      thoroughfare: (x, z) => this._inMouth(x, z),
     }
   }
 
@@ -920,7 +927,7 @@ export class Colony {
     const target = 1
 
     if (!entry) {
-      const mesh = createBuilding({ seed: hashString(thread.id), accent: plot.accent })
+      const mesh = createBuilding({ seed: hashString(thread.id), accent: plot.accent, fit: this.planet.plot?.buildingRadius })
       const pos = plot.worldSlot(index)
       mesh.position.copy(pos)
       mesh.rotation.y = ((hashString(thread.id) >>> 8) % 360) * (Math.PI / 180)
@@ -1043,6 +1050,14 @@ export class Colony {
     this.nav.rebuild(obstacles, this.planet.plot?.crossings ? (x, z) => this._walkable(x, z) : null)
   }
 
+  /** Whether (x, z) is on a crossing or in the ground just inside either of its mouths. */
+  _inMouth(x, z) {
+    for (const span of this.crossingSpans) {
+      if (onSpan(span, x, z, MOUTH_CLEAR.across, MOUTH_CLEAR.along)) return true
+    }
+    return false
+  }
+
   /**
    * Whether there is anything to stand on at (x, z), on a world whose decks stand apart.
    * A deck is, as far as its own outline goes. A crossing is. The strip between a deck's
@@ -1055,7 +1070,7 @@ export class Colony {
     }
     const cell = worldToHex(x, z)
     const deck = this.deckedCells?.get(`${cell.q},${cell.r}`)
-    return deck ? deck.containsWorld(x, z, 0.2) : true
+    return deck ? deck.standsOn(x, z, 0.2) : true
   }
 
   /** The plot under a world point. On a hex lattice the nearest cell centre is the cell. */
@@ -1258,15 +1273,20 @@ export class Colony {
     // Outward points straight off the zone for a building on its edge, and an astronaut
     // standing in the neighbouring repo's yard reads as belonging to that repo. The inside
     // of its own plot is always the better answer when the outside is somebody else's.
-    const onPlot = (v) => plot.containsWorld(v.x, v.z)
+    // On its own deck, a step in from the edge, and out of the way of every crossing.
+    const standable = (x, z) => (this.planet.plot?.gap ? plot.standsOn(x, z, 0.35) : plot.containsWorld(x, z)) && !this._inMouth(x, z)
+    const onPlot = (v) => standable(v.x, v.z)
     if (!onPlot(site)) {
       const inward = new THREE.Vector3(b.x - Math.cos(a) * stand, 0, b.z - Math.sin(a) * stand)
       if (onPlot(inward)) site = inward
     }
     // Pick against the complete, current map, including scaffolds about to rise. A grid
     // cell alone is insufficient: it can still be inside a building's keep-out radius.
-    const free = this.nav?.nearestClear(site.x, site.z, PLOT_CELL, (x, z) => plot.containsWorld(x, z)) ||
-      this.nav?.nearestClear(site.x, site.z, PLOT_CELL * 2)
+    // Wider and wider, but always somewhere standable: the old last resort took any clear
+    // cell at all, which on a world with crossings can be the middle of a walkway.
+    const free = this.nav?.nearestClear(site.x, site.z, PLOT_CELL, standable) ||
+      this.nav?.nearestClear(site.x, site.z, PLOT_CELL * 2, standable) ||
+      this.nav?.nearestClear(b.x, b.z, PLOT_CELL * 2, standable)
     if (free) site.set(free.x, 0, free.z)
     return site
   }

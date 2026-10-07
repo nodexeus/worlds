@@ -72,3 +72,19 @@ test('with no crossing there is no way across, and nobody is routed through the 
   const path = nav.findPath(-6, 0, 6, 0)
   assert.ok(!path || !path.length || path.every((p) => p.x <= -1.4 + 0.5), 'no path reaches the far deck')
 })
+
+test('a corner is not turned until the way past it is clear', () => {
+  // Floor everywhere but a wall along z < 0 that stops at x = 0. The route from behind the
+  // wall rounds its end, and someone a little short of that corner still has the wall
+  // between them and where they are going.
+  const nav = new Navigation()
+  nav.rebuild([], (x, z) => !(x < 0 && z < 0 && z > -1))
+  const path = [{ x: 0.25, z: -1.25 }, { x: -3.25, z: 0.25 }]
+  const short = { x: -0.2, z: -1.25 }
+  assert.equal(nav.lineOfSight(short.x, short.z, path[1].x, path[1].z), false, 'the wall is in the way')
+  assert.equal(nav.passWaypoints(path, 0, short.x, short.z, 0.55, 0.12), 0, 'keeps walking at the corner')
+  assert.equal(nav.passWaypoints(path, 0, 0.25, -1.2, 0.55, 0.12), 1, 'on the corner, it turns')
+  const open = [path[0], { x: 3.25, z: -1.25 }]
+  assert.equal(nav.passWaypoints(open, 0, short.x, short.z, 0.55, 0.12), 1, 'with a clear line ahead, it turns early')
+})
+
