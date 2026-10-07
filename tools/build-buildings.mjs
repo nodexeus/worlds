@@ -16,11 +16,27 @@ import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
 
-/** The buildings, by the name the game asks for them with. Source: nodexeus-<name>.glb. */
-const BUILDINGS = ['core']
-
-/** Longest edge of a packed texture. */
+/** Longest edge of a deck building's packed maps. */
 const TEXTURE_SIZE = 1024
+
+/**
+ * The models, by the name the game asks for them with, and the size of their maps. Source:
+ * nodexeus-<name>.glb. The Library is a landmark four times the size of a deck building and
+ * is looked at closely, so it keeps more.
+ */
+const BUILDINGS = {
+  core: TEXTURE_SIZE,
+  hall: TEXTURE_SIZE,
+  array: TEXTURE_SIZE,
+  mast: TEXTURE_SIZE,
+  vault: TEXTURE_SIZE,
+  dome: TEXTURE_SIZE,
+  spire: TEXTURE_SIZE,
+  forge: TEXTURE_SIZE,
+  pad: TEXTURE_SIZE,
+  lab: TEXTURE_SIZE,
+  library: 2048,
+}
 
 const [DIR, OUT] = process.argv.slice(2)
 if (!DIR || !OUT) {
@@ -28,7 +44,7 @@ if (!DIR || !OUT) {
   process.exit(1)
 }
 
-const sources = BUILDINGS.map((name) => ({ name, file: join(DIR, `nodexeus-${name}.glb`) }))
+const sources = Object.entries(BUILDINGS).map(([name, size]) => ({ name, size, file: join(DIR, `nodexeus-${name}.glb`) }))
 const missing = sources.filter((s) => !existsSync(s.file))
 
 // The Blender exports are not required to be present: the built file is what ships.
@@ -54,7 +70,7 @@ if (existsSync(OUT) && !process.argv.includes('--force')) {
 
 const io = new NodeIO().registerExtensions(ALL_EXTENSIONS)
 let doc = null
-for (const { name, file } of sources) {
+for (const { name, size, file } of sources) {
   const one = await io.read(file)
   // Blender numbers a name it has used before, so the export's own names cannot be relied on.
   const meshes = one.getRoot().listMeshes()
@@ -62,6 +78,8 @@ for (const { name, file } of sources) {
   meshes[0].setName(name)
   for (const node of one.getRoot().listNodes()) if (node.getMesh()) node.setName(name)
   for (const material of one.getRoot().listMaterials()) material.setName(name)
+  // WebP: a building's four maps as PNG are three megabytes, and there are eleven models.
+  await one.transform(textureCompress({ encoder: sharp, targetFormat: 'webp', quality: 90, resize: [size, size] }))
   if (doc) mergeDocuments(doc, one)
   else doc = one
 }
@@ -76,14 +94,8 @@ for (const other of rest) {
 }
 root.setDefaultScene(scene)
 
-// WebP: a building's four maps as PNG are three megabytes, and there are ten buildings.
-await doc.transform(
-  unpartition(),
-  dedup(),
-  prune(),
-  textureCompress({ encoder: sharp, targetFormat: 'webp', quality: 90, resize: [TEXTURE_SIZE, TEXTURE_SIZE] })
-)
+await doc.transform(unpartition(), dedup(), prune())
 
-console.log(`${basename(OUT)}: ${root.listMeshes().length} buildings, ${root.listTextures().length} textures at ${TEXTURE_SIZE}px`)
+console.log(`${basename(OUT)}: ${root.listMeshes().length} buildings, ${root.listTextures().length} textures`)
 mkdirSync(dirname(OUT), { recursive: true })
 await io.write(OUT, doc)

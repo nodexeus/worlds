@@ -409,10 +409,22 @@ function decorate(material, uniforms) {
  * A kind with no model yet keeps its kit recipe.
  */
 const CAMPUS_MODELS = {
-  // `size` is how much of the room it is given: modelled to fill the deck's building circle,
-  // it stands twice the height of a kit building at full size and crowds its neighbours.
+  habitat: { model: 'hall', label: 'Rack hall' },
+  solar: { model: 'array', label: 'Solar array' },
+  antenna: { model: 'mast', label: 'Relay mast', size: 0.8 },
+  silo: { model: 'vault', label: 'Vault' },
+  greenhouse: { model: 'dome', label: 'Dome' },
+  // Modelled to fill the deck's building circle, it stands twice the height of its
+  // neighbours at full size and crowds them. The same goes for the other tall ones.
   reactor: { model: 'core', label: 'Node core', size: 0.8 },
+  tower: { model: 'spire', label: 'Uplink spire', size: 0.8 },
+  workshop: { model: 'forge', label: 'Fabricator' },
+  pad: { model: 'pad', label: 'Landing pad' },
+  lab: { model: 'lab', label: 'Lab' },
 }
+
+/** The room on a deck the campus models were drawn to fit: a circle this far from the middle. */
+const CAMPUS_MODELLED_FOR = 1.6
 
 /**
  * A building's own copy of a baked material, tuned for the campus sky. Fully metal, blackened
@@ -472,8 +484,11 @@ function decorateBaked(material, uniforms) {
         `#include <emissivemap_fragment>
          // Lit by day, so the amber reads as light and not paint, and brighter after dark.
          totalEmissiveRadiance *= 1.0 + uNight * 1.2;
+         // The construction line, gone by the time the building is all but up: a thread's
+         // size never quite reaches the top of the scale, and a finished building standing
+         // in a skirt of light reads as one still being built.
          float band = 1.0 - smoothstep( 0.0, 0.22, vLocalY - ground );
-         totalEmissiveRadiance += uAccent * band * ( 1.0 - step( 0.999, uProgress ) ) * 1.5;`
+         totalEmissiveRadiance += uAccent * band * ( 1.0 - smoothstep( 0.88, 0.97, uProgress ) ) * 1.5;`
       )
   }
   return material
@@ -569,7 +584,12 @@ export function createBuilding({ seed = 1, accent = 0xc96442, kind = null, fit =
   }
   // Fit the complete recipe, including its barrels/rover, at any yaw. Measuring only
   // the X/Z bounds missed corners and left accessories hanging beyond the deck.
-  const scale = Math.min(BUILDING_SCALE, fit / Math.max(radius, 0.001)) * (baked ? own.size ?? 1 : 1)
+  // A model of the world's own was drawn at its real size, so it is only ever scaled by how
+  // the room on offer compares with the room it was drawn for. Fitting it to its own reach
+  // instead would blow a slender mast up until it was as wide as a hall.
+  const scale = baked
+    ? (fit / CAMPUS_MODELLED_FOR) * (own.size ?? 1)
+    : Math.min(BUILDING_SCALE, fit / Math.max(radius, 0.001))
   geo.scale(scale, scale, scale)
   // `scale()` transforms position and normal and nothing else, so a custom attribute that
   // holds a *position* has to be taken along by hand. Miss this and a rotor turns about a
