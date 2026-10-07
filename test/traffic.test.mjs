@@ -20,14 +20,14 @@ test('a pass crosses the whole world: it starts and ends out past the edge of th
   }
 })
 
-test('it flies over the campus, high enough to clear everything on it', () => {
+test('it flies over the campus, over the buildings and under the camera', () => {
   for (const pass of passes(200)) {
     // Nearest it comes to the middle of the world: within sight of it, never far off to one side.
     const along = -(pass.from.x * pass.heading.x + pass.from.z * pass.heading.z)
     const nearest = Math.hypot(pass.from.x + pass.heading.x * along, pass.from.z + pass.heading.z * along)
-    assert.ok(nearest < 100, `a pass ${nearest.toFixed(0)} from the middle`)
-    assert.ok(pass.height >= 30 && pass.height <= 48)
-    assert.ok(pass.speed >= 22 && pass.speed <= 32)
+    assert.ok(nearest < 45, `a pass ${nearest.toFixed(0)} from the middle`)
+    assert.ok(pass.height >= 15 && pass.height <= 23)
+    assert.ok(pass.speed >= 16 && pass.speed <= 24)
   }
 })
 
