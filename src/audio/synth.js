@@ -547,8 +547,9 @@ class PadVoice extends Voice {
     if (this.acc < 0.15) return
     this.acc = 0
     for (const tone of this.tones) {
-      // Up from silence and back, spending as long near nothing as near full.
-      const level = Math.pow(0.5 + 0.5 * Math.sin(tone.phase), 2)
+      // Up from silence and back, and up for more of the time than not, so that two or three
+      // are always sounding together and what is heard is a chord and not one note at a time.
+      const level = Math.pow(0.5 + 0.5 * Math.sin(tone.phase), 1.2)
       tone.g.gain.setTargetAtTime(level / this.tones.length, now, 0.5)
     }
   }
@@ -1064,9 +1065,10 @@ export const GENERATORS = {
   // The campus: a warm chord in the middle of the range that never quite repeats. No noise in
   // it, nothing held, and nothing above the D over middle C, where a pure tone starts to hurt: the first try at this was air and a held hum, and both read as static
   // and buzz.
-  // Three tones and each a clear 110 Hz from the next: any two closer than that, down here,
-  // beat against each other fast enough to be heard as a buzz.
-  'foundry-pad': (ctx, d, o, n) => new PadVoice(ctx, d, n, { base: 0.06, tones: [110, 220, 330] }),
+  // An open D major: fifth, fourth and third, so whichever of them are up at once make a
+  // chord. Not octaves and fifths of one note, which the ear fuses into a single tone coming
+  // and going, and no two a step apart, which down here would beat.
+  'foundry-pad': (ctx, d, o, n) => new PadVoice(ctx, d, n, { base: 0.06, tones: [146.8, 220, 293.7, 370] }),
 
   // One-shots
   'gull': oneShot(bird('gull')),
