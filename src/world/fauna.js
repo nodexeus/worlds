@@ -5,6 +5,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { withCurve } from '../core/curve.js'
 import { mulberry } from './planet.js'
 import { stepParcel } from './parcel-physics.js'
+import { Traffic } from './traffic.js'
 
 /**
  * The life layer: birds wheeling over the colony, butterflies in the scatter, fish leaping
@@ -501,6 +502,37 @@ function droneFromParts(parts) {
     else tagged.push(tag(geo))
   }
   return merge(tagged)
+}
+
+/**
+ * The crate off a drone model, on its own and about its own middle, for when it has been let
+ * go: the same parts the drone carries, in the two colours the drone's shader gives them.
+ *
+ * @returns {THREE.BufferGeometry | null} null if the model has no crate
+ */
+function parcelFromParts(parts, dark, bright) {
+  const pieces = []
+  const paint = { crate: new THREE.Color(dark), crate_amber: new THREE.Color(bright) }
+  for (const { name, geometry } of parts) {
+    const color = paint[name]
+    if (!color) continue
+    const geo = geometry.index ? geometry.toNonIndexed() : geometry.clone()
+    for (const key of Object.keys(geo.attributes)) {
+      if (key !== 'position' && key !== 'normal') geo.deleteAttribute(key)
+    }
+    const colors = new Float32Array(geo.attributes.position.count * 3)
+    for (let i = 0; i < colors.length; i += 3) color.toArray(colors, i)
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+    pieces.push(geo)
+  }
+  if (!pieces.length) return null
+  const crate = BufferGeometryUtils.mergeGeometries(pieces, false)
+  pieces.forEach((g) => g.dispose())
+  // It hangs under the drone in the model; a parcel turns about its own middle.
+  crate.computeBoundingBox()
+  const middle = crate.boundingBox.getCenter(new THREE.Vector3())
+  crate.translate(-middle.x, -middle.y, -middle.z)
+  return crate
 }
 
 // ── shared scratch ────────────────────────────────────────────────────────────────────
@@ -1103,9 +1135,14 @@ class Fleet {
     // is "delivered"; what actually lands on the deck is one of these — a small box with
     // its own fall, a couple of bounces, and a quiet fade once it has settled.
     this.parcels = []
+    // The crate that lands is the crate that was carried: a world with a drone of its own
+    // drops that drone's crate, not a plain box in its place.
+    const crate = own ? parcelFromParts(own, spec.accentA ?? 0x3a3d44, spec.accentB ?? 0xc9a26a) : null
     this.parcelMesh = new THREE.InstancedMesh(
-      new THREE.BoxGeometry(0.3, 0.3, 0.3),
-      new THREE.MeshStandardMaterial({ color: 0xc9a26a, roughness: 0.8, metalness: 0.05 }),
+      crate || new THREE.BoxGeometry(0.3, 0.3, 0.3),
+      crate
+        ? new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.35 })
+        : new THREE.MeshStandardMaterial({ color: 0xc9a26a, roughness: 0.8, metalness: 0.05 }),
       PARCEL_CAP
     )
     this.parcelMesh.count = 0
@@ -1452,6 +1489,7 @@ const EMPTY = []
  *
  * `planet.fauna` is the whole recipe:
  *
+ *   aircraft:    { every = [40, 90], flight = [1, 3] }   seconds between passes, craft in one
  *   birds:       { kind: 'gull'|'parrot'|'crow'|'swallow'|'none', count = 14,
  *                  altitude = [14, 22], colors = the species' own, size = 1 }
  *   butterflies: { count = 40, colors = a bright default set }
@@ -1474,6 +1512,7 @@ export class Fauna {
     this.meadow = null
     this.shoal = null
     this.fleet = null
+    this.traffic = null
 
     this._sites = { pad: { x: 0, y: 0, z: 0 }, door: { x: 0, y: 0, z: 0 }, sites: [] }
     this._tier = TIER[settings.get('fauna')] ?? 1
@@ -1502,6 +1541,8 @@ export class Fauna {
       this.fleet = new Fleet(this.group, fauna.drones, env, seed ^ 0x4e40, this._tier)
       this.fleet.setSites(this._sites.pad, this._sites.door, this._sites.sites)
     }
+    // A built world's birds: see traffic.js.
+    if (fauna.aircraft) this.traffic = new Traffic(this.group, fauna.aircraft, seed ^ 0x5f51)
   }
 
   /** Where the drones live and where they deliver. Call whenever the roster changes. */
@@ -1538,6 +1579,7 @@ export class Fauna {
     }
     this.shoal?.update(dt, elapsed, hooks, motion)
     this.fleet?.update(dt, elapsed, hooks, motion)
+    this.traffic?.update(dt, elapsed, motion)
   }
 
   /** `{ x, y, z, busy }` per drone, reused frame to frame — for the rotor whine. */
@@ -1569,7 +1611,8 @@ export class Fauna {
     this.meadow?.dispose()
     this.shoal?.dispose()
     this.fleet?.dispose()
-    this.flock = this.meadow = this.shoal = this.fleet = null
+    this.traffic?.dispose()
+    this.flock = this.meadow = this.shoal = this.fleet = this.traffic = null
   }
 
   dispose() {

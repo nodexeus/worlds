@@ -90,7 +90,12 @@ export const PLANETS = {
     companion: { name: 'Anode', color: 0x2a2a30, size: 2.0, glow: 0x56565e },
     dust: 0,
     // The campus's own maintenance drones: blackened hulls, amber rotor tips.
-    fauna: { drones: { count: 5, model: 'campus', hull: [0x3a3a42, 0x2c2c33, 0x47474f], accentA: 0x17171b, accentB: 0xfdc700 } },
+    fauna: {
+      drones: { count: 5, model: 'campus', hull: [0x3a3a42, 0x2c2c33, 0x47474f], accentA: 0x17171b, accentB: 0xfdc700 },
+      // And where another world has birds, cargo skiffs passing over: one to three at a
+      // time, with the sky empty for this many seconds between.
+      aircraft: { every: [35, 80], flight: [1, 3] },
+    },
     audio: {
       beds: [{ sound: 'lunar-silence', gain: 0.5 }],
       events: [],

@@ -1174,6 +1174,54 @@ def joint(p):
 
 PIPELINE = {"cradle": cradle, "band": band, "pump": pump, "joint": joint}
 
+# ---------- what passes overhead ----------
+def skiff(p):
+    """
+    A cargo skiff: what crosses the campus sky now and then, on its way somewhere else. About
+    seven metres long, nose along +x, drawn about the middle of its hull so it can be banked
+    and turned where it is.
+    """
+    along = xyz(ry=math.pi / 2)                 # a prism drawn up z now runs along x
+    flat = Matrix.Diagonal((1.0, 1.0, 0.62, 1.0))
+    # The hull: six-sided, tapered to the nose and less to the tail.
+    prism(p.black, 6, 0.80, 0.80, -2.4, 1.6, flat @ along)
+    prism(p.black, 6, 0.80, 0.24, 1.6, 3.5, flat @ along)
+    prism(p.black, 6, 0.52, 0.80, -3.3, -2.4, flat @ along)
+    prism(p.steel, 6, 0.83, 0.83, 1.50, 1.66, flat @ along)
+    prism(p.steel, 6, 0.83, 0.83, -2.46, -2.30, flat @ along)
+    # The canopy, and a line of light under its sill.
+    box(p.recess, 1.30, 0.80, 0.16, xyz(1.75, 0, 0.36, ry=0.13))
+    box(p.steel, 0.10, 0.90, 0.20, xyz(1.08, 0, 0.42))
+    box(p.light, 1.20, 0.86, 0.025, xyz(1.75, 0, 0.27, ry=0.13))
+    box(p.steel, 3.00, 0.30, 0.06, xyz(-0.60, 0, 0.50))
+    # Stub wings, an engine at the end of each.
+    for side in (-1, 1):
+        box(p.steel, 1.50, 1.40, 0.10, xyz(-0.70, side * 1.25, 0.0))
+        box(p.paint, 1.50, 0.16, 0.012, xyz(-0.70, side * 1.30, 0.056))
+        pod = xyz(-0.70, side * 2.15, 0.0, ry=math.pi / 2)
+        prism(p.black, 8, 0.36, 0.40, -1.20, 1.00, pod)
+        prism(p.steel, 8, 0.43, 0.43, 0.86, 1.00, pod)
+        prism(p.recess, 8, 0.33, 0.33, 1.00, 1.02, pod)
+        prism(p.steel, 8, 0.39, 0.33, -1.38, -1.20, pod)
+        prism(p.light, 8, 0.27, 0.27, -1.40, -1.38, pod)
+        # Running lights at the tips, and a canted fin at the tail.
+        box(p.light, 0.16, 0.03, 0.05, xyz(-0.30, side * 2.56, 0.0))
+        plate(p.steel, [(-3.2, 0.2), (-2.3, 0.2), (-2.7, 1.0), (-3.3, 1.0)], 0.07,
+              Matrix.Rotation(side * 0.42, 4, "X") @ xyz(0, side * 0.34, 0))
+    # The load slung under it.
+    box(p.steel, 2.30, 1.00, 0.56, xyz(-0.40, 0, -0.72))
+    for x in (-1.25, -0.40, 0.45):
+        box(p.black, 0.10, 1.04, 0.60, xyz(x, 0, -0.72))
+    box(p.paint, 2.30, 0.012, 0.14, xyz(-0.40, -0.506, -0.72))
+    box(p.paint, 2.30, 0.012, 0.14, xyz(-0.40, 0.506, -0.72))
+    box(p.light, 1.60, 0.20, 0.02, xyz(-0.40, 0, -1.01))
+    for x in (-1.2, 0.4):
+        for side in (-1, 1):
+            rod(p.frame, (x, side * 0.36, -0.44), (x, side * 0.36, -0.30), 0.04)
+
+
+SKY = {"skiff": skiff}
+
 PROPS = {"stack": stack, "pylon": pylon, "tanks": tanks, "manifold": manifold, "beacon": beacon, "cabinet": cabinet}
 
 BUILDINGS = {
@@ -1182,6 +1230,7 @@ BUILDINGS = {
     "library": library,
     **PROPS,
     **PIPELINE,
+    **SKY,
 }
 
 built = {}

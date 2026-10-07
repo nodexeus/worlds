@@ -48,6 +48,11 @@ const BUILDINGS = {
   band: 512,
   pump: 1024,
   joint: 512,
+  // What flies over. Small on screen and never close.
+  skiff: 512,
+  // The crew, one mesh a kind, each vertex carrying its bone in `_bone`. Looked at closely.
+  'crew-unit': 1024,
+  'crew-rock': 1024,
 }
 
 const [DIR, OUT] = process.argv.slice(2)

@@ -1112,6 +1112,8 @@ async function boot() {
     console.error(kitError || crewError)
   }
   colony.astronauts.setRig(crewRig())
+  // The rig and the models load side by side; whichever came second, both are here now.
+  colony.astronauts.setRobots()
   if (!kitError) colony.onAssetsReady()
 
   assetsSettled = true

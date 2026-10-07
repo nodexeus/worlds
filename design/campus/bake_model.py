@@ -49,6 +49,7 @@ for old in list(export.objects):
 
 deps = bpy.context.evaluated_depsgraph_get()
 slots = []
+BONE_OF = {name: index for index, name in enumerate(SPEC["bones"])} if SPEC.get("bones") else None
 joined = bmesh.new()
 for part in gate.objects:
     material = part.data.materials[0]
@@ -65,7 +66,22 @@ for part in gate.objects:
     buffer = bpy.data.meshes.new("tmp")
     piece.to_mesh(buffer)
     piece.free()
+    before = len(joined.verts)
     joined.from_mesh(buffer)
+    if BONE_OF is not None:
+        # A figure for the crew: each part is named `<bone>__<finish>`, and its vertices carry
+        # that bone's number so the game can hang them on it. See build_crew.py.
+        layer = joined.verts.layers.float.get("_bone") or joined.verts.layers.float.new("_bone")
+        joined.verts.ensure_lookup_table()
+        number = BONE_OF[part.name.split("__")[0]]
+        # And what kind of light it is, if it is one: an eye (1) or any other lamp (2). The
+        # game drives the two apart from the rest of the body.
+        light = joined.verts.layers.float.get("_light") or joined.verts.layers.float.new("_light")
+        # Blender numbers a name it has used before (`head__eye.001`), so the number is cut off.
+        kind = {"eye": 1.0, "lamp": 2.0}.get(part.name.split("__")[1].split(".")[0], 0.0)
+        for index in range(before, len(joined.verts)):
+            joined.verts[index][layer] = number
+            joined.verts[index][light] = kind
     bpy.data.meshes.remove(buffer)
 
 mesh = bpy.data.meshes.new(NAME + "_export")
@@ -207,7 +223,11 @@ bpy.ops.object.select_all(action="DESELECT")
 baked.select_set(True)
 bpy.context.view_layer.objects.active = baked
 target = os.path.join(HERE, "nodexeus-%s.glb" % NAME)
-bpy.ops.export_scene.gltf(filepath=target, use_selection=True, export_format="GLB", export_apply=True, export_yup=True)
+bpy.ops.export_scene.gltf(
+    filepath=target, use_selection=True, export_format="GLB", export_apply=True, export_yup=True,
+    # Custom attributes whose names start with an underscore go out with the mesh: `_bone`.
+    export_attributes=BONE_OF is not None,
+)
 bpy.ops.wm.save_mainfile()
 
 baked.data.calc_loop_triangles()
