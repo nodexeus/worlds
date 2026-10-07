@@ -43,6 +43,9 @@ const BUILDINGS = {
   manifold: 512,
   beacon: 512,
   cabinet: 512,
+  // The coolant line: seen close, where it passes the campus.
+  pipe: 1024,
+  pump: 1024,
 }
 
 const [DIR, OUT] = process.argv.slice(2)
@@ -87,6 +90,15 @@ for (const { name, size, file } of sources) {
   for (const material of one.getRoot().listMaterials()) material.setName(name)
   // WebP: a building's four maps as PNG are three megabytes, and there are eleven models.
   await one.transform(textureCompress({ encoder: sharp, targetFormat: 'webp', quality: 90, resize: [size, size] }))
+  // Glass is not baked: it rides along as a bare mesh, `<name>_glass`, for the game to give a
+  // see-through material of its own.
+  const glassFile = join(DIR, `nodexeus-${name}-glass.glb`)
+  if (existsSync(glassFile)) {
+    const glass = await io.read(glassFile)
+    for (const mesh of glass.getRoot().listMeshes()) mesh.setName(`${name}_glass`)
+    for (const node of glass.getRoot().listNodes()) if (node.getMesh()) node.setName(`${name}_glass`)
+    mergeDocuments(one, glass)
+  }
   if (doc) mergeDocuments(doc, one)
   else doc = one
 }
