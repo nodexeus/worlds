@@ -80,6 +80,111 @@ export function robotGeometry(source, bones) {
   if (source.index) geometry.setIndex(source.index.clone())
   geometry.setAttribute('skinIndex', new THREE.BufferAttribute(skinIndex, 4))
   geometry.setAttribute('skinWeight', new THREE.BufferAttribute(skinWeight, 4))
+  // Which vertices are lights, and of which sort: an eye (1), any other lamp (2), neither (0).
+  const light = source.getAttribute('_light')
+  const mark = new Float32Array(count)
+  let eyeY = 0
+  let eyes = 0
+  for (let i = 0; i < count; i++) {
+    mark[i] = light ? Math.round(light.getX(i)) : 0
+    if (mark[i] === 1) {
+      eyeY += geometry.getAttribute('position').getY(i)
+      eyes++
+    }
+  }
+  geometry.setAttribute('aMark', new THREE.BufferAttribute(mark, 1))
+  // How high the eyes are in the rest pose: what a lid closes toward.
+  geometry.userData.eyeY = eyes ? eyeY / eyes : 0
   geometry.computeBoundingBox()
   return geometry
+}
+
+/**
+ * What a robot's lights are doing, given what its thread is doing: the one place a robot's
+ * face says anything.
+ *
+ * An eye is a ring of light with a point in it, so it has three things to say with: how
+ * bright it is, how far open, and what colour. Everything else that is lit on a robot (the
+ * mark on its chest, the rings on its ears) shares one brightness.
+ *
+ * @param {string} status  the thread's state, as the colony names it
+ * @param {number} elapsed  seconds, for whatever pulses
+ * @param {number} phase  the robot's own offset, so no two blink together
+ * @returns {{eye: number, open: number, lamp: number, fault: number}} `open` runs from shut
+ *   (0) to wide (1); `fault` from the eye's own amber (0) to red (1)
+ */
+export function robotLights(status, elapsed, phase) {
+  // A blink: shut for an eighth of a second, every few seconds, each to its own clock.
+  const every = 3.2 + ((phase * 1.7) % 2.6)
+  const blink = (elapsed + phase * 5) % every < 0.13 ? 0.1 : 1
+  const breath = 0.5 + 0.5 * Math.sin(elapsed * 2.6 + phase)
+  switch (status) {
+    // Something is wrong, and it should be seen across the campus: red, and stuttering like
+    // a fault light.
+    case 'blocked': {
+      const on = Math.sin(elapsed * 9 + phase) > 0.2 ? 1 : 0.12
+      return { eye: 1.7 * on, open: 1, lamp: 1.6 * on, fault: 1 }
+    }
+    // Asking for you: wide, and swelling slowly, which is a call and not an alarm.
+    case 'waiting':
+      return { eye: 0.9 + 1.1 * (0.5 + 0.5 * Math.sin(elapsed * 3.2 + phase)), open: 1, lamp: 0.8 + 0.9 * breath, fault: 0 }
+    case 'working':
+      return { eye: 1.15, open: blink, lamp: 0.8 + 0.35 * breath, fault: 0 }
+    case 'celebrating':
+      return { eye: 1.7, open: 1, lamp: 1.5, fault: 0 }
+    // Dormant, not dead: lids all but shut, the lights turned right down.
+    case 'sleeping':
+      return { eye: 0.3, open: 0.2, lamp: 0.3, fault: 0 }
+    default:
+      return { eye: 0.9, open: blink, lamp: 0.55 + 0.25 * breath, fault: 0 }
+  }
+}
+
+/**
+ * Make a robot's skinned material answer to `robotLights`. Call it after the crew's own
+ * skinning hook is on the material: this adds to that, and does not replace it.
+ *
+ * Reads two attributes: `aMark` per vertex, from `robotGeometry`, and `aLight` per instance,
+ * holding (eye, open, lamp, fault).
+ *
+ * @param {THREE.Material} material
+ * @param {number} eyeY  how high the eyes are in the rest pose
+ */
+export function decorateLights(material, eyeY) {
+  const skinned = material.onBeforeCompile
+  material.onBeforeCompile = (shader, renderer) => {
+    skinned?.(shader, renderer)
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+         attribute float aMark;
+         attribute vec4 aLight;
+         varying float vMark;
+         varying vec4 vLight;`
+      )
+      // Ahead of the skinning, in the rest pose, where "up" is still up: a lid closing is the
+      // eye's light drawn in toward its own middle.
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+         vMark = aMark;
+         vLight = aLight;
+         if ( aMark > 0.5 && aMark < 1.5 ) transformed.y = ${eyeY.toFixed(5)} + ( transformed.y - ${eyeY.toFixed(5)} ) * aLight.y;`
+      )
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\n varying float vMark;\n varying vec4 vLight;')
+      .replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+         if ( vMark > 0.5 && vMark < 1.5 ) {
+           // Amber to red is green and blue taken away, with the red left to carry it.
+           totalEmissiveRadiance *= vLight.x * mix( vec3( 1.0 ), vec3( 1.25, 0.12, 0.1 ), vLight.w );
+         } else if ( vMark > 1.5 ) {
+           totalEmissiveRadiance *= vLight.z;
+         }`
+      )
+  }
+  material.customProgramCacheKey = () => `bc-robot-lights-${eyeY.toFixed(5)}`
+  return material
 }

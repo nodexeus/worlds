@@ -74,8 +74,14 @@ for part in gate.objects:
         layer = joined.verts.layers.float.get("_bone") or joined.verts.layers.float.new("_bone")
         joined.verts.ensure_lookup_table()
         number = BONE_OF[part.name.split("__")[0]]
+        # And what kind of light it is, if it is one: an eye (1) or any other lamp (2). The
+        # game drives the two apart from the rest of the body.
+        light = joined.verts.layers.float.get("_light") or joined.verts.layers.float.new("_light")
+        # Blender numbers a name it has used before (`head__eye.001`), so the number is cut off.
+        kind = {"eye": 1.0, "lamp": 2.0}.get(part.name.split("__")[1].split(".")[0], 0.0)
         for index in range(before, len(joined.verts)):
             joined.verts[index][layer] = number
+            joined.verts[index][light] = kind
     bpy.data.meshes.remove(buffer)
 
 mesh = bpy.data.meshes.new(NAME + "_export")

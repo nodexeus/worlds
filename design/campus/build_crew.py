@@ -25,6 +25,7 @@ loads the file.
             frame  the black machine underneath: joints, struts, hands
             glass  the dark of a visor
             lamp   lit amber
+            eye    lit amber too, but the eyes' own light, which the game animates
 
 Measured in the rig's own units: feet on z = 0, about 1.9 to the top of the head. Front is -Y.
 Each kind lands in its own `NX_Crew_<Kind>` collection. `bake_model.py` then joins, bakes
@@ -152,13 +153,15 @@ def machinery(f, caps="frame"):
 
 
 def lens(f, bone, matrix, size=1.0):
-    """An eye: a housing, a ring of light, a lens, and the point of light in it."""
+    """An eye: a housing, a ring of light, a lens, and the point of light in it. The lit
+    parts are their own finish, because they are what the game moves: an eye blinks,
+    narrows and brightens with what its thread is doing."""
     k = size
     f.drum(bone, "frame", 14, 0.122 * k, 0.112 * k, 0.0, 0.05 * k, matrix)
-    f.drum(bone, "lamp", 14, 0.098 * k, 0.098 * k, 0.05 * k, 0.057 * k, matrix)
+    f.drum(bone, "eye", 14, 0.098 * k, 0.098 * k, 0.05 * k, 0.057 * k, matrix)
     f.drum(bone, "frame", 14, 0.074 * k, 0.070 * k, 0.05 * k, 0.066 * k, matrix)
     f.ball(bone, "glass", 0.064 * k, matrix @ Matrix.Translation((0, 0, 0.062 * k)), (1.0, 1.0, 0.42), 12, 7)
-    f.drum(bone, "lamp", 12, 0.021 * k, 0.021 * k, 0.086 * k, 0.091 * k, matrix)
+    f.drum(bone, "eye", 12, 0.021 * k, 0.021 * k, 0.086 * k, 0.091 * k, matrix)
 
 
 # ---------- unit: plate over the frame ----------
@@ -475,12 +478,14 @@ LOOKS = {
         "frame": lambda: bpy.data.materials["NX_Steel_Black"],
         "glass": lens_glass,
         "lamp": lambda: bpy.data.materials["NX_Amber_Light"],
+        "eye": lambda: bpy.data.materials["NX_Amber_Light"],
     },
     "rock": {
         "shell": lambda: bpy.data.materials.get("NX_Stone") or weathered_stone("NX_Stone"),
         "frame": lambda: bpy.data.materials["NX_Steel_Black"],
         "glass": lens_glass,
         "lamp": lambda: bpy.data.materials["NX_Amber_Light"],
+        "eye": lambda: bpy.data.materials["NX_Amber_Light"],
     },
 }
 

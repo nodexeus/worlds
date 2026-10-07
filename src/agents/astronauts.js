@@ -8,7 +8,7 @@ import { bendPoint, withCurve } from '../core/curve.js'
 import { Props, CHECK_LEN, CHECK_EVERY, pickProp } from './props.js'
 import { projectHitPoint, bodyHitDistance } from './picking.js'
 import { helmetGeometry, visorGeometry, screenGeometry } from './model.js'
-import { ROBOT_KINDS, robotGeometry, robotKind } from './robots.js'
+import { ROBOT_KINDS, decorateLights, robotGeometry, robotKind, robotLights } from './robots.js'
 import { campusBuilding } from '../world/campus-buildings.js'
 
 /**
@@ -335,12 +335,20 @@ export class Astronauts {
       const frames = new THREE.InstancedBufferAttribute(new Float32Array(this.capacity), 1)
       frames.setUsage(THREE.DynamicDrawUsage)
       geo.setAttribute('aFrame', frames)
+      // What its eyes and lamps are doing: see `robotLights`.
+      const lights = new THREE.InstancedBufferAttribute(new Float32Array(this.capacity * 4).fill(1), 4)
+      lights.setUsage(THREE.DynamicDrawUsage)
+      geo.setAttribute('aLight', lights)
       const surface = model.material.clone()
       // As for the campus's buildings: fully metal, dark plate has only a dark sky to show
       // and goes to a silhouette, and the lights are driven above one for the bloom.
       surface.metalness = 0.75
       surface.emissiveIntensity = 1.7
-      const mesh = new THREE.InstancedMesh(geo, decorateSkinned(surface, this.crewUniforms), this.capacity)
+      const mesh = new THREE.InstancedMesh(
+        geo,
+        decorateLights(decorateSkinned(surface, this.crewUniforms), geo.userData.eyeY),
+        this.capacity
+      )
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
       mesh.count = 0
       mesh.receiveShadow = false
@@ -351,7 +359,7 @@ export class Astronauts {
         { normals: false }
       )
       this.group.add(mesh)
-      return { mesh, frames, n: 0 }
+      return { mesh, frames, lights, n: 0 }
     })
     this._applyShadowFlags()
   }
@@ -1540,6 +1548,12 @@ export class Astronauts {
       if (robots) {
         const kind = robots[agent.kind % robots.length]
         kind.mesh.setMatrixAt(kind.n, root)
+        const lit = robotLights(agent.status, elapsed, agent.phase)
+        const at = kind.n * 4
+        kind.lights.array[at] = lit.eye
+        kind.lights.array[at + 1] = lit.open
+        kind.lights.array[at + 2] = lit.lamp
+        kind.lights.array[at + 3] = lit.fault
         kind.frames.array[kind.n++] = agent.frame
       } else if (crew) {
         crew.setMatrixAt(i, root)
@@ -1622,6 +1636,7 @@ export class Astronauts {
       kind.mesh.count = kind.n
       kind.mesh.instanceMatrix.needsUpdate = true
       kind.frames.needsUpdate = true
+      kind.lights.needsUpdate = true
     }
     if (crew) {
       crew.count = robots ? 0 : n
