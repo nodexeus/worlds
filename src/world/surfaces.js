@@ -23,6 +23,7 @@ export const DECK_TEXTURE_SCALE = 4
 
 let deck = null
 let kerb = null
+let steel = null
 
 /**
  * The plot deck: a plated metal floor of bolted panels.
@@ -201,6 +202,39 @@ function dot(ctx, x, y, r) {
   ctx.beginPath()
   ctx.arc(x, y, r, 0, Math.PI * 2)
   ctx.fill()
+}
+
+/**
+ * The campus deck: worn, blackened steel plate.
+ *
+ * Unlike the drawn deck above, this one is not tinted per repo, so it can be a finished
+ * surface with its own colour: baked maps, made by `design/campus/bake_deck.py`. The second
+ * map carries occlusion, roughness and metalness in its red, green and blue, the way glTF
+ * packs them, and that roughness is most of what makes it read as metal: rubbed edges throw
+ * the sky back sharply, the grime round the tread does not.
+ *
+ * The maps arrive after the first frame; until then the material's own values stand in.
+ */
+export function steelDeckSurface() {
+  if (steel) return steel
+  const loader = new THREE.TextureLoader()
+  const load = (name, colorSpace) => {
+    const t = loader.load(`${import.meta.env.BASE_URL}assets/campus/${name}`)
+    t.wrapS = THREE.RepeatWrapping
+    t.wrapT = THREE.RepeatWrapping
+    t.colorSpace = colorSpace
+    t.anisotropy = 8
+    return t
+  }
+  const orm = load('deck_orm.jpg', THREE.NoColorSpace)
+  steel = {
+    map: load('deck_basecolor.jpg', THREE.SRGBColorSpace),
+    normalMap: load('deck_normal.png', THREE.NoColorSpace),
+    aoMap: orm,
+    roughnessMap: orm,
+    metalnessMap: orm,
+  }
+  return steel
 }
 
 function texture(el, colorSpace) {

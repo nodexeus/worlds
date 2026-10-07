@@ -18,3 +18,7 @@ CC0 requires nothing of you. Crediting Kay, Kenney and Quaternius costs nothing 
 
 See the repository README under "Where the art comes from" for how these are packed, and
 "Rebuilding them" if you want to regenerate them from the original packs.
+
+## campus/deck_*.jpg, campus/deck_normal.png
+
+The campus deck plate. Made for this project by `design/campus/bake_deck.py`, run in Blender.
