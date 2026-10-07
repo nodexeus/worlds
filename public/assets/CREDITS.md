@@ -27,3 +27,8 @@ The campus deck plate. Made for this project by `design/campus/bake_deck.py`, ru
 
 The campus's own buildings. Modelled for this project in Blender (`design/campus/build_*.py`),
 baked by `design/campus/bake_model.py` and packed by `tools/build-buildings.mjs`.
+
+## campus/floor_*.jpg, campus/drone.glb
+
+The foundry floor and the campus drone. Made for this project: `design/campus/bake_foundry.py`
+and `design/campus/build_drone.py`, run in Blender.

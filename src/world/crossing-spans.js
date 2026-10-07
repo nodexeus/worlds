@@ -69,3 +69,25 @@ export function heightOnSpan(span, x, z) {
   const t = Math.min(1, Math.max(0, (along + span.half) / (span.half * 2)))
   return span.y0 + span.rise * t
 }
+
+/**
+ * How high the walking surface is at (x, z) if a crossing carries it, or null if none does.
+ *
+ * `overlap` lets a crossing answer for a little of the deck past each of its ends, where it
+ * reports that end's height, which is the deck's own. It has to: a crossing's ends are measured
+ * from the grid, and a deck is drawn a hair smaller than its cell, so the two stop a few
+ * centimetres short of each other. Whoever is asked about a point in that sliver must not be
+ * told it is on neither.
+ *
+ * @param {Span[]} spans
+ * @param {number} halfWidth
+ * @param {number} overlap
+ * @returns {number | null}
+ */
+export function heightOnCrossings(spans, x, z, halfWidth, overlap) {
+  for (const span of spans) {
+    if (onSpan(span, x, z, halfWidth, overlap)) return heightOnSpan(span, x, z)
+  }
+  return null
+}
+

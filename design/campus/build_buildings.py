@@ -19,6 +19,7 @@ Each building lands in its own `NX_<Name>` collection as a handful of objects, o
 material, ready for `bake_model.py`.
 """
 import math
+import os
 import random
 
 import bmesh
@@ -105,6 +106,9 @@ class Parts:
     def __init__(self):
         for name in self.GROUPS:
             setattr(self, name, bmesh.new())
+        # Glass is not baked: the game draws it see-through, with a material of its own. It
+        # goes to a collection beside the model's and is exported bare, as `<name>_glass`.
+        self.glass = bmesh.new()
 
     def finish(self, name):
         """Hand the parts to the scene as the `NX_<Name>` collection. Returns the triangle count."""
@@ -117,6 +121,7 @@ class Parts:
             bpy.data.objects.remove(old, do_unlink=True)
 
         triangles = 0
+        self._glass(name)
         for group, (material, bevel) in self.GROUPS.items():
             bm = getattr(self, group)
             if not bm.verts:
@@ -147,6 +152,53 @@ class Parts:
             triangles += len(counted.loop_triangles)
             evaluated.to_mesh_clear()
         return triangles
+
+
+def _glass(self, name):
+    title = "NX_" + name.capitalize() + "_Glass"
+    existing = bpy.data.collections.get(title)
+    if existing:
+        for old in list(existing.objects):
+            bpy.data.objects.remove(old, do_unlink=True)
+    if not self.glass.verts:
+        self.glass.free()
+        return
+    collection = existing or bpy.data.collections.new(title)
+    if collection.name not in [c.name for c in bpy.context.scene.collection.children]:
+        bpy.context.scene.collection.children.link(collection)
+    bmesh.ops.recalc_face_normals(self.glass, faces=self.glass.faces)
+    mesh = bpy.data.meshes.new(name + "_glass")
+    self.glass.to_mesh(mesh)
+    self.glass.free()
+    for polygon in mesh.polygons:
+        polygon.use_smooth = True
+    made = bpy.data.objects.new(name + "_glass", mesh)
+    collection.objects.link(made)
+    collection.hide_render = collection.hide_viewport = False
+    bpy.ops.object.select_all(action="DESELECT")
+    made.select_set(True)
+    bpy.context.view_layer.objects.active = made
+    here = os.path.dirname(bpy.data.filepath)
+    bpy.ops.export_scene.gltf(
+        filepath=os.path.join(here, "nodexeus-%s-glass.glb" % name), use_selection=True, export_format="GLB",
+        export_apply=True, export_yup=True, export_materials="NONE", export_texcoords=False,
+    )
+    # Out of the way of the bake, which lights the model with nothing else in the scene.
+    collection.hide_render = True
+
+
+Parts._glass = _glass
+
+
+def tube(bm, start, end, radius, sides=20):
+    """An open sleeve from one point to another: glass has no ends to cap."""
+    start, end = Vector(start), Vector(end)
+    run = end - start
+    verts = bmesh.ops.create_cone(
+        bm, cap_ends=False, segments=sides, radius1=radius, radius2=radius, depth=run.length
+    )["verts"]
+    turn = Vector((0, 0, 1)).rotation_difference(run.normalized()).to_matrix().to_4x4()
+    bmesh.ops.transform(bm, matrix=Matrix.Translation((start + end) / 2) @ turn, verts=verts)
 
 
 def hex_plinth(p, radius, step=0.2, sides=6):
@@ -877,10 +929,259 @@ def library(p):
     rod(p.frame, (0, -2.0, 3.90), (0, -2.0, 4.60), 0.02)
 
 
+# ---------- what stands on the foundry floor round the campus ----------
+# The floor's own furniture: where another world has trees and boulders, this one has plant.
+# Each is drawn at its real size, standing on z = 0, and small enough to be scattered by the
+# hundred.
+def stack(p):
+    """A vent stack: the tallest thing out on the floor, with a ring of light at its mouth."""
+    box(p.steel, 1.30, 1.30, 0.14, xyz(z=0.07))
+    prism(p.steel, 8, 0.52, 0.46, 0.14, 0.40)
+    prism(p.black, 12, 0.36, 0.30, 0.40, 3.40)
+    for z in (1.10, 2.10, 3.05):
+        prism(p.steel, 12, 0.39 - z * 0.017, 0.39 - z * 0.017, z, z + 0.07)
+    prism(p.steel, 12, 0.34, 0.36, 3.40, 3.52)
+    prism(p.light, 12, 0.27, 0.27, 3.52, 3.54)
+    prism(p.paint, 12, 0.335, 0.33, 2.55, 2.72)
+    for side in (-1, 1):
+        rod(p.frame, (0.41, side * 0.11, 0.40), (0.36, side * 0.11, 3.0), 0.016)
+    for i in range(9):
+        z = 0.6 + i * 0.28
+        rod(p.frame, (0.405 - z * 0.017, -0.11, z), (0.405 - z * 0.017, 0.11, z), 0.012)
+    box(p.black, 0.34, 0.44, 0.54, xyz(-0.42, 0.30, 0.41))
+    box(p.light, 0.012, 0.22, 0.08, xyz(-0.596, 0.30, 0.50))
+    rod(p.frame, (-0.30, -0.36, 0.14), (-0.30, -0.36, 0.90), 0.045, 8)
+    rod(p.frame, (-0.30, -0.36, 0.90), (-0.20, -0.20, 1.20), 0.045, 8)
+    bolts(p, xyz(z=0.14), [(sx * 0.55, sy * 0.55) for sx in (-1, 1) for sy in (-1, 1)], 0.03, 0.025)
+
+
+def pylon(p):
+    """A lattice pylon carrying the floor's lines, lamps at the ends of its arms."""
+    box(p.steel, 1.00, 1.00, 0.12, xyz(z=0.06))
+    legs = [i * TAU / 4 + TAU / 8 for i in range(4)]
+    z0, z1, r0, r1 = 0.12, 4.40, 0.52, 0.14
+
+    def leg(a, z):
+        return polar(a, r0 + (r1 - r0) * (z - z0) / (z1 - z0), z)
+
+    levels = [z0 + (z1 - z0) * i / 5 for i in range(6)]
+    for a in legs:
+        rod(p.frame, leg(a, z0), leg(a, z1), 0.035, 6)
+        box(p.steel, 0.18, 0.18, 0.06, at(a, r0, 0.15))
+    for i, z in enumerate(levels):
+        for j in range(4):
+            a, b = legs[j], legs[(j + 1) % 4]
+            rod(p.frame, leg(a, z), leg(b, z), 0.018, 5)
+            if i < len(levels) - 1:
+                rod(p.frame, leg(a, z), leg(b, levels[i + 1]), 0.014, 5)
+    box(p.steel, 2.20, 0.10, 0.10, xyz(z=3.70))
+    box(p.steel, 1.50, 0.08, 0.08, xyz(z=4.25))
+    for x, z in ((-1.05, 3.70), (1.05, 3.70), (-0.70, 4.25), (0.70, 4.25)):
+        prism(p.fixing, 8, 0.05, 0.05, z - 0.22, z - 0.05, xyz(x))
+        prism(p.light, 8, 0.07, 0.07, z - 0.30, z - 0.22, xyz(x))
+    prism(p.steel, 6, 0.17, 0.17, 4.40, 4.48)
+    prism(p.light, 8, 0.08, 0.08, 4.48, 4.60)
+    rod(p.frame, (0, 0, 4.60), (0, 0, 5.10), 0.014)
+    box(p.paint, 0.9, 0.9, 0.006, xyz(z=0.123))
+    box(p.recess, 0.7, 0.7, 0.006, xyz(z=0.126))
+
+
+def tanks(p):
+    """Three coolant tanks on a skid, piped together."""
+    box(p.steel, 2.40, 1.30, 0.12, xyz(z=0.06))
+    for i, x in enumerate((-0.78, 0.0, 0.78)):
+        tall = (1.50, 1.90, 1.30)[i]
+        prism(p.steel, 14, 0.36, 0.36, 0.12, 0.20, xyz(x))
+        prism(p.black, 14, 0.33, 0.33, 0.20, tall, xyz(x))
+        prism(p.steel, 14, 0.345, 0.345, tall * 0.5, tall * 0.5 + 0.06, xyz(x))
+        prism(p.paint, 14, 0.334, 0.334, tall - 0.34, tall - 0.20, xyz(x))
+        prism(p.steel, 14, 0.35, 0.18, tall, tall + 0.14, xyz(x))
+        prism(p.fixing, 8, 0.09, 0.09, tall + 0.14, tall + 0.20, xyz(x))
+        box(p.light, 0.05, 0.012, 0.36, xyz(x, -0.336, 0.62))
+    rod(p.frame, (-0.78, 0, 1.70), (-0.78, 0, 2.06), 0.04, 8)
+    rod(p.frame, (-0.78, 0, 2.06), (0.78, 0, 2.06), 0.04, 8)
+    rod(p.frame, (0.78, 0, 2.06), (0.78, 0, 1.50), 0.04, 8)
+    rod(p.frame, (0, 0, 2.10), (0, 0, 2.06), 0.05, 8)
+    rod(p.frame, (-1.10, 0.48, 0.12), (-1.10, 0.48, 0.80), 0.05, 8)
+    rod(p.frame, (-1.10, 0.48, 0.80), (-0.90, 0.25, 0.80), 0.05, 8)
+    box(p.black, 0.30, 0.24, 0.50, xyz(1.0, 0.48, 0.37))
+    box(p.light, 0.20, 0.012, 0.08, xyz(1.0, 0.602, 0.46))
+
+
+def manifold(p):
+    """A run of pipe on stands, with a valve and its handwheel."""
+    for x in (-1.5, 0.0, 1.5):
+        box(p.steel, 0.30, 0.90, 0.08, xyz(x, 0, 0.04))
+        box(p.steel, 0.12, 0.70, 0.62, xyz(x, 0, 0.39))
+        box(p.steel, 0.16, 0.80, 0.06, xyz(x, 0, 0.72))
+    for y, r in ((-0.22, 0.14), (0.14, 0.10), (0.34, 0.06)):
+        rod(p.black if r > 0.12 else p.frame, (-1.85, y, 0.75 + r), (1.85, y, 0.75 + r), r, 10)
+        for x in (-1.85, 1.85):
+            prism(p.steel, 10, r + 0.04, r + 0.04, -0.03, 0.03, xyz(x, y, 0.75 + r, ry=math.pi / 2))
+    prism(p.steel, 10, 0.19, 0.19, -0.14, 0.14, xyz(0.7, -0.22, 0.89, ry=math.pi / 2))
+    prism(p.paint, 10, 0.145, 0.145, -0.25, 0.25, xyz(-0.8, -0.22, 0.89, ry=math.pi / 2))
+    rod(p.frame, (0.7, -0.22, 1.08), (0.7, -0.22, 1.34), 0.025)
+    prism(p.fixing, 10, 0.15, 0.15, 1.34, 1.37, xyz(0.7, -0.22))
+    prism(p.recess, 10, 0.11, 0.11, 1.37, 1.375, xyz(0.7, -0.22))
+    box(p.light, 0.40, 0.012, 0.04, xyz(0, -0.356, 0.50))
+    box(p.light, 0.40, 0.012, 0.04, xyz(0, 0.356, 0.50))
+
+
+def beacon(p):
+    """A floor light: a short post, lit on top."""
+    prism(p.steel, 8, 0.26, 0.22, 0.0, 0.10)
+    prism(p.black, 8, 0.11, 0.09, 0.10, 0.95)
+    prism(p.steel, 8, 0.13, 0.13, 0.95, 1.01)
+    prism(p.light, 8, 0.10, 0.10, 1.01, 1.17)
+    for i in range(4):
+        rod(p.frame, polar(i * TAU / 4, 0.115, 1.01), polar(i * TAU / 4, 0.115, 1.17), 0.012)
+    prism(p.steel, 8, 0.15, 0.06, 1.17, 1.25)
+    prism(p.paint, 8, 0.108, 0.104, 0.40, 0.52)
+
+
+def cabinet(p):
+    """A junction cabinet, where a conduit comes up out of the floor."""
+    box(p.steel, 1.30, 0.80, 0.10, xyz(z=0.05))
+    box(p.black, 1.10, 0.60, 1.10, xyz(z=0.65))
+    box(p.steel, 1.18, 0.68, 0.06, xyz(z=1.23))
+    for x in (-0.28, 0.28):
+        box(p.steel, 0.50, 0.03, 0.92, xyz(x, -0.31, 0.66))
+        box(p.recess, 0.38, 0.012, 0.30, xyz(x, -0.328, 0.42))
+        box(p.light, 0.30, 0.012, 0.045, xyz(x, -0.33, 0.98))
+        for i in range(4):
+            box(p.steel, 0.38, 0.03, 0.02, xyz(x, -0.335, 0.66 + i * 0.06, rx=-0.5))
+    box(p.light, 0.05, 0.05, 0.05, xyz(0.48, -0.26, 1.285))
+    rod(p.frame, (-0.66, 0.1, 0.10), (-0.66, 0.1, 0.80), 0.05, 8)
+    rod(p.frame, (-0.66, 0.1, 0.80), (-0.55, 0.1, 0.80), 0.05, 8)
+    rod(p.frame, (0.40, 0.2, 1.26), (0.40, 0.2, 1.90), 0.014)
+    box(p.paint, 1.30, 0.10, 0.006, xyz(0, -0.45, 0.103))
+
+
+# ---------- the coolant line ----------
+PIPE_HEIGHT = 1.60      # the middle of the line above the floor
+PIPE_GLASS = 0.80       # the sleeve's radius
+
+
+def cradle(p):
+    """
+    One cradle of the coolant line, the line running along x through the collar at its head.
+    The glass and the coolant are not here: the game sweeps those along the line's own curve,
+    and stands one of these under it every few metres.
+    """
+    h = PIPE_HEIGHT
+    # The collar the sleeve passes through, banded and bolted.
+    prism(p.black, 16, 0.88, 0.88, -0.13, 0.13, xyz(0, 0, h, ry=math.pi / 2))
+    prism(p.steel, 16, 0.92, 0.92, -0.04, 0.04, xyz(0, 0, h, ry=math.pi / 2))
+    for k in range(8):
+        a = k * TAU / 8 + TAU / 16
+        for side in (-1, 1):
+            prism(p.fixing, 6, 0.035, 0.035, 0.13, 0.16, xyz(0, math.cos(a) * 0.80, h + math.sin(a) * 0.80, ry=side * math.pi / 2))
+    # A footing, two legs, a saddle.
+    box(p.steel, 0.70, 2.30, 0.12, xyz(0, 0, 0.06))
+    box(p.paint, 0.70, 0.16, 0.006, xyz(0, -1.05, 0.123))
+    box(p.paint, 0.70, 0.16, 0.006, xyz(0, 1.05, 0.123))
+    for side in (-1, 1):
+        plate(p.steel, [(0.60, 0.12), (0.95, 0.12), (0.95, 0.30), (0.84, 1.50), (0.60, 1.10)], 0.16,
+              Matrix.Rotation(side * math.pi / 2, 4, "Z"))
+        bolts(p, xyz(0, side * 0.95, 0.12), [(-0.2, 0), (0.2, 0)], 0.035, 0.03)
+    box(p.steel, 0.24, 1.40, 0.14, xyz(0, 0, 0.74))
+    box(p.black, 0.20, 0.80, 0.10, xyz(0, 0, 0.84))
+    # A gauge, and the line down to it.
+    box(p.black, 0.30, 0.20, 0.40, xyz(0, -1.02, 0.55))
+    box(p.light, 0.16, 0.012, 0.16, xyz(0, -1.126, 0.58))
+    rod(p.frame, (0, -0.95, 0.75), (0, -0.78, 1.30), 0.03)
+
+
+def band(p):
+    """
+    The collar of a cradle with no cradle under it: what the line wears where there is no floor
+    to stand one on, so the glass is banded at the same spacing all the way along.
+    """
+    h = PIPE_HEIGHT
+    prism(p.black, 16, 0.88, 0.88, -0.13, 0.13, xyz(0, 0, h, ry=math.pi / 2))
+    prism(p.steel, 16, 0.92, 0.92, -0.04, 0.04, xyz(0, 0, h, ry=math.pi / 2))
+    for k in range(8):
+        a = k * TAU / 8 + TAU / 16
+        for side in (-1, 1):
+            prism(p.fixing, 6, 0.035, 0.035, 0.13, 0.16, xyz(0, math.cos(a) * 0.80, h + math.sin(a) * 0.80, ry=side * math.pi / 2))
+
+
+def pump(p):
+    """A pump house, where lines meet: a port on each side, whichever of them are used."""
+    h = PIPE_HEIGHT
+    box(p.steel, 4.00, 4.00, 0.16, xyz(z=0.08))
+    box(p.light, 3.44, 3.44, 0.04, xyz(z=0.18))
+    box(p.black, 3.30, 3.30, 2.70, xyz(z=1.55))
+    box(p.steel, 3.50, 3.50, 0.14, xyz(z=2.97))
+    for i in range(4):
+        a = i * TAU / 4
+        # The port, ringed in light, and a sight glass over it.
+        prism(p.steel, 16, 1.02, 1.02, 0.0, 0.34, at(a, 1.65, h, tilt=math.pi / 2))
+        prism(p.light, 16, 0.90, 0.90, 0.34, 0.36, at(a, 1.65, h, tilt=math.pi / 2))
+        prism(p.black, 16, 0.84, 0.84, 0.34, 0.40, at(a, 1.65, h, tilt=math.pi / 2))
+        box(p.recess, 0.02, 1.30, 0.26, at(a, 1.662, 2.60))
+        box(p.light, 0.02, 1.10, 0.10, at(a, 1.668, 2.60))
+        for side in (-1, 1):
+            box(p.steel, 0.14, 0.20, 2.70, at(a, 1.66, 1.55) @ Matrix.Translation((0, side * 1.45, 0)))
+            box(p.paint, 0.008, 0.10, 0.90, at(a, 1.735, 0.75) @ Matrix.Translation((0, side * 1.45, 0)))
+    # The plant on the roof.
+    prism(p.steel, 12, 0.90, 0.80, 3.04, 3.34)
+    prism(p.recess, 12, 0.72, 0.72, 3.34, 3.35)
+    for i in range(6):
+        rod(p.frame, polar(i * TAU / 6, 0.72, 3.37), polar(i * TAU / 6 + math.pi, 0.72, 3.37), 0.025)
+    prism(p.fixing, 8, 0.14, 0.14, 3.35, 3.42)
+    for sx, sy in ((1.15, 1.15), (-1.15, -1.15)):
+        prism(p.black, 10, 0.24, 0.20, 3.04, 4.30, xyz(sx, sy))
+        prism(p.steel, 10, 0.26, 0.26, 3.60, 3.67, xyz(sx, sy))
+        prism(p.light, 10, 0.17, 0.17, 4.30, 4.32, xyz(sx, sy))
+    box(p.black, 0.9, 0.6, 0.5, xyz(-1.0, 1.1, 3.29))
+    box(p.light, 0.5, 0.012, 0.10, xyz(-1.0, 0.794, 3.32))
+    rod(p.frame, (1.2, -1.2, 3.04), (1.2, -1.2, 4.9), 0.03)
+    prism(p.light, 8, 0.06, 0.06, 4.9, 5.0, xyz(1.2, -1.2))
+
+
+def sphere(bm, radius, matrix, around=18, up=10):
+    verts = bmesh.ops.create_uvsphere(bm, u_segments=around, v_segments=up, radius=radius)["verts"]
+    bmesh.ops.transform(bm, matrix=matrix, verts=verts)
+
+
+def joint(p):
+    """
+    A coupling, where the line turns: a ball of plate the lengths either side plug into, on a
+    pedestal. Round, so a length can meet it from any side, which is what lets the line bend
+    by whatever angle the campus it runs round needs.
+    """
+    h = PIPE_HEIGHT
+    prism(p.steel, 8, 1.25, 1.25, 0.0, 0.14)
+    prism(p.light, 8, 1.05, 1.05, 0.14, 0.17)
+    prism(p.steel, 8, 0.95, 0.70, 0.14, 0.50)
+    prism(p.black, 12, 0.55, 0.62, 0.50, h - 0.75)
+    sphere(p.black, 1.16, xyz(z=h))
+    # A belt round its middle, lit, and a cap with the valve on top.
+    prism(p.steel, 20, 1.185, 1.185, h - 0.10, h + 0.10)
+    prism(p.light, 20, 1.20, 1.20, h - 0.025, h + 0.025)
+    prism(p.steel, 12, 0.62, 0.46, h + 0.98, h + 1.20)
+    prism(p.paint, 12, 0.47, 0.47, h + 1.20, h + 1.215)
+    rod(p.frame, (0, 0, h + 1.20), (0, 0, h + 1.50), 0.05, 8)
+    prism(p.fixing, 12, 0.30, 0.30, h + 1.50, h + 1.54)
+    for i in range(3):
+        rod(p.frame, polar(i * TAU / 3, 0.0, h + 1.52), polar(i * TAU / 3, 0.30, h + 1.52), 0.025)
+    for i in range(8):
+        bolts(p, at(i * TAU / 8, 1.10, 0.14), [(0, 0)], 0.04, 0.03)
+    for i in range(4):
+        box(p.light, 0.02, 0.24, 0.07, at(i * TAU / 4 + TAU / 8, 0.60, 0.95))
+
+
+PIPELINE = {"cradle": cradle, "band": band, "pump": pump, "joint": joint}
+
+PROPS = {"stack": stack, "pylon": pylon, "tanks": tanks, "manifold": manifold, "beacon": beacon, "cabinet": cabinet}
+
 BUILDINGS = {
     "core": core, "hall": hall, "array": array, "mast": mast, "vault": vault,
     "dome": dome, "spire": spire, "forge": forge, "pad": pad, "lab": lab,    # Not a deck building: the landmark beside the gate.
     "library": library,
+    **PROPS,
+    **PIPELINE,
 }
 
 built = {}

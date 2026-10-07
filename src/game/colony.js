@@ -1,6 +1,6 @@
 import { SceneryReflections } from '../world/reflections.js'
 import * as THREE from 'three'
-import { PLANETS, createTerrain, createScatter, terrainHeight } from '../world/planet.js'
+import { onCanal, terrainUniforms, PLANETS, createTerrain, createScatter, terrainHeight } from '../world/planet.js'
 import { createWater } from '../world/water.js'
 import { Fauna } from '../world/fauna.js'
 import { BuildingSurfaces } from '../world/building-surfaces.js'
@@ -25,12 +25,13 @@ import {
 import { CORE_CELLS, LIBRARY_CELL, translateCells } from '../world/plot-move.js'
 import { readLevels, settleLevels } from '../world/plot-levels.js'
 import { HEX_DIRS } from '../world/plot-move.js'
-import { heightOnSpan, onSpan, spanOf } from '../world/crossing-spans.js'
+import { heightOnCrossings, onSpan, spanOf } from '../world/crossing-spans.js'
 import { planCrossings } from '../world/crossings.js'
 import { Crossings } from '../world/crossing-models.js'
 import { loadModels } from '../world/kit.js'
 import { loadGate } from '../world/gate.js'
 import { campusBuilding, loadCampusBuildings } from '../world/campus-buildings.js'
+import { createPipeline, pipelineClearance, pipelineUniforms } from '../world/pipeline.js'
 import { createBuilding, buildingUniforms, Scaffolds } from '../world/buildings.js'
 import { Ship } from '../world/ship.js'
 import { Library } from '../world/library.js'
@@ -413,6 +414,26 @@ export class Colony {
     this.water.ripple(x, z, strength)
   }
 
+  /** Whether there is floor at a point, and not a canal or its bank, to stand something on. */
+  _floorOpen = (x, z) => !onCanal(x, z, this.planet, 0.6)
+
+  /**
+   * The coolant lines, on a world that has them. Nothing until its models have loaded. Laid
+   * with the scatter, which is to say again whenever the colony's footprint changes, because
+   * the loop is drawn round the decks as they stand.
+   */
+  _buildPipeline() {
+    if (this.pipeline) {
+      this.worldGroup.remove(this.pipeline)
+      disposeTree(this.pipeline)
+      this.pipeline = null
+    }
+    if (!this.planet.pipeline) return
+    // Level with the floor where a line crosses a canal, not down on its bed.
+    this.pipeline = createPipeline(this.planet.pipeline, this._footprintCells(), (x, z) => Math.max(0, terrainHeight(x, z, this.planet)), this._floorOpen)
+    if (this.pipeline) this.worldGroup.add(this.pipeline)
+  }
+
   /**
    * Ground scatter, placed to miss every tile of every plot and the ship's apron.
    *
@@ -423,6 +444,7 @@ export class Colony {
    * cheap next to rebuilding the terrain mesh alongside it.
    */
   _buildScatter() {
+    this._buildPipeline()
     if (this.scatterGroup) {
       this.worldGroup.remove(this.scatterGroup)
       disposeTree(this.scatterGroup)
@@ -437,6 +459,7 @@ export class Colony {
     clear.push({ x: ship.x, z: ship.z, r: 7.5 })
     const library = this.library.group.position
     clear.push({ x: library.x, z: library.z, r: 7.5 })
+    if (this.planet.pipeline) clear.push(...pipelineClearance(this.planet.pipeline, this._footprintCells(), this._floorOpen))
     this.scatterGroup = createScatter(this.planet, this.settings.get('scatterDensity'), clear, 4242, (x, z) => this.onIsland(x, z))
     this.worldGroup.add(this.scatterGroup)
     this._scatterFootprint = this._plotFootprint()
@@ -482,6 +505,9 @@ export class Colony {
    * happens to invalidate the terrain, which on a colony nobody touches is never.
    */
   onAssetsReady() {
+    // The wildlife is seeded once per world, and was seeded before the models arrived:
+    // seed it again so a world with a drone of its own flies that one.
+    this._faunaPlanet = null
     this._buildTerrain()
   }
 
@@ -892,9 +918,9 @@ export class Colony {
 
   groundAt(x, z) {
     // Somebody on a walkway or a staircase stands on it, not on the ground far below.
-    for (const span of this.crossingSpans) {
-      if (onSpan(span, x, z, CROSSING_WALK + 0.35)) return heightOnSpan(span, x, z)
-    }
+    // And a little past each end of it: see `heightOnCrossings` for the sliver that covers.
+    const carried = heightOnCrossings(this.crossingSpans, x, z, CROSSING_WALK + 0.35, CROSSING_OVERLAP)
+    if (carried !== null) return carried
     const cell = worldToHex(x, z)
     // On a world whose decks stand apart, a cell is only decked as far as its plot's own
     // outline goes; the strip between two workspaces is ground.
@@ -1308,6 +1334,8 @@ export class Colony {
     buildingUniforms.uNight.value = night
     // One write turns every rotor in the colony.
     buildingUniforms.uTime.value = elapsed
+    terrainUniforms.uTime.value = elapsed
+    pipelineUniforms.uTime.value = elapsed
     this.ship.update(dt, elapsed, night)
 
     this._growBuildings(dt)

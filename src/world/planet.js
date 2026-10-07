@@ -1,6 +1,8 @@
 import * as THREE from 'three'
 import { atlasTexture, hasPart, kitReady, kitUsesVertexColors, part } from './kit.js'
 import { withCurve } from '../core/curve.js'
+import { campusBuilding } from './campus-buildings.js'
+import { FOUNDRY_TEXTURE_SCALE, foundryFloorSurface } from './surfaces.js'
 
 /**
  * The worlds you can put the colony on, and the terrain generator that draws them.
@@ -27,6 +29,12 @@ import { withCurve } from '../core/curve.js'
 
 const DRONES = { count: 3 }
 
+/**
+ * How far out the foundry floor's square canal runs. On a plate seam (a multiple of sixteen),
+ * and known to the coolant lines too, which keep to the ground inside it.
+ */
+const FOUNDRY_CANAL = 96
+
 /** How far apart the campus world's levels stand. */
 const CAMPUS_LEVEL_STEP = 1.35
 /**
@@ -45,7 +53,9 @@ export const PLANETS = {
     id: 'campus',
     name: 'Campus',
     blurb: 'Blackened steel decks under a dusk sky.',
-    ground: { low: 0x131316, high: 0x26262b, tint: 0x303037 },
+    // `surface` lays baked plate over the ground in place of its vertex colours, which stay
+    // as the swatch the world is listed with.
+    ground: { low: 0x131316, high: 0x26262b, tint: 0x303037, surface: 'foundry' },
     rock: 0x141416,
     horizon: 0x1a1d27,
     sky: { top: 0x10141f, bottom: 0x4a5066 },
@@ -53,13 +63,34 @@ export const PLANETS = {
     sun: { color: 0xfff4e6, intensity: 4.6, night: 0.2 },
     ambient: { sky: 0xb4bcd8, ground: 0x4a443a, intensity: 3.0 },
     atmosphere: 0,
-    // A poured floor, not a landscape: no craters, barely any relief, nothing growing on it.
+    // A laid floor, not a landscape: no craters and barely any relief.
     craters: 0,
     roughness: 0.12,
-    scatter: 'none',
+    // Coolant comes in by canal: a square channel well out from the campus (`FOUNDRY_CANAL`),
+    // and four more running on from it to the horizon.
+    shape: 'foundry',
+    water: {
+      level: -0.75,
+      // Dark, and only just alight: it is coolant carrying heat away, not metal being poured.
+      shallow: 0x4e3000,
+      deep: 0x140b00,
+      foam: 0x8a5c08,
+      waveHeight: 0.015,
+      waveScale: 0.5,
+      speed: 0.2,
+      sparkle: 0,
+      opacity: 1,
+      glow: 0.2,
+    },
+    // Glass coolant lines cross the floor too, on their way from somewhere to somewhere else:
+    // they pass the campus, `margin` clear of its outermost deck, and do not go round it. The
+    // seed is what their wandering is drawn from. See pipeline.js.
+    pipeline: { margin: 16, seed: 0x71be, canal: FOUNDRY_CANAL },
+    scatter: 'foundry',
     companion: { name: 'Anode', color: 0x2a2a30, size: 2.0, glow: 0x56565e },
     dust: 0,
-    fauna: { drones: DRONES },
+    // The campus's own maintenance drones: blackened hulls, amber rotor tips.
+    fauna: { drones: { count: 5, model: 'campus', hull: [0x3a3a42, 0x2c2c33, 0x47474f], accentA: 0x17171b, accentB: 0xfdc700 } },
     audio: {
       beds: [{ sound: 'lunar-silence', gain: 0.5 }],
       events: [],
@@ -649,6 +680,7 @@ export function createTerrain(planet, detail, seed = 1337) {
   const c = new THREE.Color()
   const level = planet.water?.level ?? -Infinity
   const band = planet.shore?.band ?? 0
+  const surfaced = planet.ground.surface === 'foundry'
 
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i)
@@ -657,11 +689,16 @@ export function createTerrain(planet, detail, seed = 1337) {
     const y = sampleHeight(x, z, field, planet)
     pos.setY(i, y)
 
-    // Colour: height-driven blend, mottled with a second noise band so it never bands.
-    const shade = THREE.MathUtils.clamp(0.42 + y * 0.09 + fbm(field.noise, x * 0.09, z * 0.09, 2) * 0.5, 0, 1)
-    c.copy(low).lerp(high, shade)
-    const speck = fbm(field.noise, x * 0.55, z * 0.55, 1)
-    c.lerp(tint, Math.max(0, speck) * 0.22)
+    if (surfaced) {
+      // The plate brings its own colour; the vertex only ever darkens it.
+      c.setRGB(1, 1, 1)
+    } else {
+      // Colour: height-driven blend, mottled with a second noise band so it never bands.
+      const shade = THREE.MathUtils.clamp(0.42 + y * 0.09 + fbm(field.noise, x * 0.09, z * 0.09, 2) * 0.5, 0, 1)
+      c.copy(low).lerp(high, shade)
+      const speck = fbm(field.noise, x * 0.55, z * 0.55, 1)
+      c.lerp(tint, Math.max(0, speck) * 0.22)
+    }
 
     // The sand band, then the bed: ground within reach of the water goes to the shore
     // colour, strongest right at the waterline, and anything under the surface darkens
@@ -687,14 +724,16 @@ export function createTerrain(planet, detail, seed = 1337) {
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
   geo.computeVertexNormals()
 
-  const mat = new THREE.MeshStandardMaterial({
-    vertexColors: true,
-    roughness: 0.97,
-    metalness: 0,
-    // Flat-ish shading keeps the low-poly read; a dielectric surface with no spec highlight
-    // is what sells "dust" rather than "plastic".
-    envMapIntensity: 0.3,
-  })
+  const mat = surfaced
+    ? foundryMaterial(geo)
+    : new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        roughness: 0.97,
+        metalness: 0,
+        // Flat-ish shading keeps the low-poly read; a dielectric surface with no spec highlight
+        // is what sells "dust" rather than "plastic".
+        envMapIntensity: 0.3,
+      })
   const mesh = new THREE.Mesh(geo, mat)
   mesh.receiveShadow = true
   mesh.name = 'terrain'
@@ -758,6 +797,61 @@ export function createTerrain(planet, detail, seed = 1337) {
   // Sampler so anything placed later can sit exactly on the surface.
   mesh.userData.heightAt = (x, z) => sampleHeight(x, z, field, planet)
   return mesh
+}
+
+/** Time for whatever on the ground moves. The colony sets it once a frame. */
+export const terrainUniforms = { uTime: { value: 0 } }
+
+/**
+ * The foundry floor's material: baked plate laid over the ground in world space, so the
+ * channels run in straight lines however the mesh under them is cut, and a pulse of light
+ * travelling along each channel toward the campus.
+ */
+function foundryMaterial(geo) {
+  const pos = geo.attributes.position
+  const uv = new Float32Array(pos.count * 2)
+  for (let i = 0; i < pos.count; i++) {
+    uv[i * 2] = pos.getX(i) / FOUNDRY_TEXTURE_SCALE
+    uv[i * 2 + 1] = pos.getZ(i) / FOUNDRY_TEXTURE_SCALE
+  }
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2))
+
+  const mat = new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    ...foundryFloorSurface(),
+    emissive: 0xffffff,
+    emissiveIntensity: 1,
+    roughness: 1,
+    // As with the decks: under a dark sky a pure mirror has nothing to show.
+    metalness: 0.7,
+    envMapIntensity: 0.7,
+  })
+  mat.onBeforeCompile = (shader) => {
+    withCurve(shader)
+    shader.uniforms.uTime = terrainUniforms.uTime
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\n varying vec2 vFloorXZ;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n vFloorXZ = transformed.xz;')
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\n varying vec2 vFloorXZ;\n uniform float uTime;')
+      .replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+         {
+           // Which way the channel under this fragment runs decides which way its light
+           // travels: along x where the fragment is nearer a channel that runs along x.
+           vec2 cell = abs( fract( vFloorXZ / ${FOUNDRY_TEXTURE_SCALE}.0 ) - 0.5 );
+           float along = cell.y < cell.x ? abs( vFloorXZ.x ) : abs( vFloorXZ.y );
+           // Toward the campus, a pulse every forty metres or so, never all in step.
+           float lane = floor( ( cell.y < cell.x ? vFloorXZ.y : vFloorXZ.x ) / ${FOUNDRY_TEXTURE_SCALE}.0 );
+           float phase = along * 0.16 + uTime * 0.9 + lane * 1.7;
+           float pulse = pow( 0.5 + 0.5 * sin( phase ), 14.0 );
+           totalEmissiveRadiance *= 0.55 + pulse * 2.6;
+         }`
+      )
+  }
+  mat.customProgramCacheKey = () => 'bc-terrain-foundry'
+  return mat
 }
 
 /**
@@ -827,6 +921,11 @@ function sampleHeight(x, z, field, planet) {
     }
   }
 
+  if (planet.shape === 'foundry') {
+    const cut = foundryChannel(x, z)
+    if (cut > 0) y = y * (1 - cut) - FOUNDRY_CHANNEL.depth * cut
+  }
+
   for (const crater of craters) {
     const d = Math.hypot(x - crater.x, z - crater.z)
     if (d > crater.r * 1.5) continue
@@ -849,6 +948,49 @@ function sampleHeight(x, z, field, planet) {
     }
   }
   return y
+}
+
+/**
+ * The foundry's coolant channels: a square ring round the campus, and one channel running out
+ * from the middle of each side.
+ *
+ * Square, and square to the world, for two reasons. The floor's own conduits are a square
+ * grid, and a channel that cut across them at an angle would belong to some other floor. And
+ * the ground mesh is a coarse square grid too: a bank that runs along it is a straight line,
+ * where one that runs across it comes out as a saw edge. The channels lie on the plate seams,
+ * midway between conduits.
+ */
+const FOUNDRY_CHANNEL = { ring: FOUNDRY_CANAL, half: 2.3, bank: 1.5, depth: 1.7 }
+
+/** How fully (x, z) is inside a channel: 0 on the floor, 1 on a channel's bed. */
+function foundryChannel(x, z) {
+  const { ring, half, bank } = FOUNDRY_CHANNEL
+  const ax = Math.abs(x)
+  const az = Math.abs(z)
+  const reach = Math.max(ax, az)
+  let nearest = Math.abs(reach - ring)
+  // Past the ring, the spokes: straight out along each axis.
+  if (reach > ring) nearest = Math.min(nearest, ax, az)
+  return 1 - THREE.MathUtils.smoothstep(nearest, half, half + bank)
+}
+
+/**
+ * Whether a thing `reach` across at (x, z) would have any of its footing on a canal or the
+ * slope of its bank. The floor is level everywhere else, so this is the whole test for
+ * whether something can be stood there without a corner of it hanging in the air.
+ *
+ * @param {object} planet
+ * @param {number} [reach]  how far from its middle the thing's footing goes
+ */
+export function onCanal(x, z, planet, reach = 0) {
+  if (planet.shape !== 'foundry') return false
+  if (foundryChannel(x, z) > 0) return true
+  if (reach <= 0) return false
+  for (let k = 0; k < 8; k++) {
+    const a = (k * Math.PI) / 4
+    if (foundryChannel(x + Math.cos(a) * reach, z + Math.sin(a) * reach) > 0) return true
+  }
+  return false
 }
 
 /** Craters only ever land outside the colony, so they never eat a build plot. */
@@ -1016,6 +1158,16 @@ const SCATTER = {
     { part: 'Grass_2_D_Color1', weight: 3, size: [0.6, 1.2], sink: 0.05, upright: true },
     { part: 'Rock_1_D_Color1', weight: 2, size: [0.4, 0.9], sink: 0.3, tint: true },
   ],
+  // The foundry floor's furniture, the campus's own models (`own`). All of it stands square
+  // to the floor's grid and in the middle of a plate, so nothing sits across a conduit.
+  foundry: [
+    { part: 'beacon', own: true, weight: 5, size: [1, 1.1], sink: 0, upright: true, grid: 4 },
+    { part: 'cabinet', own: true, weight: 3, size: [1, 1.1], sink: 0, upright: true, grid: 4 },
+    { part: 'manifold', own: true, weight: 2.5, size: [0.9, 1], sink: 0, upright: true, grid: 4 },
+    { part: 'tanks', own: true, weight: 2, size: [0.9, 1.1], sink: 0, upright: true, grid: 4 },
+    { part: 'stack', own: true, weight: 2, size: [1, 1.4], sink: 0, upright: true, grid: 4 },
+    { part: 'pylon', own: true, weight: 1.5, size: [1, 1.3], sink: 0, upright: true, grid: 4 },
+  ],
   sakura: [
     { part: 'tree_default_sakura', kit: N, weight: 3, size: [1.4, 2.2], sink: 0.03, upright: true },
     { part: 'tree_detailed_sakura', kit: N, weight: 3, size: [1.5, 2.4], sink: 0.03, upright: true },
@@ -1032,6 +1184,15 @@ const SCATTER = {
 }
 
 /** The fallback when the kit has not loaded: the primitives this used to be made of. */
+/**
+ * How much of the scatter budget a recipe is given, where it is not all of it. Plant is a few
+ * large things with a lot of floor between them, not a carpet.
+ */
+const SCATTER_SHARE = { foundry: 0.26 }
+
+/** How far from a canal's bank anything scattered keeps: the reach of the widest prop, and a pace. */
+const CANAL_GUARD = 3.2
+
 function fallbackShapes(isFlora) {
   const shapes = isFlora
     ? [new THREE.IcosahedronGeometry(0.5, 0), new THREE.ConeGeometry(0.42, 1.5, 5), new THREE.SphereGeometry(0.5, 6, 4)]
@@ -1053,7 +1214,8 @@ export function createScatter(planet, density, keepClear = [], seed = 4242, insi
   const group = new THREE.Group()
   group.name = 'scatter'
   // Islands have much less usable ground. Concentrate a smaller budget into groves.
-  const count = Math.round(SCATTER_BUDGET * THREE.MathUtils.clamp(density, 0, 1) * (planet.shape === 'island' ? 0.5 : 1))
+  const share = (planet.shape === 'island' ? 0.5 : 1) * (SCATTER_SHARE[planet.scatter] ?? 1)
+  const count = Math.round(SCATTER_BUDGET * THREE.MathUtils.clamp(density, 0, 1) * share)
   if (count <= 0 || planet.scatter === 'none') return group
 
   const rand = mulberry(seed)
@@ -1061,7 +1223,19 @@ export function createScatter(planet, density, keepClear = [], seed = 4242, insi
   const recipe = (SCATTER[planet.scatter] || SCATTER.rocks).map((r) => ({ ...r, kit: r.kit || 'forest' }))
   // A recipe whose parts are all in hand is used whole; one missing a kit — the nature kit
   // failing to load, say — drops to the parts it does have, and to primitives if that is nothing.
-  let kinds = recipe.filter((r) => kitReady(r.kit) && hasPart(r.part, r.kit)).map((r) => ({ ...r, geo: part(r.part, r.kit) }))
+  let kinds = recipe
+    .filter((r) => (r.own ? campusBuilding(r.part) : kitReady(r.kit) && hasPart(r.part, r.kit)))
+    .map((r) => {
+      if (!r.own) return { ...r, geo: part(r.part, r.kit) }
+      // One of the project's own models: its geometry, and its own baked material, lifted
+      // out of silhouette the way the campus buildings are.
+      const model = campusBuilding(r.part)
+      const material = model.material.clone()
+      material.metalness = 0.7
+      material.emissiveIntensity = 1.7
+      // A copy: the scatter is thrown away and rebuilt, and takes its geometry with it.
+      return { ...r, geo: model.geometry.clone(), material }
+    })
   if (!kinds.length) kinds = fallbackShapes(isFlora).map((r) => ({ ...r, weight: 1 }))
 
   // One material per kit. The atlas kit's colour is a *tint* over its texture — white for
@@ -1085,7 +1259,8 @@ export function createScatter(planet, density, keepClear = [], seed = 4242, insi
   }
 
   const total = kinds.reduce((sum, k) => sum + k.weight, 0)
-  const meshes = kinds.map((k) => new THREE.InstancedMesh(k.geo, materialFor(k.kit), Math.ceil((count * k.weight) / total) + 8))
+  const meshes = kinds.map((k) => new THREE.InstancedMesh(k.geo, k.material || materialFor(k.kit), Math.ceil((count * k.weight) / total) + 8))
+  const taken = new Set()
 
   const rock = new THREE.Color(planet.rock)
   const dummy = new THREE.Object3D()
@@ -1123,11 +1298,23 @@ export function createScatter(planet, density, keepClear = [], seed = 4242, insi
       z = grove.z + Math.sin(a) * offset
       d = Math.hypot(x, z)
     }
-    if (keepClear.some((p) => Math.hypot(x - p.x, z - p.z) < p.r)) continue
-    if (inside && !inside(x, z)) continue
-
     const which = pickKind()
     const kind = kinds[which]
+    if (kind.grid) {
+      // To the middle of a plate, one thing to a plate.
+      x = (Math.floor(x / kind.grid) + 0.5) * kind.grid
+      z = (Math.floor(z / kind.grid) + 0.5) * kind.grid
+      d = Math.hypot(x, z)
+      const spot = `${x},${z}`
+      if (taken.has(spot)) continue
+      taken.add(spot)
+    }
+    if (keepClear.some((p) => Math.hypot(x - p.x, z - p.z) < p.r)) continue
+    if (inside && !inside(x, z)) continue
+    // Nothing with a corner over a canal or on the slope down to one. Sized for the largest
+    // thing scattered, and a pace over.
+    if (onCanal(x, z, planet, CANAL_GUARD)) continue
+
     const mesh = meshes[which]
     const slot = fill[which]
     if (slot >= mesh.instanceMatrix.count) continue
@@ -1148,15 +1335,17 @@ export function createScatter(planet, density, keepClear = [], seed = 4242, insi
     // Far-field props are allowed to be much bigger, which reads as distance.
     const far = THREE.MathUtils.smoothstep(d, COLONY_RADIUS, 130)
     const [lo, hi] = kind.size
-    const s = (lo + rand() * (hi - lo)) * (1 + far * 1.9)
+    // Less so for plant: a tree three times the size is a bigger tree, a cabinet is not.
+    const s = (lo + rand() * (hi - lo)) * (1 + far * (kind.own ? 0.7 : 1.9))
 
     // Things in the water float on it rather than stand on the bed.
     const base = kind.zone === 'water' ? level : y
     dummy.position.set(x, base - s * kind.sink, z)
     // A tree that leans is a fallen tree. Boulders may lie however they landed.
-    if (kind.upright) dummy.rotation.set(0, rand() * Math.PI * 2, 0)
+    if (kind.grid) dummy.rotation.set(0, Math.floor(rand() * 4) * (Math.PI / 2), 0)
+    else if (kind.upright) dummy.rotation.set(0, rand() * Math.PI * 2, 0)
     else dummy.rotation.set((rand() - 0.5) * 0.5, rand() * Math.PI * 2, (rand() - 0.5) * 0.5)
-    const jitter = kind.upright ? 0.14 : 0.35
+    const jitter = kind.own ? 0 : kind.upright ? 0.14 : 0.35
     dummy.scale.set(
       s * (1 - jitter / 2 + rand() * jitter),
       s * (1 - jitter / 2 + rand() * jitter),

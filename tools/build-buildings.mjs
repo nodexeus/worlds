@@ -36,6 +36,18 @@ const BUILDINGS = {
   pad: TEXTURE_SIZE,
   lab: TEXTURE_SIZE,
   library: 2048,
+  // What is scattered over the foundry floor: small, and seen from across the campus.
+  stack: 512,
+  pylon: 512,
+  tanks: 512,
+  manifold: 512,
+  beacon: 512,
+  cabinet: 512,
+  // The coolant line: seen close, where it passes the campus.
+  cradle: 512,
+  band: 512,
+  pump: 1024,
+  joint: 512,
 }
 
 const [DIR, OUT] = process.argv.slice(2)
@@ -80,6 +92,15 @@ for (const { name, size, file } of sources) {
   for (const material of one.getRoot().listMaterials()) material.setName(name)
   // WebP: a building's four maps as PNG are three megabytes, and there are eleven models.
   await one.transform(textureCompress({ encoder: sharp, targetFormat: 'webp', quality: 90, resize: [size, size] }))
+  // Glass is not baked: it rides along as a bare mesh, `<name>_glass`, for the game to give a
+  // see-through material of its own.
+  const glassFile = join(DIR, `nodexeus-${name}-glass.glb`)
+  if (existsSync(glassFile)) {
+    const glass = await io.read(glassFile)
+    for (const mesh of glass.getRoot().listMeshes()) mesh.setName(`${name}_glass`)
+    for (const node of glass.getRoot().listNodes()) if (node.getMesh()) node.setName(`${name}_glass`)
+    mergeDocuments(one, glass)
+  }
   if (doc) mergeDocuments(doc, one)
   else doc = one
 }
@@ -95,6 +116,15 @@ for (const other of rest) {
 root.setDefaultScene(scene)
 
 await doc.transform(unpartition(), dedup(), prune())
+
+// The drone rides along: bare geometry, one mesh per role, so there is nothing to shrink.
+const droneSource = join(DIR, 'nodexeus-drone.glb')
+if (existsSync(droneSource)) {
+  const drone = await io.read(droneSource)
+  await drone.transform(prune())
+  await io.write(join(dirname(OUT), 'drone.glb'), drone)
+  console.log(`drone.glb: ${drone.getRoot().listMeshes().length} parts`)
+}
 
 console.log(`${basename(OUT)}: ${root.listMeshes().length} buildings, ${root.listTextures().length} textures`)
 mkdirSync(dirname(OUT), { recursive: true })

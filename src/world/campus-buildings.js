@@ -9,14 +9,27 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
  */
 
 const models = new Map()
+/** The drone's parts, by role: see `design/campus/build_drone.py` for what each name means. */
+let drone = null
 let loading = null
 
 /** Load the set. Idempotent: the first call owns the request and the rest await it. */
 export function loadCampusBuildings() {
   if (!loading) {
-    loading = new GLTFLoader()
+    const loader = new GLTFLoader()
+    // The drone is its own small file, and not having it only means the stock drone flies.
+    const droneLoaded = loader.loadAsync(`${import.meta.env.BASE_URL}assets/campus/drone.glb`).then((gltf) => {
+      gltf.scene.updateMatrixWorld(true)
+      const parts = []
+      gltf.scene.traverse((o) => {
+        if (o.isMesh) parts.push({ name: o.name, geometry: o.geometry.clone().applyMatrix4(o.matrixWorld) })
+      })
+      drone = parts
+    }, () => {})
+    loading = loader
       .loadAsync(`${import.meta.env.BASE_URL}assets/campus/buildings.glb`)
-      .then((gltf) => {
+      .then(async (gltf) => {
+        await droneLoaded
         gltf.scene.updateMatrixWorld(true)
         gltf.scene.traverse((o) => {
           if (!o.isMesh) return
@@ -37,4 +50,12 @@ export function loadCampusBuildings() {
  */
 export function campusBuilding(name) {
   return models.get(name) || null
+}
+
+/**
+ * The campus drone, as its named parts, or null before it has loaded.
+ * @returns {Array<{name: string, geometry: import('three').BufferGeometry}> | null}
+ */
+export function campusDrone() {
+  return drone
 }
