@@ -426,7 +426,8 @@ export class Colony {
       this.pipeline = null
     }
     if (!this.planet.pipeline) return
-    this.pipeline = createPipeline(this.planet.pipeline, this._footprintCells(), (x, z) => terrainHeight(x, z, this.planet))
+    // Level with the floor where a line crosses a canal, not down on its bed.
+    this.pipeline = createPipeline(this.planet.pipeline, this._footprintCells(), (x, z) => Math.max(0, terrainHeight(x, z, this.planet)))
     if (this.pipeline) this.worldGroup.add(this.pipeline)
   }
 
