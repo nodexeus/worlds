@@ -1136,7 +1136,39 @@ def pump(p):
     prism(p.light, 8, 0.06, 0.06, 4.9, 5.0, xyz(1.2, -1.2))
 
 
-PIPELINE = {"pipe": pipe, "pump": pump}
+def sphere(bm, radius, matrix, around=18, up=10):
+    verts = bmesh.ops.create_uvsphere(bm, u_segments=around, v_segments=up, radius=radius)["verts"]
+    bmesh.ops.transform(bm, matrix=matrix, verts=verts)
+
+
+def joint(p):
+    """
+    A coupling, where the line turns: a ball of plate the lengths either side plug into, on a
+    pedestal. Round, so a length can meet it from any side, which is what lets the line bend
+    by whatever angle the campus it runs round needs.
+    """
+    h = PIPE_HEIGHT
+    prism(p.steel, 8, 1.25, 1.25, 0.0, 0.14)
+    prism(p.light, 8, 1.05, 1.05, 0.14, 0.17)
+    prism(p.steel, 8, 0.95, 0.70, 0.14, 0.50)
+    prism(p.black, 12, 0.55, 0.62, 0.50, h - 0.75)
+    sphere(p.black, 1.16, xyz(z=h))
+    # A belt round its middle, lit, and a cap with the valve on top.
+    prism(p.steel, 20, 1.185, 1.185, h - 0.10, h + 0.10)
+    prism(p.light, 20, 1.20, 1.20, h - 0.025, h + 0.025)
+    prism(p.steel, 12, 0.62, 0.46, h + 0.98, h + 1.20)
+    prism(p.paint, 12, 0.47, 0.47, h + 1.20, h + 1.215)
+    rod(p.frame, (0, 0, h + 1.20), (0, 0, h + 1.50), 0.05, 8)
+    prism(p.fixing, 12, 0.30, 0.30, h + 1.50, h + 1.54)
+    for i in range(3):
+        rod(p.frame, polar(i * TAU / 3, 0.0, h + 1.52), polar(i * TAU / 3, 0.30, h + 1.52), 0.025)
+    for i in range(8):
+        bolts(p, at(i * TAU / 8, 1.10, 0.14), [(0, 0)], 0.04, 0.03)
+    for i in range(4):
+        box(p.light, 0.02, 0.24, 0.07, at(i * TAU / 4 + TAU / 8, 0.60, 0.95))
+
+
+PIPELINE = {"pipe": pipe, "pump": pump, "joint": joint}
 
 PROPS = {"stack": stack, "pylon": pylon, "tanks": tanks, "manifold": manifold, "beacon": beacon, "cabinet": cabinet}
 

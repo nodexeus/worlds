@@ -5,51 +5,84 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { pipelineClearance, pipelineLayout } from '../src/world/pipeline.js'
+import { pipelineClearance, pipelineLayout, pipelineLoop } from '../src/world/pipeline.js'
+import { hexToWorld } from '../src/world/plots.js'
 
-const SPEC = { ring: 48, reach: 72 }
+const SPEC = { margin: 15, reach: 72 }
 const LENGTH = 8
-const ends = (p) => (p.turned ? [[p.x, p.z - LENGTH / 2], [p.x, p.z + LENGTH / 2]] : [[p.x - LENGTH / 2, p.z], [p.x + LENGTH / 2, p.z]])
-const key = ([x, z]) => `${x},${z}`
+/** Centre to corner of a deck tile. */
+const TILE_REACH = 7.6
 
-test('the ring is closed: every length of it meets another, or a pump house, at both ends', () => {
-  const { pipes, pumps } = pipelineLayout(SPEC)
-  const joints = new Map()
-  for (const p of pipes) for (const end of ends(p)) joints.set(key(end), (joints.get(key(end)) || 0) + 1)
-  const houses = new Set(pumps.map((p) => key([p.x, p.z])))
-  const onRing = pipes.filter((p) => Math.max(Math.abs(p.x), Math.abs(p.z)) === SPEC.ring)
-  assert.equal(onRing.length, (4 * 2 * SPEC.ring) / LENGTH)
-  for (const p of onRing) {
-    for (const end of ends(p)) assert.ok(joints.get(key(end)) >= 2 || houses.has(key(end)), `open end at ${key(end)}`)
-  }
-})
+const cellsAt = (list) => list.map(([q, r]) => hexToWorld(q, r))
+// A lopsided colony: a clump, and an arm running off one way.
+const COLONY = cellsAt([[0, 0], [1, 0], [0, 1], [-1, 1], [-1, 0], [1, -1], [2, -1], [3, -1], [3, -2], [-2, 2]])
 
-test('there is a pump house at each corner, where each feed joins the ring, and at its far end', () => {
-  const { pumps } = pipelineLayout(SPEC)
-  const have = new Set(pumps.map((p) => key([p.x, p.z])))
-  assert.equal(have.size, 12)
-  const { ring, reach } = SPEC
-  for (const [x, z] of [[ring, ring], [ring, -ring], [-ring, ring], [-ring, -ring], [ring, 0], [-ring, 0], [0, ring], [0, -ring], [reach, 0], [-reach, 0], [0, reach], [0, -reach]]) {
-    assert.ok(have.has(key([x, z])), `no pump house at ${x},${z}`)
-  }
-})
+/** Both ends of a length of pipe, and its middle. */
+const along = (p) => {
+  const half = (LENGTH * p.stretch) / 2
+  return [-half, 0, half].map((t) => ({ x: p.x + Math.cos(p.angle) * t, z: p.z - Math.sin(p.angle) * t }))
+}
+const nearestCell = (point, cells) => Math.min(...cells.map((c) => Math.hypot(point.x - c.x, point.z - c.z)))
 
-test('nothing is laid inside the ring, and the feeds run out along the axes as far as their pump houses', () => {
-  const { pipes } = pipelineLayout(SPEC)
+test('the loop runs outside every deck, with room to spare', () => {
+  const { pipes, joints } = pipelineLayout(SPEC, COLONY)
+  assert.ok(joints.length >= 4, 'a loop has bends')
   for (const p of pipes) {
-    const reach = Math.max(Math.abs(p.x), Math.abs(p.z))
-    assert.ok(reach >= SPEC.ring, `a pipe inside the ring at ${p.x},${p.z}`)
-    assert.ok(reach + 4 <= SPEC.reach, `a pipe past its pump house at ${p.x},${p.z}`)
-    if (reach > SPEC.ring) assert.ok(p.x === 0 || p.z === 0, `a feed off its axis at ${p.x},${p.z}`)
-  }
-})
-
-test('the ground under every length is kept clear', () => {
-  const { pipes } = pipelineLayout(SPEC)
-  const clear = pipelineClearance(SPEC)
-  for (const p of pipes) {
-    for (const [x, z] of [...ends(p), [p.x, p.z]]) {
-      assert.ok(clear.some((c) => Math.hypot(x - c.x, z - c.z) < c.r), `not kept clear at ${x},${z}`)
+    for (const point of along(p)) {
+      assert.ok(nearestCell(point, COLONY) > TILE_REACH + 3, `pipe ${nearestCell(point, COLONY).toFixed(1)} from a deck's middle`)
     }
   }
+  for (const j of joints) assert.ok(nearestCell(j, COLONY) > TILE_REACH + 3)
+})
+
+test('it follows the colony: not a square, and no two sides alike', () => {
+  const loop = pipelineLoop(COLONY, SPEC.margin)
+  const sides = loop.map((a, i) => {
+    const b = loop[(i + 1) % loop.length]
+    return Math.hypot(b.x - a.x, b.z - a.z)
+  })
+  assert.ok(Math.max(...sides) - Math.min(...sides) > LENGTH, 'the sides differ')
+  const square = loop.every((a, i) => {
+    const b = loop[(i + 1) % loop.length]
+    return Math.abs(b.x - a.x) < 1e-6 || Math.abs(b.z - a.z) < 1e-6
+  })
+  assert.equal(square, false)
+})
+
+test('every side is a whole number of lengths, none stretched out of recognition', () => {
+  const { pipes } = pipelineLayout(SPEC, COLONY)
+  assert.ok(pipes.length > 10)
+  for (const p of pipes) assert.ok(p.stretch > 0.65 && p.stretch < 1.5, `a length stretched to ${p.stretch.toFixed(2)}`)
+})
+
+test('a new workspace outside the loop moves the loop out round it', () => {
+  const extra = hexToWorld(-4, 4)
+  const before = pipelineLayout(SPEC, COLONY)
+  assert.ok(before.pipes.some((p) => along(p).some((point) => Math.hypot(point.x - extra.x, point.z - extra.z) < TILE_REACH + 2)) ||
+    nearestCell(extra, before.joints) < 40, 'the new workspace starts near or across the old loop')
+  const after = pipelineLayout(SPEC, [...COLONY, extra])
+  for (const p of after.pipes) {
+    for (const point of along(p)) assert.ok(Math.hypot(point.x - extra.x, point.z - extra.z) > TILE_REACH + 2)
+  }
+})
+
+test('each pump house feeds the loop, and one the colony has grown past is left out', () => {
+  const { pumps, pipes } = pipelineLayout(SPEC, COLONY)
+  assert.equal(pumps.length, 4)
+  for (const pump of pumps) {
+    assert.equal(Math.max(Math.abs(pump.x), Math.abs(pump.z)), SPEC.reach)
+    // Its port points down the first length of its feed.
+    const first = pipes.reduce((best, p) => (Math.hypot(p.x - pump.x, p.z - pump.z) < Math.hypot(best.x - pump.x, best.z - pump.z) ? p : best))
+    assert.ok(Math.abs(Math.sin(first.angle - pump.angle)) < 1e-6, 'the feed leaves square to the port')
+  }
+  const sprawling = cellsAt([[0, 0], [5, 0], [-5, 0], [0, 5], [0, -5], [5, -5], [-5, 5]])
+  assert.equal(pipelineLayout(SPEC, sprawling).pumps.length, 0)
+})
+
+test('the ground under every length, coupling and pump house is kept clear', () => {
+  const { pipes, joints, pumps } = pipelineLayout(SPEC, COLONY)
+  const clear = pipelineClearance(SPEC, COLONY)
+  const covered = (point) => clear.some((c) => Math.hypot(point.x - c.x, point.z - c.z) < c.r)
+  for (const p of pipes) for (const point of along(p)) assert.ok(covered(point))
+  for (const p of [...joints, ...pumps]) assert.ok(covered(p))
 })
