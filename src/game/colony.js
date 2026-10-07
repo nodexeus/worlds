@@ -25,7 +25,7 @@ import {
 import { CORE_CELLS, LIBRARY_CELL, translateCells } from '../world/plot-move.js'
 import { readLevels, settleLevels } from '../world/plot-levels.js'
 import { HEX_DIRS } from '../world/plot-move.js'
-import { heightOnSpan, onSpan, spanOf } from '../world/crossing-spans.js'
+import { heightOnCrossings, onSpan, spanOf } from '../world/crossing-spans.js'
 import { planCrossings } from '../world/crossings.js'
 import { Crossings } from '../world/crossing-models.js'
 import { loadModels } from '../world/kit.js'
@@ -910,9 +910,9 @@ export class Colony {
 
   groundAt(x, z) {
     // Somebody on a walkway or a staircase stands on it, not on the ground far below.
-    for (const span of this.crossingSpans) {
-      if (onSpan(span, x, z, CROSSING_WALK + 0.35)) return heightOnSpan(span, x, z)
-    }
+    // And a little past each end of it: see `heightOnCrossings` for the sliver that covers.
+    const carried = heightOnCrossings(this.crossingSpans, x, z, CROSSING_WALK + 0.35, CROSSING_OVERLAP)
+    if (carried !== null) return carried
     const cell = worldToHex(x, z)
     // On a world whose decks stand apart, a cell is only decked as far as its plot's own
     // outline goes; the strip between two workspaces is ground.

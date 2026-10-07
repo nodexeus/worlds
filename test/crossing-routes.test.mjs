@@ -6,7 +6,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import { Navigation } from '../src/agents/navigation.js'
-import { heightOnSpan, onSpan, spanOf } from '../src/world/crossing-spans.js'
+import { heightOnCrossings, heightOnSpan, onSpan, spanOf } from '../src/world/crossing-spans.js'
+import { onTile } from '../src/world/deck-shape.js'
 import { hexToWorld } from '../src/world/plots.js'
 
 const world = { gap: 1.4, levelStep: 1.35, deckTop: 0.45, elevation: (id) => (id === 'high' ? 1.35 : 0) }
@@ -86,5 +87,30 @@ test('a corner is not turned until the way past it is clear', () => {
   assert.equal(nav.passWaypoints(path, 0, 0.25, -1.2, 0.55, 0.12), 1, 'on the corner, it turns')
   const open = [path[0], { x: 3.25, z: -1.25 }]
   assert.equal(nav.passWaypoints(open, 0, short.x, short.z, 0.55, 0.12), 1, 'with a clear line ahead, it turns early')
+})
+
+test('there is no sliver between a deck and its crossing where the ground is neither', () => {
+  // Decks are drawn a hair smaller than their cell, so a deck's edge stops short of where the
+  // crossing measures its end from. Walk the centre line from one deck to the other: every
+  // step has to be on the crossing or on a deck.
+  const GAP = 1.38
+  const DRAWN = 0.992
+  const a = hexToWorld(0, 0)
+  const b = hexToWorld(1, 0)
+  const apothem = (Math.hypot(b.x - a.x, b.z - a.z) / 2) * DRAWN
+  const insets = Array(6).fill(GAP)
+  const span = spanOf({ from: { q: 0, r: 0 }, to: { q: 1, r: 0 }, low: 'a', high: 'b', rise: 1 }, { gap: GAP, levelStep: 1.35, deckTop: 0.45, elevation: () => 0 })
+  const onDeck = (x, z) => onTile(x - a.x, z - a.z, apothem, insets) || onTile(x - b.x, z - b.z, apothem, insets)
+
+  let exact = 0
+  for (let t = -span.half - 1; t <= span.half + 1; t += 0.005) {
+    const x = span.x + span.ux * t
+    const z = span.z + span.uz * t
+    if (heightOnCrossings([span], x, z, 1.4, 0) === null && !onDeck(x, z)) exact++
+    const carried = heightOnCrossings([span], x, z, 1.4, 0.6)
+    assert.ok(carried !== null || onDeck(x, z), `nothing underfoot ${t.toFixed(3)} along the crossing`)
+    if (carried !== null) assert.ok(carried >= span.y0 - 1e-9, 'never below the lower deck')
+  }
+  assert.ok(exact > 0, 'the sliver is real: measured end to end, the crossing and the decks do not meet')
 })
 
