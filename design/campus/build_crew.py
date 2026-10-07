@@ -205,21 +205,27 @@ def preview(name, color, metallic=0.0, roughness=0.5, emission=None):
     shader.inputs["Roughness"].default_value = roughness
     if emission:
         shader.inputs["Emission Color"].default_value = (*emission, 1)
-        shader.inputs["Emission Strength"].default_value = 3.0
+        # At one, so the colour that reaches the picture is the colour asked for. Any brighter
+        # and the red runs out of range first, which turns amber yellow.
+        shader.inputs["Emission Strength"].default_value = 1.0
     return material
 
 
-SUIT = preview("Crew_Suit", (0.86, 0.50, 0.04), 0.2, 0.45)
+# Brand amber, #fdc700, in the linear values Blender works in.
+AMBER = (0.982, 0.571, 0.0)
+SUIT = preview("Crew_Suit", tuple(c * 0.75 for c in AMBER), 0.2, 0.45)
 FINISH = {
     "suit": SUIT,
     "dark": bpy.data.materials["NX_Steel_Black"],
     "plate": bpy.data.materials["NX_Steel_Plate"],
-    "lamp": bpy.data.materials["NX_Amber_Light"],
+    # Its own lamp for the picture: the shared one has a pale surface under its light, for
+    # baking, and the two together read yellow.
+    "lamp": preview("Crew_Lamp", (0, 0, 0), 0.0, 0.5, AMBER),
 }
 crew, triangles = into("NX_Crew", parts, lambda key: FINISH[key.split("__")[1]], bevel=True)
 STAND = {
     "glass": preview("Crew_Glass", (0.004, 0.005, 0.008), 0.0, 0.06),
-    "eyes": preview("Crew_Eyes", (0, 0, 0), 0.0, 0.5, (0.98, 0.57, 0.0)),
+    "eyes": preview("Crew_Eyes", (0, 0, 0), 0.0, 0.5, AMBER),
 }
 stand_ins, _ = into("NX_Crew_StandIns", stand, lambda key: STAND[key])
 
