@@ -877,10 +877,141 @@ def library(p):
     rod(p.frame, (0, -2.0, 3.90), (0, -2.0, 4.60), 0.02)
 
 
+# ---------- what stands on the foundry floor round the campus ----------
+# The floor's own furniture: where another world has trees and boulders, this one has plant.
+# Each is drawn at its real size, standing on z = 0, and small enough to be scattered by the
+# hundred.
+def stack(p):
+    """A vent stack: the tallest thing out on the floor, with a ring of light at its mouth."""
+    box(p.steel, 1.30, 1.30, 0.14, xyz(z=0.07))
+    prism(p.steel, 8, 0.52, 0.46, 0.14, 0.40)
+    prism(p.black, 12, 0.36, 0.30, 0.40, 3.40)
+    for z in (1.10, 2.10, 3.05):
+        prism(p.steel, 12, 0.39 - z * 0.017, 0.39 - z * 0.017, z, z + 0.07)
+    prism(p.steel, 12, 0.34, 0.36, 3.40, 3.52)
+    prism(p.light, 12, 0.27, 0.27, 3.52, 3.54)
+    prism(p.paint, 12, 0.335, 0.33, 2.55, 2.72)
+    for side in (-1, 1):
+        rod(p.frame, (0.41, side * 0.11, 0.40), (0.36, side * 0.11, 3.0), 0.016)
+    for i in range(9):
+        z = 0.6 + i * 0.28
+        rod(p.frame, (0.405 - z * 0.017, -0.11, z), (0.405 - z * 0.017, 0.11, z), 0.012)
+    box(p.black, 0.34, 0.44, 0.54, xyz(-0.42, 0.30, 0.41))
+    box(p.light, 0.012, 0.22, 0.08, xyz(-0.596, 0.30, 0.50))
+    rod(p.frame, (-0.30, -0.36, 0.14), (-0.30, -0.36, 0.90), 0.045, 8)
+    rod(p.frame, (-0.30, -0.36, 0.90), (-0.20, -0.20, 1.20), 0.045, 8)
+    bolts(p, xyz(z=0.14), [(sx * 0.55, sy * 0.55) for sx in (-1, 1) for sy in (-1, 1)], 0.03, 0.025)
+
+
+def pylon(p):
+    """A lattice pylon carrying the floor's lines, lamps at the ends of its arms."""
+    box(p.steel, 1.00, 1.00, 0.12, xyz(z=0.06))
+    legs = [i * TAU / 4 + TAU / 8 for i in range(4)]
+    z0, z1, r0, r1 = 0.12, 4.40, 0.52, 0.14
+
+    def leg(a, z):
+        return polar(a, r0 + (r1 - r0) * (z - z0) / (z1 - z0), z)
+
+    levels = [z0 + (z1 - z0) * i / 5 for i in range(6)]
+    for a in legs:
+        rod(p.frame, leg(a, z0), leg(a, z1), 0.035, 6)
+        box(p.steel, 0.18, 0.18, 0.06, at(a, r0, 0.15))
+    for i, z in enumerate(levels):
+        for j in range(4):
+            a, b = legs[j], legs[(j + 1) % 4]
+            rod(p.frame, leg(a, z), leg(b, z), 0.018, 5)
+            if i < len(levels) - 1:
+                rod(p.frame, leg(a, z), leg(b, levels[i + 1]), 0.014, 5)
+    box(p.steel, 2.20, 0.10, 0.10, xyz(z=3.70))
+    box(p.steel, 1.50, 0.08, 0.08, xyz(z=4.25))
+    for x, z in ((-1.05, 3.70), (1.05, 3.70), (-0.70, 4.25), (0.70, 4.25)):
+        prism(p.fixing, 8, 0.05, 0.05, z - 0.22, z - 0.05, xyz(x))
+        prism(p.light, 8, 0.07, 0.07, z - 0.30, z - 0.22, xyz(x))
+    prism(p.steel, 6, 0.17, 0.17, 4.40, 4.48)
+    prism(p.light, 8, 0.08, 0.08, 4.48, 4.60)
+    rod(p.frame, (0, 0, 4.60), (0, 0, 5.10), 0.014)
+    box(p.paint, 0.9, 0.9, 0.006, xyz(z=0.123))
+    box(p.recess, 0.7, 0.7, 0.006, xyz(z=0.126))
+
+
+def tanks(p):
+    """Three coolant tanks on a skid, piped together."""
+    box(p.steel, 2.40, 1.30, 0.12, xyz(z=0.06))
+    for i, x in enumerate((-0.78, 0.0, 0.78)):
+        tall = (1.50, 1.90, 1.30)[i]
+        prism(p.steel, 14, 0.36, 0.36, 0.12, 0.20, xyz(x))
+        prism(p.black, 14, 0.33, 0.33, 0.20, tall, xyz(x))
+        prism(p.steel, 14, 0.345, 0.345, tall * 0.5, tall * 0.5 + 0.06, xyz(x))
+        prism(p.paint, 14, 0.334, 0.334, tall - 0.34, tall - 0.20, xyz(x))
+        prism(p.steel, 14, 0.35, 0.18, tall, tall + 0.14, xyz(x))
+        prism(p.fixing, 8, 0.09, 0.09, tall + 0.14, tall + 0.20, xyz(x))
+        box(p.light, 0.05, 0.012, 0.36, xyz(x, -0.336, 0.62))
+    rod(p.frame, (-0.78, 0, 1.70), (-0.78, 0, 2.06), 0.04, 8)
+    rod(p.frame, (-0.78, 0, 2.06), (0.78, 0, 2.06), 0.04, 8)
+    rod(p.frame, (0.78, 0, 2.06), (0.78, 0, 1.50), 0.04, 8)
+    rod(p.frame, (0, 0, 2.10), (0, 0, 2.06), 0.05, 8)
+    rod(p.frame, (-1.10, 0.48, 0.12), (-1.10, 0.48, 0.80), 0.05, 8)
+    rod(p.frame, (-1.10, 0.48, 0.80), (-0.90, 0.25, 0.80), 0.05, 8)
+    box(p.black, 0.30, 0.24, 0.50, xyz(1.0, 0.48, 0.37))
+    box(p.light, 0.20, 0.012, 0.08, xyz(1.0, 0.602, 0.46))
+
+
+def manifold(p):
+    """A run of pipe on stands, with a valve and its handwheel."""
+    for x in (-1.5, 0.0, 1.5):
+        box(p.steel, 0.30, 0.90, 0.08, xyz(x, 0, 0.04))
+        box(p.steel, 0.12, 0.70, 0.62, xyz(x, 0, 0.39))
+        box(p.steel, 0.16, 0.80, 0.06, xyz(x, 0, 0.72))
+    for y, r in ((-0.22, 0.14), (0.14, 0.10), (0.34, 0.06)):
+        rod(p.black if r > 0.12 else p.frame, (-1.85, y, 0.75 + r), (1.85, y, 0.75 + r), r, 10)
+        for x in (-1.85, 1.85):
+            prism(p.steel, 10, r + 0.04, r + 0.04, -0.03, 0.03, xyz(x, y, 0.75 + r, ry=math.pi / 2))
+    prism(p.steel, 10, 0.19, 0.19, -0.14, 0.14, xyz(0.7, -0.22, 0.89, ry=math.pi / 2))
+    prism(p.paint, 10, 0.145, 0.145, -0.25, 0.25, xyz(-0.8, -0.22, 0.89, ry=math.pi / 2))
+    rod(p.frame, (0.7, -0.22, 1.08), (0.7, -0.22, 1.34), 0.025)
+    prism(p.fixing, 10, 0.15, 0.15, 1.34, 1.37, xyz(0.7, -0.22))
+    prism(p.recess, 10, 0.11, 0.11, 1.37, 1.375, xyz(0.7, -0.22))
+    box(p.light, 0.40, 0.012, 0.04, xyz(0, -0.356, 0.50))
+    box(p.light, 0.40, 0.012, 0.04, xyz(0, 0.356, 0.50))
+
+
+def beacon(p):
+    """A floor light: a short post, lit on top."""
+    prism(p.steel, 8, 0.26, 0.22, 0.0, 0.10)
+    prism(p.black, 8, 0.11, 0.09, 0.10, 0.95)
+    prism(p.steel, 8, 0.13, 0.13, 0.95, 1.01)
+    prism(p.light, 8, 0.10, 0.10, 1.01, 1.17)
+    for i in range(4):
+        rod(p.frame, polar(i * TAU / 4, 0.115, 1.01), polar(i * TAU / 4, 0.115, 1.17), 0.012)
+    prism(p.steel, 8, 0.15, 0.06, 1.17, 1.25)
+    prism(p.paint, 8, 0.108, 0.104, 0.40, 0.52)
+
+
+def cabinet(p):
+    """A junction cabinet, where a conduit comes up out of the floor."""
+    box(p.steel, 1.30, 0.80, 0.10, xyz(z=0.05))
+    box(p.black, 1.10, 0.60, 1.10, xyz(z=0.65))
+    box(p.steel, 1.18, 0.68, 0.06, xyz(z=1.23))
+    for x in (-0.28, 0.28):
+        box(p.steel, 0.50, 0.03, 0.92, xyz(x, -0.31, 0.66))
+        box(p.recess, 0.38, 0.012, 0.30, xyz(x, -0.328, 0.42))
+        box(p.light, 0.30, 0.012, 0.045, xyz(x, -0.33, 0.98))
+        for i in range(4):
+            box(p.steel, 0.38, 0.03, 0.02, xyz(x, -0.335, 0.66 + i * 0.06, rx=-0.5))
+    box(p.light, 0.05, 0.05, 0.05, xyz(0.48, -0.26, 1.285))
+    rod(p.frame, (-0.66, 0.1, 0.10), (-0.66, 0.1, 0.80), 0.05, 8)
+    rod(p.frame, (-0.66, 0.1, 0.80), (-0.55, 0.1, 0.80), 0.05, 8)
+    rod(p.frame, (0.40, 0.2, 1.26), (0.40, 0.2, 1.90), 0.014)
+    box(p.paint, 1.30, 0.10, 0.006, xyz(0, -0.45, 0.103))
+
+
+PROPS = {"stack": stack, "pylon": pylon, "tanks": tanks, "manifold": manifold, "beacon": beacon, "cabinet": cabinet}
+
 BUILDINGS = {
     "core": core, "hall": hall, "array": array, "mast": mast, "vault": vault,
     "dome": dome, "spire": spire, "forge": forge, "pad": pad, "lab": lab,    # Not a deck building: the landmark beside the gate.
     "library": library,
+    **PROPS,
 }
 
 built = {}

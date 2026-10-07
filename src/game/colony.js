@@ -1,6 +1,6 @@
 import { SceneryReflections } from '../world/reflections.js'
 import * as THREE from 'three'
-import { PLANETS, createTerrain, createScatter, terrainHeight } from '../world/planet.js'
+import { terrainUniforms, PLANETS, createTerrain, createScatter, terrainHeight } from '../world/planet.js'
 import { createWater } from '../world/water.js'
 import { Fauna } from '../world/fauna.js'
 import { BuildingSurfaces } from '../world/building-surfaces.js'
@@ -482,6 +482,9 @@ export class Colony {
    * happens to invalidate the terrain, which on a colony nobody touches is never.
    */
   onAssetsReady() {
+    // The wildlife is seeded once per world, and was seeded before the models arrived:
+    // seed it again so a world with a drone of its own flies that one.
+    this._faunaPlanet = null
     this._buildTerrain()
   }
 
@@ -1308,6 +1311,7 @@ export class Colony {
     buildingUniforms.uNight.value = night
     // One write turns every rotor in the colony.
     buildingUniforms.uTime.value = elapsed
+    terrainUniforms.uTime.value = elapsed
     this.ship.update(dt, elapsed, night)
 
     this._growBuildings(dt)

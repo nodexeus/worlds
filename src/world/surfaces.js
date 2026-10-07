@@ -237,6 +237,39 @@ export function steelDeckSurface() {
   return steel
 }
 
+/** World units one repeat of the foundry floor covers: sixteen plates and a crossing of channels. */
+export const FOUNDRY_TEXTURE_SCALE = 16
+
+let foundry = null
+
+/**
+ * The foundry floor: the ground the campus stands over. Blackened plate, and a grid of
+ * service channels with a line of amber light down each. Baked by
+ * `design/campus/bake_foundry.py`, with the same packing as the steel deck above.
+ */
+export function foundryFloorSurface() {
+  if (foundry) return foundry
+  const loader = new THREE.TextureLoader()
+  const load = (name, colorSpace) => {
+    const t = loader.load(`${import.meta.env.BASE_URL}assets/campus/${name}`)
+    t.wrapS = THREE.RepeatWrapping
+    t.wrapT = THREE.RepeatWrapping
+    t.colorSpace = colorSpace
+    t.anisotropy = 8
+    return t
+  }
+  const orm = load('floor_orm.jpg', THREE.NoColorSpace)
+  foundry = {
+    map: load('floor_basecolor.jpg', THREE.SRGBColorSpace),
+    normalMap: load('floor_normal.jpg', THREE.NoColorSpace),
+    emissiveMap: load('floor_emission.jpg', THREE.SRGBColorSpace),
+    aoMap: orm,
+    roughnessMap: orm,
+    metalnessMap: orm,
+  }
+  return foundry
+}
+
 function texture(el, colorSpace) {
   const t = new THREE.CanvasTexture(el)
   t.wrapS = THREE.RepeatWrapping

@@ -36,6 +36,13 @@ const BUILDINGS = {
   pad: TEXTURE_SIZE,
   lab: TEXTURE_SIZE,
   library: 2048,
+  // What is scattered over the foundry floor: small, and seen from across the campus.
+  stack: 512,
+  pylon: 512,
+  tanks: 512,
+  manifold: 512,
+  beacon: 512,
+  cabinet: 512,
 }
 
 const [DIR, OUT] = process.argv.slice(2)
@@ -95,6 +102,15 @@ for (const other of rest) {
 root.setDefaultScene(scene)
 
 await doc.transform(unpartition(), dedup(), prune())
+
+// The drone rides along: bare geometry, one mesh per role, so there is nothing to shrink.
+const droneSource = join(DIR, 'nodexeus-drone.glb')
+if (existsSync(droneSource)) {
+  const drone = await io.read(droneSource)
+  await drone.transform(prune())
+  await io.write(join(dirname(OUT), 'drone.glb'), drone)
+  console.log(`drone.glb: ${drone.getRoot().listMeshes().length} parts`)
+}
 
 console.log(`${basename(OUT)}: ${root.listMeshes().length} buildings, ${root.listTextures().length} textures`)
 mkdirSync(dirname(OUT), { recursive: true })

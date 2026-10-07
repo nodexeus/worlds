@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { campusDrone } from './campus-buildings.js'
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js'
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
 import { withCurve } from '../core/curve.js'
@@ -471,6 +472,35 @@ function droneGeometry() {
   parts.push(tag(crate, { aCrate: 1, pivot: fold, aAccent: 2 }))
 
   return merge(parts)
+}
+
+/**
+ * The same drone from a model of the world's own: parts named for their role, which is what
+ * says how each is tagged. See `design/campus/build_drone.py`.
+ */
+function droneFromParts(parts) {
+  const fold = [0, -0.05, 0]
+  const tagged = []
+  for (const { name, geometry } of parts) {
+    const geo = geometry.index ? geometry.toNonIndexed() : geometry.clone()
+    // Position and normal only, so every part carries the same set and they can be merged.
+    for (const key of Object.keys(geo.attributes)) {
+      if (key !== 'position' && key !== 'normal') geo.deleteAttribute(key)
+    }
+    const rotor = name.match(/^rotor(_amber)?(\d)$/)
+    if (rotor) {
+      geo.computeBoundingBox()
+      const hub = geo.boundingBox.getCenter(new THREE.Vector3())
+      // Both halves of a rotor turn about the same shaft: the hub's x and z, whatever the height.
+      tagged.push(tag(geo, { aSpin: ROTOR_SPIN[Number(rotor[2])], pivot: [hub.x, hub.y, hub.z], aAccent: rotor[1] ? 2 : 1 }))
+    } else if (name === 'cable' || name === 'crate') tagged.push(tag(geo, { aCrate: 1, pivot: fold, aAccent: 1 }))
+    else if (name === 'crate_amber') tagged.push(tag(geo, { aCrate: 1, pivot: fold, aAccent: 2 }))
+    else if (name === 'lamp') tagged.push(tag(geo, { aEmissive: 1 }))
+    else if (name === 'dark') tagged.push(tag(geo, { aAccent: 1 }))
+    else if (name === 'amber') tagged.push(tag(geo, { aAccent: 2 }))
+    else tagged.push(tag(geo))
+  }
+  return merge(tagged)
 }
 
 // ── shared scratch ────────────────────────────────────────────────────────────────────
@@ -1046,7 +1076,9 @@ class Fleet {
     this.rand = mulberry(seed)
     this.count = Math.max(0, Math.round(spec.count ?? 3))
 
-    const geo = droneGeometry()
+    // A world can fly a drone of its own; until its model has loaded, the stock one flies.
+    const own = spec.model === 'campus' ? campusDrone() : null
+    const geo = own ? droneFromParts(own) : droneGeometry()
     phaseAttribute(geo, this.count, this.rand)
     this.carry = new THREE.InstancedBufferAttribute(new Float32Array(this.count).fill(1), 1)
     this.carry.setUsage(THREE.DynamicDrawUsage)
@@ -1058,13 +1090,13 @@ class Fleet {
     this.mats = crowdMaterials({
       name: 'drone',
       drone: true,
-      accentA: 0x3a3d44,
-      accentB: 0xc9a26a,
+      accentA: spec.accentA ?? 0x3a3d44,
+      accentB: spec.accentB ?? 0xc9a26a,
       side: THREE.FrontSide,
       shadow: true,
     })
     this.mesh = crowdMesh(geo, this.mats, this.count, 'drones', true)
-    paint(this.mesh, this.count, DRONE_COLORS, this.rand, 0.04)
+    paint(this.mesh, this.count, spec.hull || DRONE_COLORS, this.rand, 0.04)
     group.add(this.mesh)
 
     // The crates once let go of. A drone's own crate is folded into its hull the moment it
