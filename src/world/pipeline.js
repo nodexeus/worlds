@@ -1,12 +1,11 @@
 import * as THREE from 'three'
 import { withCurve } from '../core/curve.js'
 import { campusBuilding } from './campus-buildings.js'
-import { GROUND_SIZE } from './planet.js'
 
 /**
  * The coolant lines of a world that has them: glass pipe on cradles, standing on the floor,
- * with the coolant alight inside it. A square ring round the colony, a line running out from
- * the middle of each side, and a pump house wherever lines meet.
+ * with the coolant alight inside it. A square ring round the colony, fed at the middle of each
+ * side by a line from a pump house further out, and a pump house wherever lines meet.
  *
  * Square, and square to the world, because the floor it stands on is laid on a square grid:
  * the lines run along the plate seams, midway between the floor's conduits.
@@ -25,24 +24,27 @@ export const pipelineUniforms = { uTime: { value: 0 } }
 /**
  * Where everything stands.
  *
- * @param {{ring: number}} spec  `ring` is how far out the ring runs, a multiple of the pipe length
+ * @param {{ring: number, reach: number}} spec  how far out the ring runs, and how far out the
+ *   pump houses that feed it stand; both a whole number of pipe lengths
  * @returns {{pipes: Array<{x: number, z: number, turned: boolean}>, pumps: Array<{x: number, z: number}>}}
  *   `turned` pipes run along z.
  */
 export function pipelineLayout(spec) {
-  const ring = spec.ring
-  const reach = GROUND_SIZE / 2 - LENGTH
+  const { ring, reach } = spec
   const pipes = []
   const pumps = []
   for (const side of [-1, 1]) {
+    // Two sides of the ring.
     for (let at = -ring + LENGTH / 2; at < ring; at += LENGTH) {
       pipes.push({ x: at, z: side * ring, turned: false })
       pipes.push({ x: side * ring, z: at, turned: true })
     }
+    // The feeds, from the pump houses out on the canal in to the middle of each side.
     for (let at = ring + LENGTH / 2; at < reach; at += LENGTH) {
       pipes.push({ x: side * at, z: 0, turned: false })
       pipes.push({ x: 0, z: side * at, turned: true })
     }
+    pumps.push({ x: side * reach, z: 0 }, { x: 0, z: side * reach })
     pumps.push({ x: side * ring, z: 0 }, { x: 0, z: side * ring })
     pumps.push({ x: side * ring, z: ring }, { x: side * ring, z: -ring })
   }
@@ -106,7 +108,7 @@ function flowing(source) {
 /**
  * Build the lines.
  *
- * @param {{ring: number}} spec
+ * @param {{ring: number, reach: number}} spec
  * @param {(x: number, z: number) => number} heightAt  the floor under a point
  * @returns {THREE.Group | null} null if the models have not loaded
  */
