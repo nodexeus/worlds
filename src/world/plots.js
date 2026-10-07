@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js'
-import { DECK_TEXTURE_SCALE, KERB_UV, deckSurface, kerbSurface } from './surfaces.js'
+import { DECK_TEXTURE_SCALE, KERB_UV, deckSurface, kerbSurface, steelDeckSurface } from './surfaces.js'
 import { atlasTexture, hasPart, part } from './kit.js'
 import { mulberry } from './planet.js'
 import { withCurve } from '../core/curve.js'
@@ -531,17 +531,20 @@ export class Plot {
     const color = this.style?.deck
       ? new THREE.Color(this.style.deck.color)
       : new THREE.Color(this.accent).offsetHSL(0, -0.38, 0).multiplyScalar(0.9)
-    const plate = deckSurface()
+    // A world can bring a finished surface of its own instead of the tinted plate. Its maps
+    // carry the roughness and metalness, so the material's own are left at one to pass them
+    // through unless the world asks otherwise.
+    const steel = this.style?.deck?.surface === 'steel'
+    const plate = steel ? steelDeckSurface() : deckSurface()
     this.deck = new THREE.Mesh(
       geo,
       new THREE.MeshStandardMaterial({
         color,
-        map: plate.map,
-        normalMap: plate.normalMap,
-        roughnessMap: plate.roughnessMap,
-        normalScale: new THREE.Vector2(0.7, 0.7),
-        roughness: this.style?.deck?.roughness ?? 0.82,
-        metalness: this.style?.deck?.metalness ?? 0.18,
+        ...plate,
+        normalScale: new THREE.Vector2(steel ? 1 : 0.7, steel ? 1 : 0.7),
+        roughness: this.style?.deck?.roughness ?? (steel ? 1 : 0.82),
+        metalness: this.style?.deck?.metalness ?? (steel ? 1 : 0.18),
+        envMapIntensity: this.style?.deck?.reflect ?? 1,
       })
     )
     this.deck.receiveShadow = true
@@ -563,17 +566,17 @@ export class Plot {
         x, z, DECK_TOP - DECK_HEIGHT + 0.02, this.elev
       )
     )
-    const plate = deckSurface()
+    const steel = this.style?.deck?.surface === 'steel'
+    const plate = steel ? steelDeckSurface() : deckSurface()
     this.block = new THREE.Mesh(
       BufferGeometryUtils.mergeGeometries(parts),
       new THREE.MeshStandardMaterial({
-        color: 0x1b1b20,
-        map: plate.map,
-        normalMap: plate.normalMap,
-        roughnessMap: plate.roughnessMap,
-        normalScale: new THREE.Vector2(0.5, 0.5),
-        roughness: 0.5,
-        metalness: 0.65,
+        // The same plate as the deck it carries, a stop darker so the deck reads as on top.
+        color: steel ? 0x8a8c92 : 0x1b1b20,
+        ...plate,
+        normalScale: new THREE.Vector2(steel ? 0.8 : 0.5, steel ? 0.8 : 0.5),
+        roughness: steel ? 1 : 0.5,
+        metalness: steel ? (this.style.deck.metalness ?? 1) : 0.65,
       })
     )
     parts.forEach((g) => g.dispose())

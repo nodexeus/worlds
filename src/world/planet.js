@@ -88,7 +88,9 @@ export const PLANETS = {
       buildingRadius: 1.6,
       // No lamp posts or crates: both stand exactly where the corners' buildings now do.
       bare: true,
-      deck: { color: 0x26262b, roughness: 0.34, metalness: 0.8 },
+      // Baked steel plate: the maps hold the colour, the wear and how it shines.
+      // Not fully metal: under a dark sky a pure mirror has nothing to show and goes black.
+      deck: { surface: 'steel', color: 0xffffff, metalness: 0.72 },
       // One accent for every workspace: on this world the kerb is brand amber, and a
       // workspace is told from its neighbours by standing apart from them.
       palette: [0xfdc700],
