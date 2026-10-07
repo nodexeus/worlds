@@ -8,6 +8,8 @@ import { bendPoint, withCurve } from '../core/curve.js'
 import { Props, CHECK_LEN, CHECK_EVERY, pickProp } from './props.js'
 import { projectHitPoint, bodyHitDistance } from './picking.js'
 import { helmetGeometry, visorGeometry, screenGeometry } from './model.js'
+import { ROBOT_KINDS, robotGeometry, robotKind } from './robots.js'
+import { campusBuilding } from '../world/campus-buildings.js'
 
 /**
  * Every astronaut in the colony, batched into a fixed set of instanced draw calls.
@@ -316,6 +318,42 @@ export class Astronauts {
     // these anchors in step with CREW_SCALE; picking follows the animated bones below.
     const restHeadY = rig.attach[(this.headSlot + 0) * 16 + 13]
     this.headHeight = (restHeadY + P.headUp) * CREW_SCALE
+    this.setRobots()
+  }
+
+  /**
+   * Draw the crew as robots: the project's own bodies, one instanced mesh a kind, in place of
+   * the stock body and everything that was worn on it. Needs the rig, and the models; call it
+   * again once both have loaded. Until then, or if a model is missing, the old crew is drawn.
+   */
+  setRobots() {
+    if (!this.rig || this.robots) return
+    const models = ROBOT_KINDS.map((name) => campusBuilding(name))
+    if (models.some((model) => !model)) return
+    this.robots = models.map((model) => {
+      const geo = robotGeometry(model.geometry, this.rig.bones)
+      const frames = new THREE.InstancedBufferAttribute(new Float32Array(this.capacity), 1)
+      frames.setUsage(THREE.DynamicDrawUsage)
+      geo.setAttribute('aFrame', frames)
+      const surface = model.material.clone()
+      // As for the campus's buildings: fully metal, dark plate has only a dark sky to show
+      // and goes to a silhouette, and the lights are driven above one for the bloom.
+      surface.metalness = 0.75
+      surface.emissiveIntensity = 1.7
+      const mesh = new THREE.InstancedMesh(geo, decorateSkinned(surface, this.crewUniforms), this.capacity)
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+      mesh.count = 0
+      mesh.receiveShadow = false
+      mesh.frustumCulled = false
+      mesh.customDepthMaterial = decorateSkinned(
+        new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }),
+        this.crewUniforms,
+        { normals: false }
+      )
+      this.group.add(mesh)
+      return { mesh, frames, n: 0 }
+    })
+    this._applyShadowFlags()
   }
 
   _disposeCrew() {
@@ -325,6 +363,13 @@ export class Astronauts {
     this.crew.material.dispose()
     this.crew.customDepthMaterial?.dispose()
     this.crew = null
+    for (const { mesh } of this.robots || []) {
+      this.group.remove(mesh)
+      mesh.geometry.dispose()
+      mesh.material.dispose()
+      mesh.customDepthMaterial?.dispose()
+    }
+    this.robots = null
   }
 
   _mesh(geo, mat, count, castShadow) {
@@ -438,6 +483,7 @@ export class Astronauts {
     }
     // The body is the shadow that matters — it is the whole silhouette.
     if (this.crew) this.crew.castShadow = on
+    for (const { mesh } of this.robots || []) mesh.castShadow = on
     this.props?.setShadows(on)
   }
 
@@ -604,6 +650,8 @@ export class Astronauts {
       walkFaceHold: 0,
       walkPersonality: (hash(entry.id) >>> 0) / 0x100000000,
       suit: SUIT_TONES[(hash(entry.id) >>> 3) % SUIT_TONES.length],
+      // Which robot it is. The thread's own doing, and nothing else's: see `robotKind`.
+      kind: robotKind(hash(entry.id)),
       eye: new THREE.Color(1, 1, 1),
       trim: new THREE.Color(0xffffff),
       hop: 0,
@@ -1456,6 +1504,9 @@ export class Astronauts {
     const one = this._one
     const frames = this.frameAttr.array
     const crewFrames = this.crewFrameAttr?.array
+    // Robots are whole: a head, a pack and an aerial are part of the body, not worn on it.
+    const robots = this.robots
+    if (robots) for (const kind of robots) kind.n = 0
 
     let i = 0
     let hands = 0
@@ -1486,14 +1537,18 @@ export class Astronauts {
       root.compose(v, q, one.setScalar(s * CREW_SCALE))
       one.setScalar(1)
 
-      if (crew) {
+      if (robots) {
+        const kind = robots[agent.kind % robots.length]
+        kind.mesh.setMatrixAt(kind.n, root)
+        kind.frames.array[kind.n++] = agent.frame
+      } else if (crew) {
         crew.setMatrixAt(i, root)
         crewFrames[i] = agent.frame
       }
 
       // Everything worn hangs off a bone at the frame the body is actually on, so a helmet
       // cannot drift off a head that is looking down or lying on the ground.
-      if (rig) {
+      if (rig && !robots) {
         attachMatrixAt(rig, agent.frame, this.headSlot, bone)
         worn.multiplyMatrices(root, bone)
         setPart(child, worn, helmet, i, 0, P.headUp, 0, 0, 0, 0)
@@ -1506,7 +1561,8 @@ export class Astronauts {
         worn.multiplyMatrices(root, bone)
         setPart(child, worn, pack, i, 0, P.packUp, P.packZ, 0, 0, 0)
         setPart(child, worn, lamp, i, 0, P.lightY, P.lightZ, 0, 0, 0)
-
+      }
+      if (rig) {
         // The hammer only exists while a thread is running, so it gets its own instance
         // counter — an unused slot in the middle of an instanced mesh still draws.
         if (agent.clipKey === 'work') {
@@ -1558,12 +1614,17 @@ export class Astronauts {
     // The glowing parts pulse every frame; the rest only re-upload when something moved slot.
     const animated = new Set(['tip', 'lamp'])
     for (const [name, mesh] of Object.entries(this.parts)) {
-      mesh.count = name === 'hammer' ? hands : n
+      mesh.count = name === 'hammer' ? hands : robots ? 0 : n
       mesh.instanceMatrix.needsUpdate = true
       if (mesh.instanceColor && (staticDirty || animated.has(name))) mesh.instanceColor.needsUpdate = true
     }
+    for (const kind of robots || []) {
+      kind.mesh.count = kind.n
+      kind.mesh.instanceMatrix.needsUpdate = true
+      kind.frames.needsUpdate = true
+    }
     if (crew) {
-      crew.count = n
+      crew.count = robots ? 0 : n
       crew.instanceMatrix.needsUpdate = true
       this.crewFrameAttr.needsUpdate = true
       if (staticDirty && crew.instanceColor) crew.instanceColor.needsUpdate = true

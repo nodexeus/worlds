@@ -27,7 +27,8 @@ loads the file.
             lamp   lit amber
 
 Measured in the rig's own units: feet on z = 0, about 1.9 to the top of the head. Front is -Y.
-Writes nodexeus-crew-<kind>.glb next to this file.
+Each kind lands in its own `NX_Crew_<Kind>` collection. `bake_model.py` then joins, bakes
+and exports it, given `BONES` so it can write each vertex's bone into the mesh.
 """
 import math
 import os
@@ -54,6 +55,16 @@ KNEE = 0.292
 ANKLE = 0.145
 
 
+# The rig's bones, in an order of this file's own. A baked figure is one mesh, so which bone
+# each vertex rides is written into it as a number: its place in this list. The game has the
+# same list (`ROBOT_BONES` in src/agents/robots.js) and the two must agree.
+BONES = [
+    "hips", "spine", "chest", "head",
+    "upperarm.l", "lowerarm.l", "wrist.l", "upperarm.r", "lowerarm.r", "wrist.r",
+    "upperleg.l", "lowerleg.l", "foot.l", "toes.l", "upperleg.r", "lowerleg.r", "foot.r", "toes.r",
+]
+
+
 class Figure:
     """One kind of crew: its parts, by the bone that carries them and what they are made of."""
 
@@ -63,7 +74,7 @@ class Figure:
     def part(self, bone, finish):
         return self.parts.setdefault(f"{bone}__{finish}", bmesh.new())
 
-    def block(self, bone, finish, sx, sy, sz, matrix, round_=0.03, steps=3):
+    def block(self, bone, finish, sx, sy, sz, matrix, round_=0.03, steps=2):
         """A box with its edges rounded over: the shape nearly every plate here starts from."""
         bm = self.part(bone, finish)
         made = bmesh.ops.create_cube(bm, size=1.0)["verts"]
@@ -74,7 +85,7 @@ class Figure:
         verts = list({v for f in out["faces"] for v in f.verts} | {v for v in made if v.is_valid})
         bmesh.ops.transform(bm, matrix=matrix, verts=verts)
 
-    def ball(self, bone, finish, radius, matrix, scale=(1.0, 1.0, 1.0), around=14, up=9):
+    def ball(self, bone, finish, radius, matrix, scale=(1.0, 1.0, 1.0), around=10, up=6):
         bm = self.part(bone, finish)
         made = bmesh.ops.create_uvsphere(bm, u_segments=around, v_segments=up, radius=1.0)["verts"]
         bmesh.ops.transform(bm, matrix=matrix @ Matrix.Diagonal((radius * scale[0], radius * scale[1], radius * scale[2], 1.0)), verts=made)
@@ -102,12 +113,12 @@ def frame(f):
         f.ball("hips", "frame", 0.085, xyz(sx * HIP[0], 0, HIP[1]))
     f.drum("hips", "frame", 10, 0.15, 0.13, 0.44, 0.60, Matrix.Diagonal((1.0, 0.8, 1.0, 1.0)))
     # A ribbed waist.
-    f.drum("spine", "frame", 12, 0.12, 0.13, 0.58, 0.80)
+    f.drum("spine", "frame", 10, 0.12, 0.13, 0.58, 0.80)
     for z in (0.63, 0.69, 0.75):
-        f.drum("spine", "frame", 12, 0.15, 0.15, z - 0.016, z + 0.016)
-    f.drum("chest", "frame", 12, 0.10, 0.10, 1.16, 1.34)
+        f.drum("spine", "frame", 10, 0.15, 0.15, z - 0.016, z + 0.016)
+    f.drum("chest", "frame", 10, 0.10, 0.10, 1.16, 1.34)
     for z in (1.21, 1.27):
-        f.drum("chest", "frame", 12, 0.125, 0.125, z - 0.014, z + 0.014)
+        f.drum("chest", "frame", 10, 0.125, 0.125, z - 0.014, z + 0.014)
     for side, sx in (("l", 1), ("r", -1)):
         z = SHOULDER[1]
         f.ball(f"upperarm.{side}", "frame", 0.10, xyz(sx * SHOULDER[0], 0, z))
@@ -131,11 +142,11 @@ def machinery(f, caps="frame"):
     """More of the machine than the bare frame shows: discs at the hinges, pistons in the neck."""
     for side, sx in (("l", 1), ("r", -1)):
         z = SHOULDER[1]
-        f.drum(f"upperarm.{side}", "frame", 14, 0.115, 0.115, -0.035, 0.035, xyz(sx * 0.225, 0, z, ry=QUARTER))
-        f.drum(f"lowerarm.{side}", "frame", 14, 0.088, 0.088, -0.085, 0.085, xyz(sx * ELBOW, 0, z, rx=QUARTER))
-        f.drum(f"lowerarm.{side}", caps, 14, 0.05, 0.05, -0.095, 0.095, xyz(sx * ELBOW, 0, z, rx=QUARTER))
-        f.drum(f"lowerleg.{side}", "frame", 14, 0.09, 0.09, -0.10, 0.10, xyz(sx * HIP[0], 0, KNEE, ry=QUARTER))
-        f.drum(f"lowerleg.{side}", caps, 14, 0.05, 0.05, -0.11, 0.11, xyz(sx * HIP[0], 0, KNEE, ry=QUARTER))
+        f.drum(f"upperarm.{side}", "frame", 10, 0.115, 0.115, -0.035, 0.035, xyz(sx * 0.225, 0, z, ry=QUARTER))
+        f.drum(f"lowerarm.{side}", "frame", 10, 0.088, 0.088, -0.085, 0.085, xyz(sx * ELBOW, 0, z, rx=QUARTER))
+        f.drum(f"lowerarm.{side}", caps, 10, 0.05, 0.05, -0.095, 0.095, xyz(sx * ELBOW, 0, z, rx=QUARTER))
+        f.drum(f"lowerleg.{side}", "frame", 10, 0.09, 0.09, -0.10, 0.10, xyz(sx * HIP[0], 0, KNEE, ry=QUARTER))
+        f.drum(f"lowerleg.{side}", caps, 10, 0.05, 0.05, -0.11, 0.11, xyz(sx * HIP[0], 0, KNEE, ry=QUARTER))
         f.bar("chest", "frame", (sx * 0.085, 0.07, 1.17), (sx * 0.11, 0.09, 1.36), 0.018)
         f.bar("spine", "frame", (sx * 0.16, -0.03, 0.57), (sx * 0.19, -0.05, 0.80), 0.016)
 
@@ -143,10 +154,10 @@ def machinery(f, caps="frame"):
 def lens(f, bone, matrix, size=1.0):
     """An eye: a housing, a ring of light, a lens, and the point of light in it."""
     k = size
-    f.drum(bone, "frame", 20, 0.122 * k, 0.112 * k, 0.0, 0.05 * k, matrix)
-    f.drum(bone, "lamp", 20, 0.098 * k, 0.098 * k, 0.05 * k, 0.057 * k, matrix)
-    f.drum(bone, "frame", 20, 0.074 * k, 0.070 * k, 0.05 * k, 0.066 * k, matrix)
-    f.ball(bone, "glass", 0.064 * k, matrix @ Matrix.Translation((0, 0, 0.062 * k)), (1.0, 1.0, 0.42), 16, 10)
+    f.drum(bone, "frame", 14, 0.122 * k, 0.112 * k, 0.0, 0.05 * k, matrix)
+    f.drum(bone, "lamp", 14, 0.098 * k, 0.098 * k, 0.05 * k, 0.057 * k, matrix)
+    f.drum(bone, "frame", 14, 0.074 * k, 0.070 * k, 0.05 * k, 0.066 * k, matrix)
+    f.ball(bone, "glass", 0.064 * k, matrix @ Matrix.Translation((0, 0, 0.062 * k)), (1.0, 1.0, 0.42), 12, 7)
     f.drum(bone, "lamp", 12, 0.021 * k, 0.021 * k, 0.086 * k, 0.091 * k, matrix)
 
 
@@ -164,16 +175,16 @@ def unit(f):
     machinery(f, caps="shell")
 
     # ---- the head ----
-    f.block("head", "shell", 0.84, 0.60, 0.60, xyz(0, 0.02, face), 0.15, 5)
+    f.block("head", "shell", 0.84, 0.60, 0.60, xyz(0, 0.02, face), 0.15, 3)
     # A dark panel let into the crown, the way the helmet in the picture is pieced.
     f.block("head", "frame", 0.30, 0.40, 0.02, xyz(0, 0.06, face + 0.295), 0.008, 2)
     # The faceplate, sunk into a black surround.
-    f.block("head", "frame", 0.72, 0.07, 0.44, xyz(0, -0.272, face - 0.01), 0.10, 4)
-    f.block("head", "glass", 0.64, 0.05, 0.36, xyz(0, -0.268, face - 0.01), 0.08, 4)
+    f.block("head", "frame", 0.72, 0.07, 0.44, xyz(0, -0.272, face - 0.01), 0.10, 2)
+    f.block("head", "glass", 0.64, 0.05, 0.36, xyz(0, -0.268, face - 0.01), 0.08, 2)
     # A brow over each eye, and a jaw under the plate.
     for sx in (-1, 1):
-        f.block("head", "shell", 0.30, 0.07, 0.07, xyz(sx * 0.18, -0.292, face + 0.235, ry=sx * 0.10), 0.02, 3)
-    f.block("head", "shell", 0.42, 0.09, 0.075, xyz(0, -0.262, face - 0.262), 0.02, 3)
+        f.block("head", "shell", 0.30, 0.07, 0.07, xyz(sx * 0.18, -0.292, face + 0.235, ry=sx * 0.10), 0.02, 2)
+    f.block("head", "shell", 0.42, 0.09, 0.075, xyz(0, -0.262, face - 0.262), 0.02, 2)
     for sx in (-0.09, 0.0, 0.09):
         f.block("head", "frame", 0.05, 0.02, 0.016, xyz(sx, -0.31, face - 0.262), 0.004, 1)
     for sx in (-1, 1):
@@ -181,10 +192,10 @@ def unit(f):
     # Ears: a cup in layers, ringed in light.
     for sx in (-1, 1):
         cup = xyz(sx * 0.42, 0.03, face, ry=sx * QUARTER)
-        f.drum("head", "frame", 20, 0.195, 0.180, 0.0, 0.06, cup)
-        f.drum("head", "shell", 20, 0.158, 0.150, 0.06, 0.085, cup)
-        f.drum("head", "frame", 20, 0.128, 0.128, 0.085, 0.10, cup)
-        f.drum("head", "lamp", 20, 0.108, 0.108, 0.10, 0.107, cup)
+        f.drum("head", "frame", 14, 0.195, 0.180, 0.0, 0.06, cup)
+        f.drum("head", "shell", 14, 0.158, 0.150, 0.06, 0.085, cup)
+        f.drum("head", "frame", 14, 0.128, 0.128, 0.085, 0.10, cup)
+        f.drum("head", "lamp", 14, 0.108, 0.108, 0.10, 0.107, cup)
         f.drum("head", "frame", 12, 0.072, 0.062, 0.10, 0.128, cup)
         for k in range(4):
             a = k * TAU / 4 + TAU / 8
@@ -198,15 +209,15 @@ def unit(f):
     f.bar("head", "frame", (0.47, 0.07, face + 0.10), (0.474, 0.075, face + 0.15), 0.04)
 
     # ---- the body: a black core, plated in pieces ----
-    f.block("chest", "frame", 0.50, 0.36, 0.40, xyz(0, 0, 0.985), 0.07, 3)
+    f.block("chest", "frame", 0.50, 0.36, 0.40, xyz(0, 0, 0.985), 0.07, 2)
     f.block("chest", "frame", 0.64, 0.17, 0.07, xyz(0, 0, 1.165), 0.02, 2)
-    f.block("chest", "shell", 0.36, 0.10, 0.36, xyz(0, -0.165, 0.995), 0.04, 3)
+    f.block("chest", "shell", 0.36, 0.10, 0.36, xyz(0, -0.165, 0.995), 0.04, 2)
     for sx in (-1, 1):
-        f.block("chest", "shell", 0.11, 0.30, 0.33, xyz(sx * 0.255, -0.02, 0.99, rz=sx * 0.30), 0.035, 3)
+        f.block("chest", "shell", 0.11, 0.30, 0.33, xyz(sx * 0.255, -0.02, 0.99, rz=sx * 0.30), 0.035, 2)
         f.block("chest", "lamp", 0.012, 0.022, 0.11, xyz(sx * 0.213, -0.196, 1.0, rz=sx * 0.30), 0.004, 1)
         for sz in (0.865, 1.125):
             bolt("chest", xyz(sx * 0.14, -0.216, sz, rx=QUARTER))
-    f.block("chest", "shell", 0.42, 0.09, 0.32, xyz(0, 0.175, 0.995), 0.035, 3)
+    f.block("chest", "shell", 0.42, 0.09, 0.32, xyz(0, 0.175, 0.995), 0.035, 2)
     f.drum("chest", "frame", 12, 0.21, 0.18, 1.17, 1.215)
     # The mark.
     mark = xyz(0, -0.216, 1.0, rx=QUARTER)
@@ -218,11 +229,11 @@ def unit(f):
     f.block("chest", "lamp", 0.017, 0.008, 0.088, xyz(0, -0.23, 1.0, ry=-0.68), 0.002, 1)
     # A belly plate, and the pelvis in three.
     f.block("spine", "shell", 0.20, 0.05, 0.13, xyz(0, -0.135, 0.69), 0.02, 2)
-    f.block("hips", "shell", 0.26, 0.30, 0.15, xyz(0, 0, 0.50), 0.035, 3)
+    f.block("hips", "shell", 0.26, 0.30, 0.15, xyz(0, 0, 0.50), 0.035, 2)
     for sx in (-1, 1):
         f.block("hips", "shell", 0.07, 0.22, 0.15, xyz(sx * 0.215, 0, 0.505, ry=-sx * 0.2), 0.02, 2)
     # The pack: vented, with a canister each side.
-    f.block("chest", "shell", 0.30, 0.12, 0.28, xyz(0, 0.275, 1.0), 0.03, 3)
+    f.block("chest", "shell", 0.30, 0.12, 0.28, xyz(0, 0.275, 1.0), 0.03, 2)
     for i in range(3):
         f.block("chest", "frame", 0.20, 0.012, 0.022, xyz(0, 0.338, 0.93 + i * 0.045), 0.004, 1)
     f.block("chest", "lamp", 0.14, 0.012, 0.026, xyz(0, 0.338, 1.09), 0.004, 1)
@@ -234,24 +245,24 @@ def unit(f):
         upper, lower, wrist = f"upperarm.{side}", f"lowerarm.{side}", f"wrist.{side}"
         # A pauldron, angled down over the joint, bolted at the corners.
         cap = xyz(sx * 0.285, 0, z + 0.075, ry=sx * 0.30)
-        f.block(upper, "shell", 0.25, 0.28, 0.10, cap, 0.035, 3)
+        f.block(upper, "shell", 0.25, 0.28, 0.10, cap, 0.035, 2)
         f.block(upper, "shell", 0.07, 0.26, 0.20, xyz(sx * 0.385, 0, z + 0.005, ry=sx * 0.12), 0.025, 2)
         for dx in (-0.085, 0.085):
             for dy in (-0.10, 0.10):
                 bolt(upper, cap @ Matrix.Translation((dx, dy, 0.05)))
-        f.block(lower, "shell", 0.20, 0.17, 0.17, xyz(sx * 0.59, 0, z), 0.035, 3)
+        f.block(lower, "shell", 0.20, 0.17, 0.17, xyz(sx * 0.59, 0, z), 0.035, 2)
         f.block(lower, "shell", 0.13, 0.11, 0.025, xyz(sx * 0.59, 0, z + 0.092), 0.008, 2)
         f.block(lower, "lamp", 0.085, 0.012, 0.02, xyz(sx * 0.59, -0.088, z), 0.004, 1)
         f.block(wrist, "shell", 0.085, 0.12, 0.028, xyz(sx * (WRIST + 0.06), 0, z + 0.062), 0.008, 2)
         x = sx * HIP[0]
-        f.block(f"upperleg.{side}", "shell", 0.17, 0.19, 0.15, xyz(x, 0, 0.405), 0.035, 3)
+        f.block(f"upperleg.{side}", "shell", 0.17, 0.19, 0.15, xyz(x, 0, 0.405), 0.035, 2)
         f.block(f"lowerleg.{side}", "shell", 0.11, 0.045, 0.10, xyz(x, -0.105, KNEE + 0.01), 0.015, 2)
-        f.block(f"lowerleg.{side}", "shell", 0.18, 0.20, 0.115, xyz(x, 0, 0.21), 0.035, 3)
+        f.block(f"lowerleg.{side}", "shell", 0.18, 0.20, 0.115, xyz(x, 0, 0.21), 0.035, 2)
         f.block(f"lowerleg.{side}", "lamp", 0.02, 0.012, 0.07, xyz(x, -0.103, 0.21), 0.004, 1)
         # A boot: plate over a black sole, with a toe cap.
-        f.block(f"foot.{side}", "shell", 0.20, 0.22, 0.095, xyz(x, 0.0, 0.085), 0.03, 3)
+        f.block(f"foot.{side}", "shell", 0.20, 0.22, 0.095, xyz(x, 0.0, 0.085), 0.03, 2)
         f.block(f"foot.{side}", "frame", 0.21, 0.23, 0.04, xyz(x, 0.0, 0.02), 0.01, 2)
-        f.block(f"toes.{side}", "shell", 0.20, 0.16, 0.08, xyz(x, -0.17, 0.075), 0.03, 3)
+        f.block(f"toes.{side}", "shell", 0.20, 0.16, 0.08, xyz(x, -0.17, 0.075), 0.03, 2)
         f.block(f"toes.{side}", "frame", 0.21, 0.17, 0.04, xyz(x, -0.17, 0.02), 0.01, 2)
 
 
@@ -279,7 +290,7 @@ def rock(f):
         f.drum("head", "frame", 6, 0.05, 0.05, 0.06, 0.09, cup)
 
     # The chest: three stones round a black core, and a slab across the back.
-    f.block("chest", "frame", 0.46, 0.34, 0.38, xyz(0, 0, 0.985), 0.07, 3)
+    f.block("chest", "frame", 0.46, 0.34, 0.38, xyz(0, 0, 0.985), 0.07, 2)
     f.stone("chest", 0.46, 0.26, 0.44, xyz(0, -0.13, 0.99), next(n))
     for sx in (-1, 1):
         f.stone("chest", 0.24, 0.40, 0.40, xyz(sx * 0.26, 0.0, 1.0, rz=sx * 0.25), next(n))
@@ -327,6 +338,33 @@ def preview(name, color, metallic=0.0, roughness=0.5, emission=None):
 
 # Brand amber, #fdc700, in the linear values Blender works in.
 AMBER = (0.982, 0.571, 0.0)
+
+
+def for_baking(material, color=None, roughness=0.5, metallic=0.0, emission=(0, 0, 0)):
+    """
+    Give a material what `bake_model.py` asks of one: the named emitters it bakes each map
+    from. `color` is a socket to bake the colour from, or left out for the shader's own.
+    """
+    tree = material.node_tree
+    shader = tree.nodes.get("Principled BSDF") or tree.nodes.get("PBR")
+    shader.name = "PBR"
+    out = next(n for n in tree.nodes if n.type == "OUTPUT_MATERIAL")
+    out.name = "OUT"
+
+    def emitter(name, value):
+        node = tree.nodes.new("ShaderNodeEmission")
+        node.name = name
+        node.inputs["Color"].default_value = (*value, 1)
+        return node
+
+    base = emitter("BAKE_COLOR", tuple(shader.inputs["Base Color"].default_value[:3]))
+    if color is not None:
+        tree.links.new(color, base.inputs["Color"])
+    emitter("BAKE_ROUGH", (roughness,) * 3)
+    emitter("BAKE_METAL", (metallic,) * 3)
+    emitter("BAKE_EMIT", emission)
+    tree.nodes.new("ShaderNodeTexImage").name = "BAKE_TARGET"
+    return material
 
 
 def weathered_stone(name):
@@ -403,7 +441,7 @@ def weathered_stone(name):
     bump.inputs["Distance"].default_value = 0.02
     tree.links.new(height.outputs["Value"], bump.inputs["Height"])
     tree.links.new(bump.outputs["Normal"], shader.inputs["Normal"])
-    return material
+    return for_baking(material, dark.outputs["Result"], roughness=0.92)
 
 
 def worn_paint(name, color, detail):
@@ -423,19 +461,26 @@ def worn_paint(name, color, detail):
         if node.type == "MAPPING":
             node.inputs["Scale"].default_value = [v * detail for v in node.inputs["Scale"].default_value]
     return material
-# What each finish looks like in a render here. The game has its own materials for them.
+def lens_glass():
+    existing = bpy.data.materials.get("NX_Lens_Glass")
+    if existing:
+        return existing
+    return for_baking(preview("NX_Lens_Glass", (0.003, 0.003, 0.005), 0.0, 0.06), roughness=0.06)
+
+
+# What each finish is made of. Every one can be baked: see `bake_model.py`.
 LOOKS = {
     "unit": {
         "shell": lambda: bpy.data.materials.get("NX_Cream_Paint") or worn_paint("NX_Cream_Paint", (0.62, 0.58, 0.49), 3.5),
         "frame": lambda: bpy.data.materials["NX_Steel_Black"],
-        "glass": lambda: preview("Crew_Glass", (0.003, 0.003, 0.005), 0.0, 0.06),
-        "lamp": lambda: preview("Crew_Lamp", (0, 0, 0), 0.0, 0.5, AMBER),
+        "glass": lens_glass,
+        "lamp": lambda: bpy.data.materials["NX_Amber_Light"],
     },
     "rock": {
         "shell": lambda: bpy.data.materials.get("NX_Stone") or weathered_stone("NX_Stone"),
         "frame": lambda: bpy.data.materials["NX_Steel_Black"],
-        "glass": lambda: preview("Crew_Glass", (0.003, 0.003, 0.005), 0.0, 0.06),
-        "lamp": lambda: preview("Crew_Lamp", (0, 0, 0), 0.0, 0.5, AMBER),
+        "glass": lens_glass,
+        "lamp": lambda: bpy.data.materials["NX_Amber_Light"],
     },
 }
 
@@ -473,11 +518,6 @@ for kind, make in KINDS.items():
         made.select_set(True)
         bpy.context.view_layer.objects.active = made
 
-    target = os.path.join(HERE, f"nodexeus-crew-{kind}.glb")
-    bpy.ops.export_scene.gltf(
-        filepath=target, use_selection=True, export_format="GLB", export_apply=True, export_yup=True,
-        export_materials="NONE", export_texcoords=False,
-    )
-    built[kind] = {"glb": target, "bytes": os.path.getsize(target), "triangles": triangles, "parts": len(collection.objects)}
+    built[kind] = {"collection": title, "triangles": triangles, "parts": len(collection.objects)}
 
-result = built
+result = {"kinds": built, "bones": BONES}

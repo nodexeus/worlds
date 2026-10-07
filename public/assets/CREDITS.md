@@ -32,3 +32,9 @@ baked by `design/campus/bake_model.py` and packed by `tools/build-buildings.mjs`
 
 The foundry floor and the campus drone. Made for this project: `design/campus/bake_foundry.py`
 and `design/campus/build_drone.py`, run in Blender.
+
+## campus/buildings.glb: the crew
+
+The meshes `crew-unit` and `crew-rock` are the crew's bodies. Modelled for this project
+(`design/campus/build_crew.py`) after the owner's own pictures of them, and drawn on the
+skeleton and animations in `crew.glb` (KayKit, CC0).
