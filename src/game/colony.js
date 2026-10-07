@@ -30,6 +30,7 @@ import { planCrossings } from '../world/crossings.js'
 import { Crossings } from '../world/crossing-models.js'
 import { loadModels } from '../world/kit.js'
 import { loadGate } from '../world/gate.js'
+import { campusBuilding, loadCampusBuildings } from '../world/campus-buildings.js'
 import { createBuilding, buildingUniforms, Scaffolds } from '../world/buildings.js'
 import { Ship } from '../world/ship.js'
 import { Library } from '../world/library.js'
@@ -516,6 +517,11 @@ export class Colony {
    */
   _applyArrival() {
     this._syncPlaza()
+    // The Library is a model of the world's own where the world has one. Decided when the
+    // models have arrived, by whatever the world is then.
+    loadCampusBuildings().then(() => {
+      this.library.setModel(this.planet.plot?.buildings === 'campus' ? campusBuilding('library') : null)
+    }, () => {})
     const wanted = this.planet.gate || null
     // Through the gate the crew come out of the opening at deck level and stop a few paces
     // in front of it, still on the plaza. There is no ramp to walk down.
@@ -927,7 +933,7 @@ export class Colony {
     const target = 1
 
     if (!entry) {
-      const mesh = createBuilding({ seed: hashString(thread.id), accent: plot.accent, fit: this.planet.plot?.buildingRadius })
+      const mesh = createBuilding({ seed: hashString(thread.id), accent: plot.accent, fit: this.planet.plot?.buildingRadius, set: this.planet.plot?.buildings })
       const pos = plot.worldSlot(index)
       mesh.position.copy(pos)
       mesh.rotation.y = ((hashString(thread.id) >>> 8) % 360) * (Math.PI / 180)

@@ -22,3 +22,8 @@ See the repository README under "Where the art comes from" for how these are pac
 ## campus/deck_*.jpg, campus/deck_normal.png
 
 The campus deck plate. Made for this project by `design/campus/bake_deck.py`, run in Blender.
+
+## campus/buildings.glb
+
+The campus's own buildings. Modelled for this project in Blender (`design/campus/build_*.py`),
+baked by `design/campus/bake_model.py` and packed by `tools/build-buildings.mjs`.

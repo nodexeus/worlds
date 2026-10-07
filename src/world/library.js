@@ -69,7 +69,36 @@ export class Library {
       this.group.add(mesh)
       this.meshes.push(mesh)
     }
+    /** The hall as drawn here, kept for worlds with no model of their own. */
+    this.drawn = this.meshes
+    this.model = null
     scene.add(this.group)
+  }
+
+  /**
+   * Stand a model of the world's own in place of the drawn hall, or pass null to go back to
+   * the drawn one. The model faces +z, as the hall does, and is what a click is tested against.
+   * @param {{geometry: THREE.BufferGeometry, material: THREE.Material} | null} model
+   * @returns {void}
+   */
+  setModel(model) {
+    if (this.model) {
+      this.model.removeFromParent()
+      this.model.material.dispose()
+      this.model = null
+    }
+    for (const mesh of this.drawn) mesh.visible = !model
+    this.meshes = this.drawn
+    if (!model) return
+    const material = model.material.clone()
+    // The same lift the campus buildings get: see `bakedMaterial` in buildings.js.
+    material.metalness = 0.7
+    material.emissiveIntensity = 1.7
+    this.model = new THREE.Mesh(model.geometry, material)
+    this.model.castShadow = true
+    this.model.receiveShadow = true
+    this.group.add(this.model)
+    this.meshes = [this.model]
   }
 
   /** Hit the physical building, adjusting for the world's shader curvature at its anchor.
@@ -88,6 +117,7 @@ export class Library {
    */
   dispose() {
     this.group.removeFromParent()
-    for (const mesh of this.meshes) { mesh.geometry.dispose(); mesh.material.dispose() }
+    this.setModel(null)
+    for (const mesh of this.drawn) { mesh.geometry.dispose(); mesh.material.dispose() }
   }
 }

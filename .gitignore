@@ -42,3 +42,10 @@ design/character
 # Local visual review evidence can contain private workspace and session names.
 .impeccable/review/
 .impeccable/hook.cache.json
+
+# Blender keeps a backup beside every save.
+*.blend1
+
+# Intermediate bake maps: the same images are inside each exported nodexeus-*.glb, and
+# bake_model.py writes them again.
+design/campus/bake/

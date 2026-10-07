@@ -35,6 +35,8 @@ const STEPS = [
   ['tools/build-megakit.mjs', 'assets-src/Modular SciFi MegaKit[Standard]', 'public/assets/megakit.glb'],
   // The campus gate is the project's own model; packing only shrinks its baked maps.
   ['tools/build-gate.mjs', 'design/campus/nodexeus-gate.glb', 'public/assets/gate.glb'],
+  // The campus's own buildings, likewise.
+  ['tools/build-buildings.mjs', 'design/campus', 'public/assets/campus/buildings.glb'],
   ['tools/build-crew.mjs'],
 ]
 

@@ -3,6 +3,7 @@ import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js'
 import { mulberry } from './planet.js'
 import { ATLAS, CELL, atlasTexture, cellMask, part } from './kit.js'
 import { withCurve } from '../core/curve.js'
+import { campusBuilding } from './campus-buildings.js'
 
 /**
  * Colony buildings — one per thread, assembled out of KayKit's *Space Base Bits* (CC0) and
@@ -404,6 +405,96 @@ function decorate(material, uniforms) {
 }
 
 /**
+ * Which of the campus's own models stands in for each kind, on a world that asks for them.
+ * A kind with no model yet keeps its kit recipe.
+ */
+const CAMPUS_MODELS = {
+  habitat: { model: 'hall', label: 'Rack hall' },
+  solar: { model: 'array', label: 'Solar array' },
+  antenna: { model: 'mast', label: 'Relay mast', size: 0.8 },
+  silo: { model: 'vault', label: 'Vault' },
+  greenhouse: { model: 'dome', label: 'Dome' },
+  // Modelled to fill the deck's building circle, it stands twice the height of its
+  // neighbours at full size and crowds them. The same goes for the other tall ones.
+  reactor: { model: 'core', label: 'Node core', size: 0.8 },
+  tower: { model: 'spire', label: 'Uplink spire', size: 0.8 },
+  workshop: { model: 'forge', label: 'Fabricator' },
+  pad: { model: 'pad', label: 'Landing pad' },
+  lab: { model: 'lab', label: 'Lab' },
+}
+
+/** The room on a deck the campus models were drawn to fit: a circle this far from the middle. */
+const CAMPUS_MODELLED_FOR = 1.6
+
+/**
+ * A building's own copy of a baked material, tuned for the campus sky. Fully metal, blackened
+ * steel has only that dark sky to reflect and goes to a silhouette, so some of it is left to
+ * take the light directly; and the lights are driven above one so the bloom picks them out.
+ */
+function bakedMaterial(source) {
+  const material = source.clone()
+  material.metalness = 0.7
+  material.emissiveIntensity = 1.7
+  return material
+}
+
+/**
+ * The same growth as `decorate`, for a building whose surface is baked maps rather than
+ * atlas swatches: it sinks and is cut off at the ground, and the construction line rides
+ * the cut. Its lights are in its emission map, and come up after dark.
+ */
+function decorateBaked(material, uniforms) {
+  material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, uniforms)
+    withCurve(shader)
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+         varying float vLocalY;
+         uniform float uProgress;
+         uniform float uMaxY;
+         uniform float uMinY;`
+      )
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+         vLocalY = transformed.y;
+         transformed.y -= ( 1.0 - uProgress ) * ( uMaxY - uMinY );`
+      )
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+         varying float vLocalY;
+         uniform float uProgress;
+         uniform float uMaxY;
+         uniform float uMinY;
+         uniform vec3 uAccent;
+         uniform float uNight;`
+      )
+      .replace(
+        '#include <clipping_planes_fragment>',
+        `#include <clipping_planes_fragment>
+         float ground = uMinY + ( 1.0 - uProgress ) * ( uMaxY - uMinY );
+         if ( vLocalY < ground - 0.001 ) discard;`
+      )
+      .replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+         // Lit by day, so the amber reads as light and not paint, and brighter after dark.
+         totalEmissiveRadiance *= 1.0 + uNight * 1.2;
+         // The construction line, gone by the time the building is all but up: a thread's
+         // size never quite reaches the top of the scale, and a finished building standing
+         // in a skirt of light reads as one still being built.
+         float band = 1.0 - smoothstep( 0.0, 0.22, vLocalY - ground );
+         totalEmissiveRadiance += uAccent * band * ( 1.0 - smoothstep( 0.88, 0.97, uProgress ) ) * 1.5;`
+      )
+  }
+  return material
+}
+
+/**
  * Shadows are rendered with three's own depth material, which knows nothing about the
  * sink — so without this a building at ten percent still casts its finished silhouette from
  * its finished position. The depth pass gets the same offset and the same discard, reading
@@ -467,13 +558,25 @@ function depthMaterial(uniforms) {
  * `fit` is the largest radius the finished building may reach on the ground; a world whose
  * decks are tighter than usual passes a smaller one.
  */
-export function createBuilding({ seed = 1, accent = 0xc96442, kind = null, fit = BUILDING_RADIUS } = {}) {
+export function createBuilding({ seed = 1, accent = 0xc96442, kind = null, fit = BUILDING_RADIUS, set = null } = {}) {
   const rand = mulberry(seed)
   const chosen = kind && KINDS[kind] ? kind : KIND_IDS[Math.floor(rand() * KIND_IDS.length)]
 
+  // A world with buildings of its own uses the one made for this kind, if it has been made.
+  const own = set === 'campus' ? CAMPUS_MODELS[chosen] : null
+  const baked = own ? campusBuilding(own.model) : null
+
   const c = new Composer()
-  const label = KINDS[chosen](c, rand, accent)
-  const geo = c.finish()
+  // The recipe still runs, so the seed is spent the same way whichever is drawn.
+  const recipeLabel = KINDS[chosen](c, rand, accent)
+  const label = baked ? own.label : recipeLabel
+  const recipe = c.finish()
+  const geo = baked ? baked.geometry.clone() : recipe
+  if (baked) {
+    recipe.dispose()
+    // Turned by the seed: a row of identical buildings all facing one way reads as a stamp.
+    geo.rotateY(Math.floor(rand() * 6) * (Math.PI / 3))
+  }
   let radius = 0
   const positions = geo.getAttribute('position')
   for (let i = 0; i < positions.count; i++) {
@@ -481,7 +584,12 @@ export function createBuilding({ seed = 1, accent = 0xc96442, kind = null, fit =
   }
   // Fit the complete recipe, including its barrels/rover, at any yaw. Measuring only
   // the X/Z bounds missed corners and left accessories hanging beyond the deck.
-  const scale = Math.min(BUILDING_SCALE, fit / Math.max(radius, 0.001))
+  // A model of the world's own was drawn at its real size, so it is only ever scaled by how
+  // the room on offer compares with the room it was drawn for. Fitting it to its own reach
+  // instead would blow a slender mast up until it was as wide as a hall.
+  const scale = baked
+    ? (fit / CAMPUS_MODELLED_FOR) * (own.size ?? 1)
+    : Math.min(BUILDING_SCALE, fit / Math.max(radius, 0.001))
   geo.scale(scale, scale, scale)
   // `scale()` transforms position and normal and nothing else, so a custom attribute that
   // holds a *position* has to be taken along by hand. Miss this and a rotor turns about a
@@ -516,7 +624,7 @@ export function createBuilding({ seed = 1, accent = 0xc96442, kind = null, fit =
     uCellMetalness: { value: METALNESS },
   }
 
-  const material = decorate(
+  const material = baked ? decorateBaked(bakedMaterial(baked.material), uniforms) : decorate(
     new THREE.MeshStandardMaterial({
       map: atlasTexture(),
       // Roughness and metalness arrive per atlas cell; these are only the fallback values.
