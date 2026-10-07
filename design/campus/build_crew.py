@@ -11,7 +11,8 @@ pictures of them:
     unit   worn cream plate, in pieces, over a black mechanical frame. A wide helmet with
            two real eyes (lenses in housings, ringed in amber) set in a dark faceplate,
            headphone ears, an aerial, the Nodexeus mark on its chest.
-    rock   slabs of stone bolted to the same black frame, and one amber eye.
+    rock   boulders, cracked and weathered, bolted to the same black frame, with one eye
+           of the same kind set in the stone.
 
 Both keep the skeleton and the animations the crew have always had (KayKit's medium rig, CC0),
 so one kind can stand in for another with nothing else changing. There is no armature in this
@@ -126,6 +127,29 @@ def frame(f):
         f.ball(f"foot.{side}", "frame", 0.07, xyz(x, 0, ANKLE))
 
 
+def machinery(f, caps="frame"):
+    """More of the machine than the bare frame shows: discs at the hinges, pistons in the neck."""
+    for side, sx in (("l", 1), ("r", -1)):
+        z = SHOULDER[1]
+        f.drum(f"upperarm.{side}", "frame", 14, 0.115, 0.115, -0.035, 0.035, xyz(sx * 0.225, 0, z, ry=QUARTER))
+        f.drum(f"lowerarm.{side}", "frame", 14, 0.088, 0.088, -0.085, 0.085, xyz(sx * ELBOW, 0, z, rx=QUARTER))
+        f.drum(f"lowerarm.{side}", caps, 14, 0.05, 0.05, -0.095, 0.095, xyz(sx * ELBOW, 0, z, rx=QUARTER))
+        f.drum(f"lowerleg.{side}", "frame", 14, 0.09, 0.09, -0.10, 0.10, xyz(sx * HIP[0], 0, KNEE, ry=QUARTER))
+        f.drum(f"lowerleg.{side}", caps, 14, 0.05, 0.05, -0.11, 0.11, xyz(sx * HIP[0], 0, KNEE, ry=QUARTER))
+        f.bar("chest", "frame", (sx * 0.085, 0.07, 1.17), (sx * 0.11, 0.09, 1.36), 0.018)
+        f.bar("spine", "frame", (sx * 0.16, -0.03, 0.57), (sx * 0.19, -0.05, 0.80), 0.016)
+
+
+def lens(f, bone, matrix, size=1.0):
+    """An eye: a housing, a ring of light, a lens, and the point of light in it."""
+    k = size
+    f.drum(bone, "frame", 20, 0.122 * k, 0.112 * k, 0.0, 0.05 * k, matrix)
+    f.drum(bone, "lamp", 20, 0.098 * k, 0.098 * k, 0.05 * k, 0.057 * k, matrix)
+    f.drum(bone, "frame", 20, 0.074 * k, 0.070 * k, 0.05 * k, 0.066 * k, matrix)
+    f.ball(bone, "glass", 0.064 * k, matrix @ Matrix.Translation((0, 0, 0.062 * k)), (1.0, 1.0, 0.42), 16, 10)
+    f.drum(bone, "lamp", 12, 0.021 * k, 0.021 * k, 0.086 * k, 0.091 * k, matrix)
+
+
 # ---------- unit: plate over the frame ----------
 def unit(f):
     """
@@ -137,16 +161,7 @@ def unit(f):
     face = HEAD + 0.36           # level with the eyes
     bolt = lambda bone, m: f.drum(bone, "frame", 6, 0.013, 0.013, 0.0, 0.008, m)
 
-    # More of the machine than the bare frame shows: discs at the hinges, pistons in the neck.
-    for side, sx in (("l", 1), ("r", -1)):
-        z = SHOULDER[1]
-        f.drum(f"upperarm.{side}", "frame", 14, 0.115, 0.115, -0.035, 0.035, xyz(sx * 0.225, 0, z, ry=QUARTER))
-        f.drum(f"lowerarm.{side}", "frame", 14, 0.088, 0.088, -0.085, 0.085, xyz(sx * ELBOW, 0, z, rx=QUARTER))
-        f.drum(f"lowerarm.{side}", "shell", 14, 0.05, 0.05, -0.095, 0.095, xyz(sx * ELBOW, 0, z, rx=QUARTER))
-        f.drum(f"lowerleg.{side}", "frame", 14, 0.09, 0.09, -0.10, 0.10, xyz(sx * HIP[0], 0, KNEE, ry=QUARTER))
-        f.drum(f"lowerleg.{side}", "shell", 14, 0.05, 0.05, -0.11, 0.11, xyz(sx * HIP[0], 0, KNEE, ry=QUARTER))
-        f.bar("chest", "frame", (sx * 0.085, 0.07, 1.17), (sx * 0.11, 0.09, 1.36), 0.018)
-        f.bar("spine", "frame", (sx * 0.16, -0.03, 0.57), (sx * 0.19, -0.05, 0.80), 0.016)
+    machinery(f, caps="shell")
 
     # ---- the head ----
     f.block("head", "shell", 0.84, 0.60, 0.60, xyz(0, 0.02, face), 0.15, 5)
@@ -161,14 +176,8 @@ def unit(f):
     f.block("head", "shell", 0.42, 0.09, 0.075, xyz(0, -0.262, face - 0.262), 0.02, 3)
     for sx in (-0.09, 0.0, 0.09):
         f.block("head", "frame", 0.05, 0.02, 0.016, xyz(sx, -0.31, face - 0.262), 0.004, 1)
-    # The eyes: a housing, a ring of light, a lens, and the point of light in it.
     for sx in (-1, 1):
-        eye = xyz(sx * 0.17, -0.292, face, rx=QUARTER, rz=-sx * 0.06)
-        f.drum("head", "frame", 20, 0.122, 0.112, 0.0, 0.05, eye)
-        f.drum("head", "lamp", 20, 0.098, 0.098, 0.05, 0.057, eye)
-        f.drum("head", "frame", 20, 0.074, 0.070, 0.05, 0.066, eye)
-        f.ball("head", "glass", 0.064, eye @ Matrix.Translation((0, 0, 0.062)), (1.0, 1.0, 0.42), 16, 10)
-        f.drum("head", "lamp", 12, 0.021, 0.021, 0.086, 0.091, eye)
+        lens(f, "head", xyz(sx * 0.17, -0.292, face, rx=QUARTER, rz=-sx * 0.06))
     # Ears: a cup in layers, ringed in light.
     for sx in (-1, 1):
         cup = xyz(sx * 0.42, 0.03, face, ry=sx * QUARTER)
@@ -248,31 +257,54 @@ def unit(f):
 
 # ---------- rock: stone over the frame ----------
 def rock(f):
+    """
+    After the owner's picture of one: boulders, cracked and weathered, each bolted to the same
+    black machine the plated kind is built on, with the machine showing at every joint. One
+    eye, the same lens the plated kind has two of, set in the stone off to one side.
+    """
     frame(f)
-    face = HEAD + 0.30
-    n = iter(range(100, 200))
+    machinery(f)
+    face = HEAD + 0.31
+    n = iter(range(100, 300))
 
-    f.stone("head", 0.74, 0.62, 0.62, xyz(0, 0.02, face), next(n))
-    f.stone("head", 0.50, 0.36, 0.22, xyz(0.03, 0.04, face + 0.27, ry=0.12), next(n))
-    # One eye, set in a socket, off to one side.
-    eye = xyz(0.15, -0.295, face + 0.02, rx=QUARTER)
-    f.drum("head", "frame", 12, 0.095, 0.085, 0.0, 0.03, eye)
-    f.drum("head", "lamp", 12, 0.05, 0.05, 0.03, 0.036, eye)
+    # The head: one great boulder with a brow of a second, split from it.
+    f.stone("head", 0.78, 0.64, 0.60, xyz(0, 0.02, face, rz=0.08), next(n))
+    f.stone("head", 0.56, 0.44, 0.24, xyz(0.02, 0.0, face + 0.27, ry=0.10, rz=-0.1), next(n))
+    f.stone("head", 0.30, 0.26, 0.22, xyz(-0.30, 0.12, face - 0.10), next(n))
+    lens(f, "head", xyz(0.14, -0.30, face + 0.01, rx=QUARTER), 1.05)
+    # Where a plated one has ears, this has the ends of the bolt through its head.
+    for sx in (-1, 1):
+        cup = xyz(sx * 0.38, 0.04, face - 0.02, ry=sx * QUARTER)
+        f.drum("head", "frame", 12, 0.10, 0.085, 0.0, 0.06, cup)
+        f.drum("head", "frame", 6, 0.05, 0.05, 0.06, 0.09, cup)
 
-    f.stone("chest", 0.66, 0.46, 0.46, xyz(0, 0, 0.99), next(n))
-    f.stone("chest", 0.40, 0.20, 0.30, xyz(0.02, 0.24, 1.02), next(n))
-    f.stone("hips", 0.48, 0.36, 0.22, xyz(0, 0, 0.49), next(n))
+    # The chest: three stones round a black core, and a slab across the back.
+    f.block("chest", "frame", 0.46, 0.34, 0.38, xyz(0, 0, 0.985), 0.07, 3)
+    f.stone("chest", 0.46, 0.26, 0.44, xyz(0, -0.13, 0.99), next(n))
+    for sx in (-1, 1):
+        f.stone("chest", 0.24, 0.40, 0.40, xyz(sx * 0.26, 0.0, 1.0, rz=sx * 0.25), next(n))
+    f.stone("chest", 0.50, 0.22, 0.38, xyz(0.01, 0.20, 1.0), next(n))
+    f.drum("chest", "frame", 12, 0.21, 0.18, 1.17, 1.215)
+    f.stone("spine", 0.26, 0.14, 0.15, xyz(0, -0.12, 0.69), next(n))
+    f.stone("hips", 0.34, 0.34, 0.20, xyz(0, 0, 0.50), next(n))
+    for sx in (-1, 1):
+        f.stone("hips", 0.14, 0.26, 0.19, xyz(sx * 0.225, 0, 0.505), next(n))
+
     for side, sx in (("l", 1), ("r", -1)):
         z = SHOULDER[1]
-        f.stone(f"upperarm.{side}", 0.30, 0.30, 0.28, xyz(sx * 0.285, 0, z + 0.03), next(n))
-        f.stone(f"upperarm.{side}", 0.15, 0.17, 0.17, xyz(sx * 0.38, 0, z), next(n))
-        f.stone(f"lowerarm.{side}", 0.24, 0.22, 0.22, xyz(sx * 0.59, 0, z), next(n))
-        f.stone(f"wrist.{side}", 0.17, 0.19, 0.17, xyz(sx * (WRIST + 0.07), 0, z + 0.035), next(n))
+        f.stone(f"upperarm.{side}", 0.32, 0.34, 0.24, xyz(sx * 0.285, 0, z + 0.07, ry=sx * 0.28), next(n))
+        f.stone(f"upperarm.{side}", 0.15, 0.20, 0.20, xyz(sx * 0.375, 0, z - 0.01), next(n))
+        f.stone(f"lowerarm.{side}", 0.25, 0.23, 0.23, xyz(sx * 0.59, 0, z), next(n))
+        # A fist of stone over the black hand.
+        f.stone(f"wrist.{side}", 0.15, 0.20, 0.10, xyz(sx * (WRIST + 0.065), 0, z + 0.075), next(n))
         x = sx * HIP[0]
-        f.stone(f"upperleg.{side}", 0.20, 0.22, 0.18, xyz(x, 0, 0.405), next(n))
-        f.stone(f"lowerleg.{side}", 0.22, 0.24, 0.16, xyz(x, 0, 0.21), next(n))
-        f.stone(f"foot.{side}", 0.24, 0.26, 0.15, xyz(x, 0.0, 0.075), next(n))
-        f.stone(f"toes.{side}", 0.23, 0.19, 0.12, xyz(x, -0.17, 0.06), next(n))
+        f.stone(f"upperleg.{side}", 0.21, 0.23, 0.17, xyz(x, 0, 0.405), next(n))
+        f.stone(f"lowerleg.{side}", 0.14, 0.09, 0.12, xyz(x, -0.105, KNEE + 0.01), next(n))
+        f.stone(f"lowerleg.{side}", 0.23, 0.25, 0.14, xyz(x, 0, 0.21), next(n))
+        f.stone(f"foot.{side}", 0.24, 0.26, 0.14, xyz(x, 0.005, 0.08), next(n))
+        f.block(f"foot.{side}", "frame", 0.21, 0.23, 0.035, xyz(x, 0.0, 0.018), 0.01, 2)
+        f.stone(f"toes.{side}", 0.24, 0.20, 0.12, xyz(x, -0.17, 0.07), next(n))
+        f.block(f"toes.{side}", "frame", 0.21, 0.17, 0.035, xyz(x, -0.17, 0.018), 0.01, 2)
 
 
 KINDS = {"unit": unit, "rock": rock}
@@ -295,6 +327,83 @@ def preview(name, color, metallic=0.0, roughness=0.5, emission=None):
 
 # Brand amber, #fdc700, in the linear values Blender works in.
 AMBER = (0.982, 0.571, 0.0)
+
+
+def weathered_stone(name):
+    """
+    Rock for a render here: brown going to grey, mottled, with cracks that are dark in the
+    colour and cut into the surface.
+    """
+    existing = bpy.data.materials.get(name)
+    if existing:
+        bpy.data.materials.remove(existing)
+    material = bpy.data.materials.new(name)
+    material.use_nodes = True
+    tree = material.node_tree
+    shader = tree.nodes["Principled BSDF"]
+    shader.inputs["Roughness"].default_value = 0.92
+    where = tree.nodes.new("ShaderNodeTexCoord")
+
+    def noise(scale, detail, rough=0.6):
+        node = tree.nodes.new("ShaderNodeTexNoise")
+        node.inputs["Scale"].default_value = scale
+        node.inputs["Detail"].default_value = detail
+        node.inputs["Roughness"].default_value = rough
+        tree.links.new(where.outputs["Object"], node.inputs["Vector"])
+        return node
+
+    mottle = noise(4.5, 8.0)
+    grain = noise(38.0, 5.0, 0.7)
+    cracks = tree.nodes.new("ShaderNodeTexVoronoi")
+    cracks.feature = "DISTANCE_TO_EDGE"
+    # Few and long: a boulder has a handful of fractures across it, not a crazing all over.
+    cracks.inputs["Scale"].default_value = 3.2
+    warp = tree.nodes.new("ShaderNodeVectorMath")
+    warp.operation = "ADD"
+    tree.links.new(where.outputs["Object"], warp.inputs[0])
+    tree.links.new(mottle.outputs["Color"], warp.inputs[1])
+    tree.links.new(warp.outputs["Vector"], cracks.inputs["Vector"])
+    line = tree.nodes.new("ShaderNodeValToRGB")
+    line.color_ramp.elements[0].position = 0.0
+    line.color_ramp.elements[0].color = (0, 0, 0, 1)
+    line.color_ramp.elements[1].position = 0.022
+    line.color_ramp.elements[1].color = (1, 1, 1, 1)
+    tree.links.new(cracks.outputs["Distance"], line.inputs["Fac"])
+
+    tone = tree.nodes.new("ShaderNodeValToRGB")
+    tone.color_ramp.elements[0].position = 0.32
+    tone.color_ramp.elements[0].color = (0.045, 0.030, 0.020, 1)
+    tone.color_ramp.elements[1].position = 0.72
+    tone.color_ramp.elements[1].color = (0.24, 0.17, 0.115, 1)
+    tree.links.new(mottle.outputs["Fac"], tone.inputs["Fac"])
+    speckle = tree.nodes.new("ShaderNodeMix")
+    speckle.data_type = "RGBA"
+    speckle.blend_type = "MULTIPLY"
+    speckle.inputs["Factor"].default_value = 0.32
+    tree.links.new(tone.outputs["Color"], speckle.inputs["A"])
+    tree.links.new(grain.outputs["Color"], speckle.inputs["B"])
+    dark = tree.nodes.new("ShaderNodeMix")
+    dark.data_type = "RGBA"
+    dark.blend_type = "MULTIPLY"
+    dark.inputs["Factor"].default_value = 1.0
+    tree.links.new(speckle.outputs["Result"], dark.inputs["A"])
+    tree.links.new(line.outputs["Color"], dark.inputs["B"])
+    tree.links.new(dark.outputs["Result"], shader.inputs["Base Color"])
+
+    height = tree.nodes.new("ShaderNodeMath")
+    height.operation = "ADD"
+    scaled = tree.nodes.new("ShaderNodeMath")
+    scaled.operation = "MULTIPLY"
+    scaled.inputs[1].default_value = 0.25
+    tree.links.new(grain.outputs["Fac"], scaled.inputs[0])
+    tree.links.new(line.outputs["Color"], height.inputs[0])
+    tree.links.new(scaled.outputs["Value"], height.inputs[1])
+    bump = tree.nodes.new("ShaderNodeBump")
+    bump.inputs["Strength"].default_value = 0.9
+    bump.inputs["Distance"].default_value = 0.02
+    tree.links.new(height.outputs["Value"], bump.inputs["Height"])
+    tree.links.new(bump.outputs["Normal"], shader.inputs["Normal"])
+    return material
 
 
 def worn_paint(name, color, detail):
@@ -323,8 +432,8 @@ LOOKS = {
         "lamp": lambda: preview("Crew_Lamp", (0, 0, 0), 0.0, 0.5, AMBER),
     },
     "rock": {
-        "shell": lambda: preview("Crew_Stone", (0.115, 0.082, 0.058), 0.0, 0.9),
-        "frame": lambda: preview("Crew_Frame", (0.012, 0.012, 0.014), 0.6, 0.35),
+        "shell": lambda: bpy.data.materials.get("NX_Stone") or weathered_stone("NX_Stone"),
+        "frame": lambda: bpy.data.materials["NX_Steel_Black"],
         "glass": lambda: preview("Crew_Glass", (0.003, 0.003, 0.005), 0.0, 0.06),
         "lamp": lambda: preview("Crew_Lamp", (0, 0, 0), 0.0, 0.5, AMBER),
     },
