@@ -77,9 +77,9 @@ export const PLANETS = {
       glow: 0.2,
     },
     // And is carried the rest of the way in glass: a pump house on the canal's bank at the
-    // middle of each side, a line from each to a square ring round the campus. `ring` is how
-    // far out that ring runs and `reach` where the pump houses stand. See pipeline.js.
-    pipeline: { ring: 48, reach: 72 },
+    // middle of each side, and a line from each to a loop drawn round the campus, `margin`
+    // outside its decks wherever they are. See pipeline.js.
+    pipeline: { margin: 15, reach: 72 },
     scatter: 'foundry',
     companion: { name: 'Anode', color: 0x2a2a30, size: 2.0, glow: 0x56565e },
     dust: 0,
