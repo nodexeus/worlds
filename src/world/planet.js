@@ -78,8 +78,16 @@ export const PLANETS = {
       gap: (STAIR_RUN_PER_RISE * CAMPUS_LEVEL_STEP) / 2,
       // Neighbouring workspaces are joined by walkways and staircases.
       crossings: true,
-      // Narrower decks, so the ring of building slots is drawn in to stay on them.
-      ring: 0.42,
+      // A crossing meets a deck at the middle of an edge, so the ring of buildings is turned
+      // to stand at the corners instead, where a deck also has the most room. Each mouth then
+      // opens onto the clear ground between two of them, not onto the back of one.
+      ringPhase: Math.PI / 6,
+      ring: 0.53,
+      // Buildings are held a little smaller here, so a ring of them leaves room to walk
+      // between, and none of them crowds the edge it stands near.
+      buildingRadius: 1.6,
+      // No lamp posts or crates: both stand exactly where the corners' buildings now do.
+      bare: true,
       deck: { color: 0x26262b, roughness: 0.34, metalness: 0.8 },
       // One accent for every workspace: on this world the kerb is brand amber, and a
       // workspace is told from its neighbours by standing apart from them.

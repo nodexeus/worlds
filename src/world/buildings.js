@@ -463,8 +463,11 @@ function depthMaterial(uniforms) {
  * gets the same building; `kind` can be forced, otherwise the seed picks it.
  *
  * Requires `loadKit()` to have resolved — boot awaits it before the first roster arrives.
+ *
+ * `fit` is the largest radius the finished building may reach on the ground; a world whose
+ * decks are tighter than usual passes a smaller one.
  */
-export function createBuilding({ seed = 1, accent = 0xc96442, kind = null } = {}) {
+export function createBuilding({ seed = 1, accent = 0xc96442, kind = null, fit = BUILDING_RADIUS } = {}) {
   const rand = mulberry(seed)
   const chosen = kind && KINDS[kind] ? kind : KIND_IDS[Math.floor(rand() * KIND_IDS.length)]
 
@@ -478,7 +481,7 @@ export function createBuilding({ seed = 1, accent = 0xc96442, kind = null } = {}
   }
   // Fit the complete recipe, including its barrels/rover, at any yaw. Measuring only
   // the X/Z bounds missed corners and left accessories hanging beyond the deck.
-  const scale = Math.min(BUILDING_SCALE, BUILDING_RADIUS / Math.max(radius, 0.001))
+  const scale = Math.min(BUILDING_SCALE, fit / Math.max(radius, 0.001))
   geo.scale(scale, scale, scale)
   // `scale()` transforms position and normal and nothing else, so a custom attribute that
   // holds a *position* has to be taken along by hand. Miss this and a rotor turns about a

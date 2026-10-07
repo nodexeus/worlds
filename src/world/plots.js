@@ -6,7 +6,7 @@ import { mulberry } from './planet.js'
 import { withCurve } from '../core/curve.js'
 import { OVERLAY_LAYER } from '../core/engine.js'
 import { BUILDING_RADIUS } from './buildings.js'
-import { edgeAngle, edgeSegments, onTile, tileOutline } from './deck-shape.js'
+import { edgeAngle, edgeSegments, onDeck, onTile, tileOutline } from './deck-shape.js'
 import { HEX_DIRS, SHIP_CELL, CORE_CELLS, ORIGIN, POOL_RINGS, cellKey as key, hexDistance, isConnected } from './plot-move.js'
 
 /**
@@ -493,9 +493,10 @@ export class Plot {
 
     this._buildDeck()
     this._buildBorder()
-    this._buildPosts()
+    // A deck that is somebody else's stage, not a workspace, is left clear.
+    if (!style?.bare) this._buildPosts()
     this.slots = this._buildSlots()
-    this._buildClutter()
+    if (!style?.bare) this._buildClutter()
   }
 
   /** One merged slab of hex tiles. */
@@ -768,7 +769,7 @@ export class Plot {
     for (const { x, z } of this.localCenters) {
       slots.push({ x, z })
       for (let i = 0; i < 6; i++) {
-        const a = (Math.PI / 3) * i + Math.PI / 6
+        const a = (Math.PI / 3) * i + Math.PI / 6 + (this.style?.ringPhase || 0)
         // A world with narrower decks draws the ring in so a building still stands on one.
         const ring = TILE * (this.style?.ring ?? 0.58)
         slots.push({ x: x + Math.cos(a) * ring, z: z + Math.sin(a) * ring })
@@ -790,6 +791,17 @@ export class Plot {
     return this.containsLocal(x - this.center.x, z - this.center.z, radius)
   }
 
+  /**
+   * Whether (x, z) is on the deck and at least `margin` in from its outer rim.
+   *
+   * Unlike `containsWorld` with a radius, the margin is kept only from the edges that face
+   * a gap. The seams between a workspace's own tiles are floor like any other, and holding
+   * a margin off them would cut one deck into as many islands as it has tiles.
+   */
+  standsOn(x, z, margin = 0) {
+    return onDeck(x - this.center.x, z - this.center.z, APOTHEM, this.localCenters, this.insets, margin)
+  }
+
   worldSlot(index, out = new THREE.Vector3()) {
     const s = this.slotFor(index)
     return out.set(this.center.x + s.x, DECK_TOP + this.elev, this.center.z + s.z)
@@ -801,7 +813,8 @@ export class Plot {
       this.borderMaterial.emissiveIntensity =
         0.3 + night * 1.4 + (urgent ? 0.4 + Math.sin(elapsed * 3.4) * 0.32 : 0)
     }
-    this.lampMaterial.color.copy(this._lampBase).multiplyScalar(0.5 + night * 2.4)
+    // A bare deck has no posts, so no lamps to light.
+    this.lampMaterial?.color.copy(this._lampBase).multiplyScalar(0.5 + night * 2.4)
   }
 
   dispose() {

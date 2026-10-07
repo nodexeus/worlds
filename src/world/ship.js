@@ -266,6 +266,20 @@ export class Ship {
     return out.copy(this.doorLocal).applyMatrix4(this.group.matrixWorld)
   }
 
+  /**
+   * Stand something else where the crew arrive. The lander's door is at the foot of its ramp
+   * and its airlock at the top; whatever replaces it says where its own two points are, in
+   * this group's frame, and `null` gives the lander's back.
+   *
+   * @param {{door: THREE.Vector3, airlock: THREE.Vector3} | null} points
+   */
+  setArrivalPoints(points) {
+    this._landerDoor ||= this.doorLocal.clone()
+    this._landerAirlock ||= this.airlockLocal.clone()
+    this.doorLocal.copy(points ? points.door : this._landerDoor)
+    this.airlockLocal.copy(points ? points.airlock : this._landerAirlock)
+  }
+
   /** World position of the airlock at the top of the ramp. */
   shipAirlock(out = new THREE.Vector3()) {
     this.group.updateWorldMatrix(true, false)

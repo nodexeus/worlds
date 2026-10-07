@@ -25,6 +25,7 @@ import {
 import { CORE_CELLS, LIBRARY_CELL, translateCells } from '../world/plot-move.js'
 import { readLevels, settleLevels } from '../world/plot-levels.js'
 import { HEX_DIRS } from '../world/plot-move.js'
+import { heightOnSpan, onSpan, spanOf } from '../world/crossing-spans.js'
 import { planCrossings } from '../world/crossings.js'
 import { Crossings } from '../world/crossing-models.js'
 import { loadModels } from '../world/kit.js'
@@ -129,6 +130,23 @@ export function transcriptProgress(thread) {
   return THREE.MathUtils.clamp((Math.log10(size) - 3) / 3.5, 0.05, 1)
 }
 
+/**
+ * The deck the gate and the Library stand on, on a world whose workspaces are joined by
+ * crossings. It is planned and joined like a workspace, so the crew have a way from where
+ * they arrive to everywhere else, but it is nobody's project: no label, no buildings, never
+ * moved. The leading NUL keeps it clear of any real project name and sorts it first.
+ */
+const PLAZA = '\u0000plaza'
+/** How much of a crossing's width the crew use: clear of the rails on either side. */
+const CROSSING_WALK = 1.05
+/**
+ * How far round a crossing's mouth nobody may be given a place to stand. Somebody parked in
+ * a mouth is in everybody else's way, and there is only the one way through.
+ */
+const MOUTH_CLEAR = { along: 2.2, across: 1.7 }
+/** How far onto each deck a crossing's walkable strip reaches, so the two always join. */
+const CROSSING_OVERLAP = 0.6
+
 export class Colony {
   constructor(scene, settings, camera, renderer) {
     this.scene = scene
@@ -165,6 +183,10 @@ export class Colony {
     scene.add(this.worldGroup)
 
     this.crossings = new Crossings(scene)
+    /** The strip of ground each crossing occupies. See `crossing-spans.js`. */
+    this.crossingSpans = []
+    /** The plaza deck, when this world has one. */
+    this.plaza = null
     /** Which workspaces are joined, and where. Empty on a world without crossings. */
     this.crossingPlan = []
     this.ship = new Ship(scene, shipPosition())
@@ -197,6 +219,8 @@ export class Colony {
     this.astronauts.setNavigation(this.nav)
 
     this.plotGroup = new THREE.Group()
+    // The plaza needs somewhere to go, so it is raised here and not with the arrival above.
+    queueMicrotask(() => this._syncPlaza())
     this.labelGroup = new THREE.Group()
     scene.add(this.plotGroup, this.labelGroup)
 
@@ -238,9 +262,11 @@ export class Colony {
     // cell, but the height of that spot is the planet's, so it is set here rather than once
     // at construction — a world with more relief would otherwise leave it hovering.
     const ship = shipPosition()
-    this.ship.group.position.y = terrainHeight(ship.x, ship.z, this.planet)
+    // On a world with a plaza the two of them stand on its deck, not on the ground under it.
+    const lift = this.planet.plot?.crossings ? DECK_TOP : 0
+    this.ship.group.position.y = terrainHeight(ship.x, ship.z, this.planet) + lift
     const library = this.library.group.position
-    library.y = terrainHeight(library.x, library.z, this.planet)
+    library.y = terrainHeight(library.x, library.z, this.planet) + lift
     this.libraryLabel.position.copy(library).y += 5.3
 
     this._dustTint.set(this.planet.ground.high)
@@ -459,12 +485,41 @@ export class Colony {
   }
 
   /**
+   * Raise or remove the plaza deck to suit the world. It takes the core cells, which no
+   * workspace is ever given, and the same styling as every workspace's deck.
+   */
+  _syncPlaza() {
+    const style = this.planet.plot?.crossings ? this.planet.plot : null
+    if (this.plaza && this.plaza.style?.gap === style?.gap && Boolean(style)) return
+    if (this.plaza) {
+      this.plotGroup?.remove(this.plaza.group)
+      this.plaza.dispose()
+      this.plaza = null
+    }
+    if (!style || !this.plotGroup) return
+    this.plaza = new Plot({
+      id: PLAZA, name: PLAZA, index: -1, cells: CORE_CELLS.map((c) => ({ q: c.q, r: c.r })),
+      accent: style.palette?.[0] ?? PLOT_PALETTE[0], style: { ...style, bare: true }, level: 0,
+    })
+    this.plotGroup.add(this.plaza.group)
+  }
+
+  /** Everything with a deck: the workspaces, and the plaza when there is one. */
+  _decks() {
+    return this.plaza ? [this.plaza, ...this.plotOrder] : this.plotOrder
+  }
+
+  /**
    * What stands where the crew arrive: the lander on most worlds, the gate on one that has
    * one. Both live in the ship's group, which keeps its place, its heading and its door, so
    * arrivals and departures need to know nothing about which of the two is showing.
    */
   _applyArrival() {
+    this._syncPlaza()
     const wanted = this.planet.gate || null
+    // Through the gate the crew come out of the opening at deck level and stop a few paces
+    // in front of it, still on the plaza. There is no ramp to walk down.
+    this.ship.setArrivalPoints(wanted ? { airlock: new THREE.Vector3(0, 0, 0.2), door: new THREE.Vector3(0, 0, 2.9) } : null)
     for (const child of this.ship.group.children) {
       if (child !== this.gate) child.visible = !wanted
     }
@@ -736,7 +791,7 @@ export class Colony {
     // Which hex cells are decked. Ground height is asked for once per moving agent per
     // frame, so it wants to be a lookup rather than a scan over every plot's every tile.
     this.deckedCells = new Map()
-    for (const plot of this.plotOrder) {
+    for (const plot of this._decks()) {
       for (const cell of plot.cells) this.deckedCells.set(`${cell.q},${cell.r}`, plot)
     }
     this._syncLabels()
@@ -755,8 +810,11 @@ export class Colony {
     const count = this.planet.plot?.levels
     if (!(count > 1)) return new Map()
     const owner = new Map()
-    for (const [name, cells] of layout) for (const cell of cells) owner.set(`${cell.q},${cell.r}`, name)
-    const plots = [...layout].map(([name, cells]) => {
+    // The plaza takes part so that every workspace ends up with a way to it. It is given
+    // ground level and, sorting first, is the one the others are brought into reach of.
+    const decks = this.planet.plot.crossings ? [[PLAZA, CORE_CELLS], ...layout] : [...layout]
+    for (const [name, cells] of decks) for (const cell of cells) owner.set(`${cell.q},${cell.r}`, name)
+    const plots = decks.map(([name, cells]) => {
       const neighbours = new Set()
       for (const cell of cells) {
         for (const [dq, dr] of HEX_DIRS) {
@@ -766,7 +824,8 @@ export class Colony {
       }
       return { id: name, neighbours }
     })
-    const levels = settleLevels(plots, this.plotLevels, count)
+    const levels = settleLevels(plots, new Map([...this.plotLevels, [PLAZA, 0]]), count)
+    levels.delete(PLAZA)
     for (const [name, level] of levels) this.plotLevels.set(name, level)
     return levels
   }
@@ -778,12 +837,18 @@ export class Colony {
   _syncCrossings() {
     const style = this.planet.plot
     const plan = style?.crossings
-      ? planCrossings(this.plotOrder.map((plot) => ({ id: plot.id, cells: plot.cells, level: plot.level })))
+      ? planCrossings(this._decks().map((plot) => ({ id: plot.id, cells: plot.cells, level: plot.level })))
       : []
     const signature = JSON.stringify(plan)
     if (signature === this._crossingSignature) return
     this._crossingSignature = signature
     this.crossingPlan = plan
+    const elevation = (id) => (id === PLAZA ? this.plaza : this.plots.get(id))?.elev || 0
+    this.crossingSpans = plan.map((crossing) =>
+      spanOf(crossing, { gap: style.gap, levelStep: style.levelStep, deckTop: DECK_TOP, elevation })
+    )
+    // Where the crew may step off a deck has just changed.
+    if (this.nav) this._rebuildNavigation()
     if (!plan.length) {
       this.crossings.clear()
       return
@@ -795,7 +860,7 @@ export class Colony {
       this.crossings.build(plan, {
         gap: style.gap,
         levelStep: style.levelStep,
-        elevation: (id) => this.plots.get(id)?.elev || 0,
+        elevation,
       })
     }, () => {})
   }
@@ -814,10 +879,16 @@ export class Colony {
       shipDoor: () => this.ship.shipDoor(),
       shipAirlock: () => this.ship.shipAirlock(),
       groundAt: (x, z) => this.groundAt(x, z),
+      // Where nobody may settle: a walkway or a staircase is the only way through.
+      thoroughfare: (x, z) => this._inMouth(x, z),
     }
   }
 
   groundAt(x, z) {
+    // Somebody on a walkway or a staircase stands on it, not on the ground far below.
+    for (const span of this.crossingSpans) {
+      if (onSpan(span, x, z, CROSSING_WALK + 0.35)) return heightOnSpan(span, x, z)
+    }
     const cell = worldToHex(x, z)
     // On a world whose decks stand apart, a cell is only decked as far as its plot's own
     // outline goes; the strip between two workspaces is ground.
@@ -856,7 +927,7 @@ export class Colony {
     const target = 1
 
     if (!entry) {
-      const mesh = createBuilding({ seed: hashString(thread.id), accent: plot.accent })
+      const mesh = createBuilding({ seed: hashString(thread.id), accent: plot.accent, fit: this.planet.plot?.buildingRadius })
       const pos = plot.worldSlot(index)
       mesh.position.copy(pos)
       mesh.rotation.y = ((hashString(thread.id) >>> 8) % 360) * (Math.PI / 180)
@@ -961,10 +1032,45 @@ export class Colony {
     }
 
     const ship = shipPosition()
-    obstacles.push({ x: ship.x, z: ship.z, r: 3.4 + AGENT_RADIUS })
+    if (this.planet.gate) {
+      // The gate is an arch, and the crew walk through it: its two legs are in the way, the
+      // opening between them is not. The legs stand three of the model's units either side.
+      const scale = this.planet.gate.scale
+      const heading = this.ship.group.rotation.y
+      for (const side of [-1, 1]) {
+        const reach = side * 3 * scale
+        const leg = { x: ship.x + reach * Math.cos(heading), z: ship.z - reach * Math.sin(heading) }
+        obstacles.push({ ...leg, r: 1.3 * scale + AGENT_RADIUS, keep: 1.3 * scale + AGENT_RADIUS })
+      }
+    } else {
+      obstacles.push({ x: ship.x, z: ship.z, r: 3.4 + AGENT_RADIUS })
+    }
     const library = this.library.group.position
     obstacles.push({ x: library.x, z: library.z, r: this.library.radius + TRAVEL_RADIUS, keep: this.library.radius + AGENT_RADIUS })
-    this.nav.rebuild(obstacles)
+    this.nav.rebuild(obstacles, this.planet.plot?.crossings ? (x, z) => this._walkable(x, z) : null)
+  }
+
+  /** Whether (x, z) is on a crossing or in the ground just inside either of its mouths. */
+  _inMouth(x, z) {
+    for (const span of this.crossingSpans) {
+      if (onSpan(span, x, z, MOUTH_CLEAR.across, MOUTH_CLEAR.along)) return true
+    }
+    return false
+  }
+
+  /**
+   * Whether there is anything to stand on at (x, z), on a world whose decks stand apart.
+   * A deck is, as far as its own outline goes. A crossing is. The strip between a deck's
+   * outline and the edge of its cell is the gap, and is not. Open ground beyond the campus
+   * is left walkable, so nothing out there is suddenly walled in.
+   */
+  _walkable(x, z) {
+    for (const span of this.crossingSpans) {
+      if (onSpan(span, x, z, CROSSING_WALK, CROSSING_OVERLAP)) return true
+    }
+    const cell = worldToHex(x, z)
+    const deck = this.deckedCells?.get(`${cell.q},${cell.r}`)
+    return deck ? deck.standsOn(x, z, 0.2) : true
   }
 
   /** The plot under a world point. On a hex lattice the nearest cell centre is the cell. */
@@ -1167,15 +1273,20 @@ export class Colony {
     // Outward points straight off the zone for a building on its edge, and an astronaut
     // standing in the neighbouring repo's yard reads as belonging to that repo. The inside
     // of its own plot is always the better answer when the outside is somebody else's.
-    const onPlot = (v) => plot.containsWorld(v.x, v.z)
+    // On its own deck, a step in from the edge, and out of the way of every crossing.
+    const standable = (x, z) => (this.planet.plot?.gap ? plot.standsOn(x, z, 0.35) : plot.containsWorld(x, z)) && !this._inMouth(x, z)
+    const onPlot = (v) => standable(v.x, v.z)
     if (!onPlot(site)) {
       const inward = new THREE.Vector3(b.x - Math.cos(a) * stand, 0, b.z - Math.sin(a) * stand)
       if (onPlot(inward)) site = inward
     }
     // Pick against the complete, current map, including scaffolds about to rise. A grid
     // cell alone is insufficient: it can still be inside a building's keep-out radius.
-    const free = this.nav?.nearestClear(site.x, site.z, PLOT_CELL, (x, z) => plot.containsWorld(x, z)) ||
-      this.nav?.nearestClear(site.x, site.z, PLOT_CELL * 2)
+    // Wider and wider, but always somewhere standable: the old last resort took any clear
+    // cell at all, which on a world with crossings can be the middle of a walkway.
+    const free = this.nav?.nearestClear(site.x, site.z, PLOT_CELL, standable) ||
+      this.nav?.nearestClear(site.x, site.z, PLOT_CELL * 2, standable) ||
+      this.nav?.nearestClear(b.x, b.z, PLOT_CELL * 2, standable)
     if (free) site.set(free.x, 0, free.z)
     return site
   }

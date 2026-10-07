@@ -106,8 +106,16 @@ export class Navigation {
    * Rasterise the obstacle list. Each is a circle `{ x, z, r }`, already inflated by the
    * caller for the astronaut's own width — doing it here would hide the one number that
    * decides whether the gaps between buildings stay walkable.
+   *
+   * `walkable`, when given, says where there is ground to stand on at all: any cell whose
+   * centre it rejects is blocked too. That is how a world with gaps between its decks keeps
+   * the crew out of them, and it needs no new rule anywhere else, because routing and
+   * collision both already read the same bitmap.
+   *
+   * @param {Array<{x: number, z: number, r: number, keep?: number}>} obstacles
+   * @param {((x: number, z: number) => boolean) | null} [walkable]
    */
-  rebuild(obstacles) {
+  rebuild(obstacles, walkable = null) {
     this.blocked.fill(0)
     const { size, cell } = this
     this.solids = obstacles.filter((o) => o.keep > 0)
@@ -148,6 +156,15 @@ export class Navigation {
         for (let ix = minX; ix <= maxX; ix++) {
           const dx = this.toWorld(ix) - o.x
           if (dx * dx + dz * dz <= r2) this.blocked[row + ix] = 1
+        }
+      }
+    }
+    if (walkable) {
+      for (let iz = 0; iz < size; iz++) {
+        const wz = this.toWorld(iz)
+        const row = iz * size
+        for (let ix = 0; ix < size; ix++) {
+          if (!this.blocked[row + ix] && !walkable(this.toWorld(ix), wz)) this.blocked[row + ix] = 1
         }
       }
     }
@@ -342,6 +359,33 @@ export class Navigation {
       if (this.isBlocked(x0 + dx * t, z0 + dz * t)) return false
     }
     return true
+  }
+
+  /**
+   * Which waypoint of `path` someone standing at (x, z) should be walking at, given the one
+   * they were on. Waypoints already reached are passed over.
+   *
+   * Within `reached` of one counts only if the next can be walked to in a straight line from
+   * here. A corner turned half a step early is a wall met head on, with nothing to slide
+   * along, and asking for a new route hands back the same one. Within `on` counts whatever
+   * lies beyond, since the route was smoothed from exactly there.
+   *
+   * @param {Array<{x: number, z: number}>} path
+   * @param {number} at  index of the waypoint being walked at
+   * @param {number} x
+   * @param {number} z
+   * @param {number} reached
+   * @param {number} on
+   * @returns {number}
+   */
+  passWaypoints(path, at, x, z, reached, on) {
+    while (at < path.length - 1) {
+      const d = Math.hypot(path[at].x - x, path[at].z - z)
+      if (d > reached) break
+      if (d > on && !this.lineOfSight(x, z, path[at + 1].x, path[at + 1].z)) break
+      at++
+    }
+    return at
   }
 
   // ── A* ──────────────────────────────────────────────────────────────────────────────

@@ -62,6 +62,8 @@ const DOORWAY_CLEAR = 5.5
 
 /** How close counts as "reached this waypoint". A shade over one nav cell. */
 const WAYPOINT_REACHED = 0.55
+/** Close enough to a waypoint to count as standing on it, whatever lies beyond. */
+const WAYPOINT_ON = 0.12
 /**
  * How far apart astronauts hold each other, measured against the widest thing they wear:
  * the helmet is 0.95 across, so anything under that is a spacing at which they are visibly
@@ -839,14 +841,7 @@ export class Astronauts {
     const path = agent.path
     if (!path || !path.length) return out.copy(agent.site)
 
-    // Retire waypoints already reached, and any the agent can already see past.
-    while (agent.pathAt < path.length - 1) {
-      const wp = path[agent.pathAt]
-      const dx = wp.x - agent.pos.x
-      const dz = wp.z - agent.pos.z
-      if (dx * dx + dz * dz > WAYPOINT_REACHED * WAYPOINT_REACHED) break
-      agent.pathAt++
-    }
+    agent.pathAt = nav.passWaypoints(path, agent.pathAt, agent.pos.x, agent.pos.z, WAYPOINT_REACHED, WAYPOINT_ON)
     if (agent.pathAt >= path.length) return out.copy(agent.site)
     const wp = path[agent.pathAt]
     return out.set(wp.x, 0, wp.z)
@@ -904,11 +899,14 @@ export class Astronauts {
           // It is exactly wrong next to the ship: an astronaut still shouldering its way out
           // of the doorway would claim the doorway, and the queue behind it inherits a
           // permanent wall. Out there it keeps its real site and tries again, which the crowd
-          // thinning out is usually enough to fix.
-          const inDoorway = this._nearDoor(agent.pos)
+          // thinning out is usually enough to fix. A walkway or a staircase is a doorway of the
+          // same kind: whoever settles on one is standing in the only way through.
+          const inDoorway = this._nearDoor(agent.pos) || !!this.world?.thoroughfare?.(agent.pos.x, agent.pos.z)
           if (stuck && dist >= ARRIVE_RADIUS && !inDoorway) agent.site.copy(agent.pos)
           if (stuck && inDoorway) {
             agent.stateAge = 0
+            // Start the count again, or it asks for a new route on every frame from here on.
+            agent.stuckFor = 0
             agent.pathVersion = -1
             break
           }
@@ -1149,6 +1147,8 @@ export class Astronauts {
         const wx = agent.site.x + Math.cos(a) * r
         const wz = agent.site.z + Math.sin(a) * r
         if (this.nav?.isBlocked(wx, wz) || this.nav?.insideKeep(wx, wz)) continue
+        // Nor is the way between two workspaces somewhere to stand about.
+        if (this.world?.thoroughfare?.(wx, wz)) continue
         if (this.nav && !this.nav.clearWalk(agent.pos.x, agent.pos.z, wx, wz)) continue
         if (this._crowded(wx, wz, agent)) continue
         agent.wander.set(wx, 0, wz)
@@ -1240,6 +1240,8 @@ export class Astronauts {
         const wx = agent.anchor.x + Math.cos(a) * radius
         const wz = agent.anchor.z + Math.sin(a) * radius
         if (this.nav?.isBlocked(wx, wz) || this.nav?.insideKeep(wx, wz)) continue
+        // Nor is the way between two workspaces somewhere to stand about.
+        if (this.world?.thoroughfare?.(wx, wz)) continue
         if (this.nav && !this.nav.clearWalk(agent.pos.x, agent.pos.z, wx, wz)) continue
         if (this._crowded(wx, wz, agent)) continue
         agent.workSpot.set(wx, 0, wz)
