@@ -15,6 +15,9 @@ import * as THREE from 'three'
 /** The models, by the name they are packed under. Which one a thread gets is `robotKind`. */
 export const ROBOT_KINDS = ['crew-unit', 'crew-rock']
 
+/** The voice each kind answers in when it is picked: see `CREW_VOICES` in the sound table. */
+export const ROBOT_VOICES = ['unit', 'rock']
+
 /**
  * The rig's bones in the order the models number them. This is `BONES` in
  * `design/campus/build_crew.py`, and the two must agree.

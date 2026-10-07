@@ -15,6 +15,9 @@ import { crewRig, loadCrew } from './agents/crew.js'
 import { TIMES } from './world/sky.js'
 import { CURVE_FULL, bendPoint, installWorldCurve, setCurveView } from './core/curve.js'
 import { Ambience } from './audio/ambience.js'
+import { audition } from './audio/audition.js'
+import { CREW_VOICES } from './audio/sounds.js'
+import { ROBOT_VOICES } from './agents/robots.js'
 import { shorelinePoints } from './world/planet.js'
 import { shipPosition } from './world/plots.js'
 import {
@@ -335,13 +338,16 @@ function select(id, { fly = false } = {}) {
   colony.astronauts.setSelected(agent)
   const thread = threads.find((t) => t.id === id) || agent.thread
   hud.setSelection(agent, thread)
-  // It answers. One of six little phrases, from where it is standing, never twice in a row.
+  // It answers, in the voice of its kind. One of that voice's phrases, from where it is
+  // standing, never the same one twice in a row.
   if (agent.id !== lastVoiced) {
     lastVoiced = agent.id
-    let n = 1 + Math.floor(Math.random() * 6)
-    if (n === lastPhrase) n = (n % 6) + 1
+    const voice = colony.astronauts.robots ? ROBOT_VOICES[agent.kind % ROBOT_VOICES.length] : 'select'
+    const phrases = CREW_VOICES[voice]
+    let n = 1 + Math.floor(Math.random() * phrases)
+    if (n === lastPhrase) n = (n % phrases) + 1
     lastPhrase = n
-    ambience.play(`select-${n}`, { x: agent.pos.x, y: agent.pos.y + 0.8, z: agent.pos.z, gain: 0.9 })
+    ambience.play(`${voice}-${n}`, { x: agent.pos.x, y: agent.pos.y + 0.8, z: agent.pos.z, gain: 0.9 })
   }
   // Picking somebody is also picking the zone they are standing on: the sidebar follows.
   if (thread?.project && colony.plots.has(thread.project)) selectedProject = thread.project
@@ -1207,8 +1213,11 @@ function soundWorld() {
       take(`work:${agent.id}`, 'work-hammer', agent.pos.x, agent.pos.y + 0.6, agent.pos.z, 0.9)
     }
   }
-  take('ship', 'ship-hum', shipSpot.x, colony.ship.group.position.y + 3, shipSpot.z, 0.7)
-  colony.fauna.drones.forEach((d, i) => take(`drone:${i}`, 'drone-whine', d.x, d.y, d.z, d.busy ? 1 : 0.35))
+  // A world can say what its arrival point and its drones sound like; the lander's idle and
+  // the stock rotor are the defaults.
+  const voices = colony.planet.audio || {}
+  take('ship', voices.gate || 'ship-hum', shipSpot.x, colony.ship.group.position.y + 3, shipSpot.z, 0.7)
+  colony.fauna.drones.forEach((d, i) => take(`drone:${i}`, voices.drone || 'drone-whine', d.x, d.y, d.z, d.busy ? 1 : 0.35))
   soundSources.length = n
 
   let water = null
@@ -1242,7 +1251,7 @@ connectDesktopLifecycle({
 })
 
 // Handy for poking at the running colony from the console.
-window.botCrossing = { engine, rig, colony, settings, hud, ambience, poll, get threads() { return threads } }
+window.botCrossing = { engine, rig, colony, settings, hud, ambience, audition, poll, get threads() { return threads } }
 
 /** `execCommand('copy')` over a throwaway textarea — the copy that predates permissions. */
 function copyFallback(text) {

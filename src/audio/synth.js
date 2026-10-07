@@ -520,6 +520,40 @@ class HumVoice extends Voice {
   }
 }
 
+/**
+ * A pad: a few pure tones, each swelling and dying away on its own slow clock, so the chord
+ * they make is never the same twice and never stands still long enough to be a drone.
+ *
+ * Sines only, and nowhere two of them close enough in pitch to beat. A beat is a buzz, and a
+ * buzz in the background of a machine world reads as a machine that is about to fail.
+ */
+class PadVoice extends Voice {
+  constructor(ctx, dest, noise, o) {
+    super(ctx, dest)
+    this.base = o.base
+    this.acc = 0
+    const now = ctx.currentTime
+    this.tones = o.tones.map((freq) => {
+      const g = this.node(gain(ctx, 0, this.out))
+      this.source(osc(ctx, 'sine', freq, g, now))
+      return { g, phase: Math.random() * TAU, rate: rand(0.05, 0.13) }
+    })
+    this.out.gain.value = o.base
+  }
+
+  update(dt, now) {
+    this.acc += dt
+    for (const tone of this.tones) tone.phase += dt * tone.rate * TAU
+    if (this.acc < 0.15) return
+    this.acc = 0
+    for (const tone of this.tones) {
+      // Up from silence and back, spending as long near nothing as near full.
+      const level = Math.pow(0.5 + 0.5 * Math.sin(tone.phase), 2)
+      tone.g.gain.setTargetAtTime(level / this.tones.length, now, 0.5)
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------------------------
 // Positional loops: what a thing in the world sounds like from where it stands.
 
@@ -593,6 +627,61 @@ class ShipHumVoice extends Voice {
     this.cutoff += (Math.random() - 0.5) * 30
     this.cutoff = Math.min(230, Math.max(130, this.cutoff))
     this.filter.frequency.setTargetAtTime(this.cutoff, now, 0.6)
+  }
+}
+
+/**
+ * A gate that is open and holding: a fifth and the octave over it, in pure tones, with the
+ * top one coming and going. Where the lander's hum is an engine idling, this is a note held.
+ */
+class GateHumVoice extends Voice {
+  constructor(ctx, dest, noise, o) {
+    super(ctx, dest)
+    this.base = o.base
+    this.phase = Math.random() * TAU
+    this.acc = 0
+    const now = ctx.currentTime
+    this.source(osc(ctx, 'sine', 82.4, this.node(gain(ctx, 0.6, this.out)), now))
+    this.source(osc(ctx, 'sine', 123.5, this.node(gain(ctx, 0.3, this.out)), now))
+    this.top = this.node(gain(ctx, 0.08, this.out))
+    this.source(osc(ctx, 'sine', 329.6, this.top, now))
+    this.out.gain.value = o.base
+  }
+
+  update(dt, now) {
+    this.phase += dt * 0.21
+    this.acc += dt
+    if (this.acc < 0.2) return
+    this.acc = 0
+    this.top.gain.setTargetAtTime(0.03 + 0.09 * (0.5 + 0.5 * Math.sin(this.phase)), now, 0.6)
+  }
+}
+
+/**
+ * A ducted rotor, heard as the air it moves and not as its blades: a band of noise with a
+ * soft tone inside it. The stock rotor is chopped at the blade-pass rate, which at five
+ * drones is a field of small buzzes; this one has nothing in it slower than a flutter.
+ */
+class WhirVoice extends Voice {
+  constructor(ctx, dest, noise, o) {
+    super(ctx, dest)
+    this.base = o.base
+    const now = ctx.currentTime
+    this.band = this.node(filter(ctx, 'bandpass', 780, 1.1))
+    this.band.connect(this.node(gain(ctx, 0.9, this.out)))
+    this.source(looped(ctx, noise.pink, this.band))
+    const tone = this.node(gain(ctx, 0.16, this.out))
+    this.sine = this.source(osc(ctx, 'sine', 300, tone, now))
+    // A flutter in the tone, fast and shallow: movement, not a pulse.
+    const depth = this.node(gain(ctx, 0.035, tone.gain))
+    this.source(osc(ctx, 'sine', 17, depth, now))
+    this.out.gain.value = o.base
+  }
+
+  setLevel(level) {
+    const now = this.ctx.currentTime
+    this.sine.frequency.setTargetAtTime(300 * (0.9 + 0.22 * level), now, 0.3)
+    this.band.frequency.setTargetAtTime(780 * (0.85 + 0.4 * level), now, 0.3)
   }
 }
 
@@ -837,6 +926,147 @@ const ONE_SHOTS = {
     note(523.25, now)
     return note(783.99, now + 0.22)
   },
+  /** Somewhere off across the floor a vent lets go: air rising to a hiss and falling away. */
+  steamVent(ctx, dest, now, level, noise) {
+    const bp = filter(ctx, 'bandpass', 3200, 0.9)
+    bp.frequency.setValueAtTime(3600, now)
+    bp.frequency.exponentialRampToValueAtTime(1500, now + 1.3)
+    const g = gain(ctx, 0, dest)
+    bp.connect(g)
+    burst(ctx, noise.white, bp, now, 1.6)
+    g.gain.setValueAtTime(0, now)
+    g.gain.linearRampToValueAtTime(level * 0.3, now + 0.22)
+    g.gain.setTargetAtTime(0, now + 0.4, 0.32)
+    return now + 1.7
+  },
+  /** A pump turning over: two soft low thumps, and the breath it lets out after. */
+  pumpThump(ctx, dest, now, level, noise) {
+    for (const [t, strength] of [[0, 1], [0.27, 0.7]]) {
+      chirp(ctx, dest, now + t, { f0: 92, f1: 54, dur: 0.14, gain: level * 0.5 * strength, attack: 0.012, decay: 0.2 })
+    }
+    const lp = filter(ctx, 'lowpass', 900, 0.6)
+    const g = gain(ctx, 0, dest)
+    lp.connect(g)
+    burst(ctx, noise.pink, lp, now + 0.45, 0.6)
+    g.gain.setValueAtTime(0, now + 0.45)
+    g.gain.linearRampToValueAtTime(level * 0.16, now + 0.55)
+    g.gain.setTargetAtTime(0, now + 0.6, 0.14)
+    return now + 1.2
+  },
+  /** Metal settling, a long way off: a dull knock with a short ring to it. */
+  metalKnock(ctx, dest, now, level) {
+    const lp = filter(ctx, 'lowpass', 1800, 0.7)
+    lp.connect(dest)
+    for (const [ratio, amount, decay] of [[1, 1, 0.5], [1.62, 0.5, 0.32], [2.71, 0.28, 0.2], [4.1, 0.12, 0.12]]) {
+      const g = gain(ctx, 0, lp)
+      const o = osc(ctx, 'sine', 310 * ratio, g, now)
+      o.stop(envelope(g.gain, now, level * 0.3 * amount, 0.003, decay) + 0.05)
+    }
+    return now + 0.7
+  },
+}
+
+// ---------------------------------------------------------------------------------------------
+// The crew's voices. A robot answers when it is picked, in the voice of its kind.
+
+/**
+ * The rock crew speak in chords.
+ *
+ * Each sound is several pitched tones at once, low and round, that swell in, waver, and slide
+ * to the next. It is modelled on the owner's reference: a voice that is music more than
+ * speech, with its weight between about a hundred and eight hundred hertz. Nothing is
+ * sampled; this is what analysing those clips said such a voice is made of.
+ *
+ * A phrase is a list of `[chord, seconds, slide]`: the chord in hertz, how long it sounds, and
+ * what its pitch is multiplied by over that time (above one rises, below falls).
+ */
+function rockPhrase(notes, { waver = 4.2, breath = 0.05 } = {}) {
+  return (ctx, dest, now, level, noise) => {
+    let t = now
+    for (const [chord, dur, slide = 1] of notes) {
+      // One tremolo for the whole chord, so it wavers as one voice and not as a choir.
+      const voice = gain(ctx, 1, dest)
+      const tremolo = osc(ctx, 'sine', waver + rand(-0.4, 0.4), gain(ctx, 0.2, voice.gain), t)
+      let end = t
+      chord.forEach((freq, i) => {
+        const g = gain(ctx, 0, voice)
+        // A sine for the body and a triangle under it for the edge of a blown tone.
+        const a = osc(ctx, 'sine', freq, g, t)
+        const b = osc(ctx, 'triangle', freq, gain(ctx, 0.18, g), t)
+        for (const o of [a, b]) {
+          o.frequency.setValueAtTime(freq, t)
+          o.frequency.exponentialRampToValueAtTime(freq * slide, t + dur)
+        }
+        // The lowest tone leads; the rest come in under it and a hair later.
+        const weight = (i === 0 ? 0.5 : 0.34 / Math.sqrt(i)) / Math.sqrt(chord.length)
+        end = Math.max(end, envelope(g.gain, t + i * 0.012, level * weight, Math.min(0.07, dur * 0.3), 0.22, dur * 0.75))
+        a.stop(end + 0.05)
+        b.stop(end + 0.05)
+      })
+      tremolo.stop(end + 0.05)
+      // Breath in it: a little air, pitched where the chord is.
+      const bp = filter(ctx, 'bandpass', chord[chord.length - 1] * 2.4, 2.5)
+      const air = gain(ctx, 0, dest)
+      bp.connect(air)
+      burst(ctx, noise.pink, bp, t, dur + 0.2)
+      envelope(air.gain, t, level * breath, 0.05, 0.2, dur * 0.7)
+      t += dur * 0.88
+    }
+    return t + 0.45
+  }
+}
+
+/** The rock crew's laugh: the same chords, short and quick and climbing. */
+function rockLaugh(root, steps) {
+  return (ctx, dest, now, level, noise) => {
+    const notes = []
+    for (let i = 0; i < steps; i++) {
+      const f = root * Math.pow(1.19, i)
+      notes.push([[f, f * 1.5, f * 2.01], 0.085 + (i === steps - 1 ? 0.12 : 0), i === steps - 1 ? 0.92 : 1.06])
+    }
+    return rockPhrase(notes, { waver: 6.5, breath: 0.03 })(ctx, dest, now, level, noise)
+  }
+}
+
+/**
+ * The plated crew speak in struck tones.
+ *
+ * Each is a small bell made by frequency modulation: a tone whose pitch is shaken by another
+ * at an uneven multiple of it, hard at the strike and settling at once, which is the sound of
+ * something metal being tapped. They come in short runs, quick and even, like data being read
+ * out. `ratio` sets how the bell is tuned: near 3.5 it is glassy, near 1.4 it is a clank.
+ *
+ * A phrase is a list of `[hertz, seconds]`, with a rest written as a zero.
+ */
+function unitPhrase(notes, { ratio = 3.52, bright = 1 } = {}) {
+  return (ctx, dest, now, level, noise) => {
+    // A relay closing before it speaks: one tick.
+    const hp = filter(ctx, 'highpass', 3500, 0.8)
+    const tick = gain(ctx, 0, dest)
+    hp.connect(tick)
+    burst(ctx, noise.white, hp, now, 0.012)
+    envelope(tick.gain, now, level * 0.1, 0.001, 0.015)
+
+    let t = now + 0.045
+    for (const [freq, dur] of notes) {
+      if (freq > 0) {
+        const g = gain(ctx, 0, dest)
+        const carrier = osc(ctx, 'sine', freq, g, t)
+        // A scoop up into the note, the way a struck bar finds its pitch.
+        carrier.frequency.setValueAtTime(freq * 0.97, t)
+        carrier.frequency.exponentialRampToValueAtTime(freq, t + 0.018)
+        const index = gain(ctx, 0, carrier.frequency)
+        const shaker = osc(ctx, 'sine', freq * ratio, index, t)
+        index.gain.setValueAtTime(freq * 2.2 * bright, t)
+        index.gain.setTargetAtTime(freq * 0.12, t, 0.03)
+        const end = envelope(g.gain, t, level * 0.42, 0.004, Math.max(0.16, dur * 1.6))
+        carrier.stop(end + 0.05)
+        shaker.stop(end + 0.05)
+      }
+      t += dur
+    }
+    return t + 0.3
+  }
 }
 
 function bird(kind) {
@@ -909,6 +1139,10 @@ export const GENERATORS = {
   'lava-rumble': (ctx, d, o, n) => new LavaVoice(ctx, d, n, { base: 0.6 }),
   'volcanic-hiss': (ctx, d, o, n) => new HissVoice(ctx, d, n, { base: 0.12 }),
   'lunar-silence': (ctx, d, o, n) => new HumVoice(ctx, d, n, { base: 0.07, freq: 48, radio: 0.05 }),
+  // The campus: moving air, a pad that never settles, and the canals a long way off.
+  'foundry-air': (ctx, d, o, n) => new WindVoice(ctx, d, n, { lo: 140, hi: 460, base: 0.3, swell: 0.4, rate: 0.35 }),
+  'foundry-pad': (ctx, d, o, n) => new PadVoice(ctx, d, n, { base: 0.11, tones: [98, 146.8, 220, 293.7, 369.9] }),
+  'coolant-flow': (ctx, d, o, n) => new FlutterVoice(ctx, d, n, { center: 720, q: 0.5, base: 0.13, depth: 0.2, speed: 5 }),
 
   // One-shots
   'gull': oneShot(bird('gull')),
@@ -933,10 +1167,29 @@ export const GENERATORS = {
   'select-5': oneShot(robotPhrase([[980, 980, 0.07], [980, 980, 0.07], [1470, 1240, 0.14]])),
   'select-6': oneShot(robotPhrase([[1200, 900, 0.1], [600, 1000, 0.16]])),
   'chime-attention': oneShot(ONE_SHOTS.chime),
+  'steam-vent': oneShot(ONE_SHOTS.steamVent),
+  'pump-thump': oneShot(ONE_SHOTS.pumpThump),
+  'metal-knock': oneShot(ONE_SHOTS.metalKnock),
+  // The rock crew. Low chords, a third or a fifth or more apart, sliding one to the next.
+  'rock-1': oneShot(rockPhrase([[[147, 220, 370], 0.34, 1.0], [[196, 294, 440], 0.42, 1.12]])),
+  'rock-2': oneShot(rockPhrase([[[220, 330], 0.2, 1.0], [[165, 247, 415], 0.24, 0.94], [[131, 196, 330], 0.5, 1.0]])),
+  'rock-3': oneShot(rockPhrase([[[110, 165, 277, 440], 0.6, 1.26]], { waver: 3.3 })),
+  'rock-4': oneShot(rockPhrase([[[262, 392], 0.16, 1.0], [[262, 392], 0.16, 1.0], [[175, 262, 440], 0.46, 0.89]])),
+  'rock-5': oneShot(rockPhrase([[[131, 196], 0.26, 1.5], [[196, 294, 494], 0.3, 1.0], [[147, 220, 370], 0.4, 0.84]], { waver: 5 })),
+  'rock-6': oneShot(rockLaugh(330, 7)),
+  // The plated crew. Struck tones on a five-note scale, in runs.
+  'unit-1': oneShot(unitPhrase([[1175, 0.075], [1568, 0.075], [1760, 0.16]])),
+  'unit-2': oneShot(unitPhrase([[1760, 0.07], [1319, 0.07], [0, 0.05], [1175, 0.07], [1760, 0.18]])),
+  'unit-3': oneShot(unitPhrase([[880, 0.09], [1319, 0.09], [1175, 0.09], [1568, 0.2]], { ratio: 2.76 })),
+  'unit-4': oneShot(unitPhrase([[1568, 0.06], [1568, 0.06], [0, 0.04], [2093, 0.2]])),
+  'unit-5': oneShot(unitPhrase([[1319, 0.08], [988, 0.08], [784, 0.22]], { ratio: 1.41, bright: 0.7 })),
+  'unit-6': oneShot(unitPhrase([[784, 0.06], [988, 0.06], [1175, 0.06], [1568, 0.06], [1976, 0.2]], { bright: 1.2 })),
 
   // Positional loops
   'work-hammer': (ctx, d, o, n) => new HammerVoice(ctx, d, n, { base: 0.5 }),
   'ship-hum': (ctx, d, o, n) => new ShipHumVoice(ctx, d, n, { base: 0.2 }),
   'drone-whine': (ctx, d, o, n) => new DroneVoice(ctx, d, n, { base: 0.22 }),
+  'gate-hum': (ctx, d, o, n) => new GateHumVoice(ctx, d, n, { base: 0.13 }),
+  'drone-whir': (ctx, d, o, n) => new WhirVoice(ctx, d, n, { base: 0.1 }),
   'shore-lap': (ctx, d, o, n) => new ShoreVoice(ctx, d, n, { base: 0.4 }),
 }
