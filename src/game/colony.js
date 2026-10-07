@@ -31,6 +31,7 @@ import { Crossings } from '../world/crossing-models.js'
 import { loadModels } from '../world/kit.js'
 import { loadGate } from '../world/gate.js'
 import { campusBuilding, loadCampusBuildings } from '../world/campus-buildings.js'
+import { createPipeline, pipelineClearance, pipelineUniforms } from '../world/pipeline.js'
 import { createBuilding, buildingUniforms, Scaffolds } from '../world/buildings.js'
 import { Ship } from '../world/ship.js'
 import { Library } from '../world/library.js'
@@ -257,6 +258,7 @@ export class Colony {
     this.worldGroup.add(this.terrain)
     this._buildIsland()
     this._buildWater()
+    this._buildPipeline()
     this._buildScatter()
 
     // The ship has legs, and legs have to reach the ground. Its landing spot is a fixed hex
@@ -413,6 +415,18 @@ export class Colony {
     this.water.ripple(x, z, strength)
   }
 
+  /** The coolant lines, on a world that has them. Nothing until its models have loaded. */
+  _buildPipeline() {
+    if (this.pipeline) {
+      this.worldGroup.remove(this.pipeline)
+      disposeTree(this.pipeline)
+      this.pipeline = null
+    }
+    if (!this.planet.pipeline) return
+    this.pipeline = createPipeline(this.planet.pipeline, (x, z) => terrainHeight(x, z, this.planet))
+    if (this.pipeline) this.worldGroup.add(this.pipeline)
+  }
+
   /**
    * Ground scatter, placed to miss every tile of every plot and the ship's apron.
    *
@@ -437,6 +451,7 @@ export class Colony {
     clear.push({ x: ship.x, z: ship.z, r: 7.5 })
     const library = this.library.group.position
     clear.push({ x: library.x, z: library.z, r: 7.5 })
+    if (this.planet.pipeline) clear.push(...pipelineClearance(this.planet.pipeline))
     this.scatterGroup = createScatter(this.planet, this.settings.get('scatterDensity'), clear, 4242, (x, z) => this.onIsland(x, z))
     this.worldGroup.add(this.scatterGroup)
     this._scatterFootprint = this._plotFootprint()
@@ -1312,6 +1327,7 @@ export class Colony {
     // One write turns every rotor in the colony.
     buildingUniforms.uTime.value = elapsed
     terrainUniforms.uTime.value = elapsed
+    pipelineUniforms.uTime.value = elapsed
     this.ship.update(dt, elapsed, night)
 
     this._growBuildings(dt)
