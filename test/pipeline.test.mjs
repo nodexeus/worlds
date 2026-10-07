@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 
 import { pipelineClearance, pipelineLayout } from '../src/world/pipeline.js'
 
-const SPEC = { ring: 64 }
+const SPEC = { ring: 48, reach: 72 }
 const LENGTH = 8
 const ends = (p) => (p.turned ? [[p.x, p.z - LENGTH / 2], [p.x, p.z + LENGTH / 2]] : [[p.x - LENGTH / 2, p.z], [p.x + LENGTH / 2, p.z]])
 const key = ([x, z]) => `${x},${z}`
@@ -24,21 +24,23 @@ test('the ring is closed: every length of it meets another, or a pump house, at 
   }
 })
 
-test('there is a pump house at each corner and where each spoke leaves the ring', () => {
+test('there is a pump house at each corner, where each feed joins the ring, and at its far end', () => {
   const { pumps } = pipelineLayout(SPEC)
   const have = new Set(pumps.map((p) => key([p.x, p.z])))
-  assert.equal(have.size, 8)
-  for (const [x, z] of [[64, 64], [64, -64], [-64, 64], [-64, -64], [64, 0], [-64, 0], [0, 64], [0, -64]]) {
+  assert.equal(have.size, 12)
+  const { ring, reach } = SPEC
+  for (const [x, z] of [[ring, ring], [ring, -ring], [-ring, ring], [-ring, -ring], [ring, 0], [-ring, 0], [0, ring], [0, -ring], [reach, 0], [-reach, 0], [0, reach], [0, -reach]]) {
     assert.ok(have.has(key([x, z])), `no pump house at ${x},${z}`)
   }
 })
 
-test('nothing is laid inside the ring, and the spokes run out along the axes', () => {
+test('nothing is laid inside the ring, and the feeds run out along the axes as far as their pump houses', () => {
   const { pipes } = pipelineLayout(SPEC)
   for (const p of pipes) {
     const reach = Math.max(Math.abs(p.x), Math.abs(p.z))
     assert.ok(reach >= SPEC.ring, `a pipe inside the ring at ${p.x},${p.z}`)
-    if (reach > SPEC.ring) assert.ok(p.x === 0 || p.z === 0, `a spoke off its axis at ${p.x},${p.z}`)
+    assert.ok(reach + 4 <= SPEC.reach, `a pipe past its pump house at ${p.x},${p.z}`)
+    if (reach > SPEC.ring) assert.ok(p.x === 0 || p.z === 0, `a feed off its axis at ${p.x},${p.z}`)
   }
 })
 

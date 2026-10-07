@@ -60,9 +60,26 @@ export const PLANETS = {
     // A laid floor, not a landscape: no craters and barely any relief.
     craters: 0,
     roughness: 0.12,
-    // Coolant, in glass lines above the floor: a square ring this far out from the middle, and
-    // a line running out from the middle of each side. See pipeline.js.
-    pipeline: { ring: 64 },
+    // Coolant comes in by canal: a square channel well out from the campus, and four more
+    // running on from it to the horizon.
+    shape: 'foundry',
+    water: {
+      level: -0.75,
+      // Dark, and only just alight: it is coolant carrying heat away, not metal being poured.
+      shallow: 0x4e3000,
+      deep: 0x140b00,
+      foam: 0x8a5c08,
+      waveHeight: 0.015,
+      waveScale: 0.5,
+      speed: 0.2,
+      sparkle: 0,
+      opacity: 1,
+      glow: 0.2,
+    },
+    // And is carried the rest of the way in glass: a pump house on the canal's bank at the
+    // middle of each side, a line from each to a square ring round the campus. `ring` is how
+    // far out that ring runs and `reach` where the pump houses stand. See pipeline.js.
+    pipeline: { ring: 48, reach: 72 },
     scatter: 'foundry',
     companion: { name: 'Anode', color: 0x2a2a30, size: 2.0, glow: 0x56565e },
     dust: 0,
@@ -898,6 +915,11 @@ function sampleHeight(x, z, field, planet) {
     }
   }
 
+  if (planet.shape === 'foundry') {
+    const cut = foundryChannel(x, z)
+    if (cut > 0) y = y * (1 - cut) - FOUNDRY_CHANNEL.depth * cut
+  }
+
   for (const crater of craters) {
     const d = Math.hypot(x - crater.x, z - crater.z)
     if (d > crater.r * 1.5) continue
@@ -920,6 +942,30 @@ function sampleHeight(x, z, field, planet) {
     }
   }
   return y
+}
+
+/**
+ * The foundry's coolant channels: a square ring round the campus, and one channel running out
+ * from the middle of each side.
+ *
+ * Square, and square to the world, for two reasons. The floor's own conduits are a square
+ * grid, and a channel that cut across them at an angle would belong to some other floor. And
+ * the ground mesh is a coarse square grid too: a bank that runs along it is a straight line,
+ * where one that runs across it comes out as a saw edge. The channels lie on the plate seams,
+ * midway between conduits.
+ */
+const FOUNDRY_CHANNEL = { ring: 80, half: 2.3, bank: 1.5, depth: 1.7 }
+
+/** How fully (x, z) is inside a channel: 0 on the floor, 1 on a channel's bed. */
+function foundryChannel(x, z) {
+  const { ring, half, bank } = FOUNDRY_CHANNEL
+  const ax = Math.abs(x)
+  const az = Math.abs(z)
+  const reach = Math.max(ax, az)
+  let nearest = Math.abs(reach - ring)
+  // Past the ring, the spokes: straight out along each axis.
+  if (reach > ring) nearest = Math.min(nearest, ax, az)
+  return 1 - THREE.MathUtils.smoothstep(nearest, half, half + bank)
 }
 
 /** Craters only ever land outside the colony, so they never eat a build plot. */
