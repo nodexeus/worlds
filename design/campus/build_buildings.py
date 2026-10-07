@@ -1062,44 +1062,34 @@ PIPE_HEIGHT = 1.60      # the middle of the line above the floor
 PIPE_GLASS = 0.80       # the sleeve's radius
 
 
-def pipe(p):
+def cradle(p):
     """
-    Eight metres of coolant line, running along x: a glass sleeve on two cradles, the coolant
-    a lit column down the middle of it, flanged at both ends to meet the next length.
+    One cradle of the coolant line, the line running along x through the collar at its head.
+    The glass and the coolant are not here: the game sweeps those along the line's own curve,
+    and stands one of these under it every few metres.
     """
     h = PIPE_HEIGHT
-    along = xyz(0, 0, h, ry=math.pi / 2)        # a prism drawn up z now runs along x
-    # The coolant, and the three runners that keep the sleeve off it.
-    prism(p.light, 14, 0.46, 0.46, -4.0, 4.0, along)
-    for i in range(3):
-        a = i * TAU / 3 + TAU / 4
-        y, z = math.cos(a) * 0.68, math.sin(a) * 0.68
-        rod(p.frame, (-4.0, y, h + z), (4.0, y, h + z), 0.03, 5)
-    tube(p.glass, (-3.9, 0, h), (3.9, 0, h), PIPE_GLASS)
-    # Flanges, bolted, at the ends; a collar over each cradle.
-    for x in (-4.0, 4.0):
-        prism(p.steel, 16, 0.95, 0.95, -0.10, 0.10, xyz(x, 0, h, ry=math.pi / 2))
-        for k in range(8):
-            a = k * TAU / 8
-            for side in (-1, 1):
-                prism(p.fixing, 6, 0.04, 0.04, 0.10, 0.14, xyz(x, math.cos(a) * 0.86, h + math.sin(a) * 0.86, ry=side * math.pi / 2))
-    for x in (-2.2, 2.2):
-        prism(p.black, 16, 0.86, 0.86, -0.11, 0.11, xyz(x, 0, h, ry=math.pi / 2))
-        prism(p.steel, 16, 0.89, 0.89, -0.03, 0.03, xyz(x, 0, h, ry=math.pi / 2))
-        # The cradle: a footing, two legs, a saddle.
-        box(p.steel, 0.70, 2.30, 0.12, xyz(x, 0, 0.06))
-        box(p.paint, 0.70, 0.16, 0.006, xyz(x, -1.05, 0.123))
-        box(p.paint, 0.70, 0.16, 0.006, xyz(x, 1.05, 0.123))
+    # The collar the sleeve passes through, banded and bolted.
+    prism(p.black, 16, 0.88, 0.88, -0.13, 0.13, xyz(0, 0, h, ry=math.pi / 2))
+    prism(p.steel, 16, 0.92, 0.92, -0.04, 0.04, xyz(0, 0, h, ry=math.pi / 2))
+    for k in range(8):
+        a = k * TAU / 8 + TAU / 16
         for side in (-1, 1):
-            plate(p.steel, [(0.60, 0.12), (0.95, 0.12), (0.95, 0.30), (0.84, 1.50), (0.60, 1.10)], 0.16,
-                  xyz(x, 0, 0) @ Matrix.Rotation(side * math.pi / 2, 4, "Z"))
-            bolts(p, xyz(x, side * 0.95, 0.12), [(-0.2, 0), (0.2, 0)], 0.035, 0.03)
-        box(p.steel, 0.24, 1.40, 0.14, xyz(x, 0, 0.74))
-        box(p.black, 0.20, 0.80, 0.10, xyz(x, 0, 0.84))
-    # A gauge on one cradle, and the line down to it.
-    box(p.black, 0.30, 0.20, 0.40, xyz(2.2, -1.02, 0.55))
-    box(p.light, 0.16, 0.012, 0.16, xyz(2.2, -1.126, 0.58))
-    rod(p.frame, (2.2, -0.95, 0.75), (2.2, -0.78, 1.30), 0.03)
+            prism(p.fixing, 6, 0.035, 0.035, 0.13, 0.16, xyz(0, math.cos(a) * 0.80, h + math.sin(a) * 0.80, ry=side * math.pi / 2))
+    # A footing, two legs, a saddle.
+    box(p.steel, 0.70, 2.30, 0.12, xyz(0, 0, 0.06))
+    box(p.paint, 0.70, 0.16, 0.006, xyz(0, -1.05, 0.123))
+    box(p.paint, 0.70, 0.16, 0.006, xyz(0, 1.05, 0.123))
+    for side in (-1, 1):
+        plate(p.steel, [(0.60, 0.12), (0.95, 0.12), (0.95, 0.30), (0.84, 1.50), (0.60, 1.10)], 0.16,
+              Matrix.Rotation(side * math.pi / 2, 4, "Z"))
+        bolts(p, xyz(0, side * 0.95, 0.12), [(-0.2, 0), (0.2, 0)], 0.035, 0.03)
+    box(p.steel, 0.24, 1.40, 0.14, xyz(0, 0, 0.74))
+    box(p.black, 0.20, 0.80, 0.10, xyz(0, 0, 0.84))
+    # A gauge, and the line down to it.
+    box(p.black, 0.30, 0.20, 0.40, xyz(0, -1.02, 0.55))
+    box(p.light, 0.16, 0.012, 0.16, xyz(0, -1.126, 0.58))
+    rod(p.frame, (0, -0.95, 0.75), (0, -0.78, 1.30), 0.03)
 
 
 def pump(p):
@@ -1168,7 +1158,7 @@ def joint(p):
         box(p.light, 0.02, 0.24, 0.07, at(i * TAU / 4 + TAU / 8, 0.60, 0.95))
 
 
-PIPELINE = {"pipe": pipe, "pump": pump, "joint": joint}
+PIPELINE = {"cradle": cradle, "pump": pump, "joint": joint}
 
 PROPS = {"stack": stack, "pylon": pylon, "tanks": tanks, "manifold": manifold, "beacon": beacon, "cabinet": cabinet}
 

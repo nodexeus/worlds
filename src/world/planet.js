@@ -76,10 +76,10 @@ export const PLANETS = {
       opacity: 1,
       glow: 0.2,
     },
-    // And is carried the rest of the way in glass: a pump house on the canal's bank at the
-    // middle of each side, and a line from each to a loop drawn round the campus, `margin`
-    // outside its decks wherever they are. See pipeline.js.
-    pipeline: { margin: 15, reach: 72 },
+    // Glass coolant lines cross the floor too, on their way from somewhere to somewhere else:
+    // they pass the campus, `margin` clear of its outermost deck, and do not go round it. The
+    // seed is what their wandering is drawn from. See pipeline.js.
+    pipeline: { margin: 16, seed: 0x71be },
     scatter: 'foundry',
     companion: { name: 'Anode', color: 0x2a2a30, size: 2.0, glow: 0x56565e },
     dust: 0,
