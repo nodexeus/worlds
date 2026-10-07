@@ -414,6 +414,9 @@ export class Colony {
     this.water.ripple(x, z, strength)
   }
 
+  /** Whether there is floor at a point, and not a canal or its bank, to stand something on. */
+  _floorOpen = (x, z) => terrainHeight(x, z, this.planet) > -0.15
+
   /**
    * The coolant lines, on a world that has them. Nothing until its models have loaded. Laid
    * with the scatter, which is to say again whenever the colony's footprint changes, because
@@ -427,7 +430,7 @@ export class Colony {
     }
     if (!this.planet.pipeline) return
     // Level with the floor where a line crosses a canal, not down on its bed.
-    this.pipeline = createPipeline(this.planet.pipeline, this._footprintCells(), (x, z) => Math.max(0, terrainHeight(x, z, this.planet)))
+    this.pipeline = createPipeline(this.planet.pipeline, this._footprintCells(), (x, z) => Math.max(0, terrainHeight(x, z, this.planet)), this._floorOpen)
     if (this.pipeline) this.worldGroup.add(this.pipeline)
   }
 
@@ -456,7 +459,7 @@ export class Colony {
     clear.push({ x: ship.x, z: ship.z, r: 7.5 })
     const library = this.library.group.position
     clear.push({ x: library.x, z: library.z, r: 7.5 })
-    if (this.planet.pipeline) clear.push(...pipelineClearance(this.planet.pipeline, this._footprintCells()))
+    if (this.planet.pipeline) clear.push(...pipelineClearance(this.planet.pipeline, this._footprintCells(), this._floorOpen))
     this.scatterGroup = createScatter(this.planet, this.settings.get('scatterDensity'), clear, 4242, (x, z) => this.onIsland(x, z))
     this.worldGroup.add(this.scatterGroup)
     this._scatterFootprint = this._plotFootprint()
