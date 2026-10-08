@@ -20,7 +20,7 @@ const PAGE = 200
  *   pinned?: boolean, onClose: () => void, onFront: () => void, onChange: () => void,
  *   onNeedWorkspace: () => void}} options
  */
-export function createCard({ agentId, store, api, place, pinned = false, onClose, onFront, onChange, onNeedWorkspace }) {
+export function createCard({ agentId, store, api, place, pinned = false, onClose, onFront, onChange, onNeedWorkspace, onGone = () => {} }) {
   /** The conversation on show: the agent's own, or an earlier one picked from its history. */
   let shown = null
   /** An earlier conversation being read, or null for the agent's current one. */
@@ -43,7 +43,7 @@ export function createCard({ agentId, store, api, place, pinned = false, onClose
   const stopBtn = h('button.cc-ib.cc-stop', { type: 'button', hidden: true, onClick: () => stop() }, 'Stop')
   const historyBtn = h('button.cc-ib', { type: 'button', title: 'Earlier conversations', 'aria-label': 'Earlier conversations', 'aria-pressed': 'false', onClick: () => toggleHistory() }, icon('history'))
   const pinBtn = h('button.cc-ib', { type: 'button', onClick: () => setPinned(!pinned) }, icon('pin'))
-  const closeBtn = h('button.cc-ib', { type: 'button', title: 'Close (Esc)', 'aria-label': 'Close', onClick: () => close() }, icon('close'))
+  const closeBtn = h('button.cc-ib', { type: 'button', title: 'Close (Esc)', 'aria-label': 'Close', onClick: () => close(false) }, icon('close'))
   const head = h('header.cc-head', null, faceEl, h('div.cc-who', null, nameEl, lineEl), stopBtn, historyBtn, pinBtn, closeBtn)
 
   const bannerText = h('span')
@@ -188,7 +188,8 @@ export function createCard({ agentId, store, api, place, pinned = false, onClose
     if (closed) return
     const one = agent()
     const items = shown ? transcript(store.eventsOf(shown), { draft: reading ? '' : store.draftOf(shown) }) : []
-    const card = { agentName: one?.name ?? 'the agent', answer, retry }
+    // An earlier conversation is only read: trying again would speak into the current one.
+    const card = { agentName: one?.name ?? 'the agent', answer, retry: reading ? null : retry }
     const next = new Map()
     let before = null
     for (const item of items) {
@@ -316,8 +317,8 @@ export function createCard({ agentId, store, api, place, pinned = false, onClose
     const sent = await deliver(payload(view, text))
     if (closed) return
     if (sent) return toBottom()
-    // It did not go. Give back what was typed, unless something newer is there now.
-    if (!input.value) input.value = text
+    // It did not go. Give back what was typed, ahead of anything typed since.
+    input.value = input.value ? `${text}\n${input.value}` : text
     picked = chosen
     grow()
     syncFoot()
@@ -403,21 +404,30 @@ export function createCard({ agentId, store, api, place, pinned = false, onClose
     if (what.kind === 'roster') {
       const one = agent()
       // Retired, from here or from somewhere else. There is nobody left to talk to.
-      if (!one) return close()
+      if (!one) return close(true)
       syncHead()
       syncFoot()
       if (!reading && one.conversationId !== shown) show(one.conversationId)
     } else if (what.kind === 'workspaces' || what.kind === 'settings') {
       syncHead()
       syncFoot()
-    } else if ((what.kind === 'conversation' || what.kind === 'draft') && what.conversationId === shown) {
+    } else if (what.kind === 'conversation' && what.conversationId === shown) {
       draw()
+    } else if (what.kind === 'draft' && what.conversationId === shown && !reading) {
+      // A fragment changes one thing, and arrives many times a second: only that is touched.
+      const draft = drawn.get('draft')
+      if (!draft) return draw()
+      const stick = atBottom()
+      draft.node.textContent = store.draftOf(shown)
+      draft.signature = ''
+      if (stick) toBottom()
     }
   })
 
-  function close() {
+  function close(gone = false) {
     if (closed) return
     closed = true
+    if (gone) onGone(nameEl.textContent)
     unsubscribe()
     sizes.disconnect()
     if (shown) store.unwatch(shown)

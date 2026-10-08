@@ -18,7 +18,9 @@ export class CrewApiError extends Error {
   }
 }
 
-const UNREACHABLE = 'The server could not be reached. Nothing was sent.'
+const UNREACHABLE = 'The server could not be reached.'
+// A change that got no answer may still have arrived: saying it did not invites doing it twice.
+const UNANSWERED = 'The server did not answer. This may or may not have been done: look before trying again.'
 
 /** Drop what was left blank, so the server applies its own default. */
 const filled = (fields) =>
@@ -37,7 +39,7 @@ export function createCrewApi({ fetch: ask = (...args) => globalThis.fetch(...ar
         : { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       reply = await res.json()
     } catch {
-      throw new CrewApiError('unreachable', UNREACHABLE, res?.status ?? 0)
+      throw new CrewApiError('unreachable', method === 'GET' ? UNREACHABLE : UNANSWERED, res?.status ?? 0)
     }
     if (!res.ok) {
       throw new CrewApiError(reply?.code || 'fault', reply?.error || 'Something went wrong on the server', res.status)
@@ -62,8 +64,8 @@ export function createCrewApi({ fetch: ask = (...args) => globalThis.fetch(...ar
     answer: (conversationId, answer) => call('POST', `/conversations/${id(conversationId)}/answers`, answer),
     conversations: (agentId) => call('GET', `/agents/${id(agentId)}/conversations`),
     events(conversationId, { before, after, limit } = {}) {
-      const query = new URLSearchParams(filled({ before, after, limit }))
-      return call('GET', `/conversations/${id(conversationId)}/events${query.size ? `?${query}` : ''}`)
+      const query = new URLSearchParams(filled({ before, after, limit })).toString()
+      return call('GET', `/conversations/${id(conversationId)}/events${query ? `?${query}` : ''}`)
     },
   }
 }

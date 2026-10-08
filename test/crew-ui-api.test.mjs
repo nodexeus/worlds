@@ -86,16 +86,41 @@ test('a refusal is thrown with the code, the wording and the status the server g
   })
 })
 
-test('a server that cannot be reached, or does not answer in JSON, is reported the same way', async () => {
+test('a question that got no answer is reported as the server being out of reach', async () => {
   for (const reply of [new TypeError('Failed to fetch'), { status: 502, body: undefined }, { status: 200, body: undefined }]) {
     const { fetch } = fake(reply)
     await assert.rejects(createCrewApi({ fetch }).agents(), (error) => {
       assert.ok(error instanceof CrewApiError)
       assert.equal(error.code, 'unreachable')
-      assert.match(error.message, /server/i)
+      assert.match(error.message, /could not be reached/i)
       return true
     })
   }
+})
+
+test('a change that got no answer may have been made, and says so', async () => {
+  for (const reply of [new TypeError('Failed to fetch'), { status: 504, body: undefined }, { status: 200, body: undefined }]) {
+    const { fetch } = fake(reply)
+    await assert.rejects(createCrewApi({ fetch }).send(AGENT, { text: 'hi' }), (error) => {
+      assert.equal(error.code, 'unreachable')
+      assert.match(error.message, /may or may not/i)
+      assert.doesNotMatch(error.message, /nothing was sent/i)
+      return true
+    })
+  }
+})
+
+test('a page of events is asked for by number, on a browser old or new', async () => {
+  const { fetch, calls } = fake()
+  const Real = globalThis.URLSearchParams
+  // Older browsers have no `size` on this.
+  globalThis.URLSearchParams = class extends Real { get size() { return undefined } }
+  try {
+    await createCrewApi({ fetch }).events(TALK, { before: 40 })
+  } finally {
+    globalThis.URLSearchParams = Real
+  }
+  assert.equal(calls[0].url, `/api/crew/conversations/${TALK}/events?before=40`)
 })
 
 test('a refusal with no wording still says something', async () => {

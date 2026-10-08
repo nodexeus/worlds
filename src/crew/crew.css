@@ -5,6 +5,8 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
+  /* Cards are ordered among themselves, and all of them stay under the help sheet. */
+  isolation: isolate;
   --idle: #7fe3ff;
   --working: #fdc700;
   --waiting: #ff9d4d;
@@ -124,7 +126,8 @@ button.cp-row:hover { background: #202024; }
 .cc-banner span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cc-banner .cc-link { flex: none; }
 
-.cc-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px; outline: none; }
+.cc-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px; }
+.cc-body:focus-visible { outline-offset: -2px; }
 .cc-items { display: flex; flex-direction: column; gap: 9px; }
 .cc-earlier { display: block; margin: 0 auto 10px; font-size: 12px; }
 .cc-empty { margin: 24px 8px; text-align: center; color: var(--faint); font-size: 13px; }
@@ -173,6 +176,8 @@ button.cp-row:hover { background: #202024; }
 .cc-opts { display: flex; gap: 6px; flex-wrap: wrap; }
 .cc-ask-other { font: inherit; font-size: 13px; color: var(--text); background: var(--field); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; }
 .cc-ask-other::placeholder { color: var(--faint); }
+.cc-send-typed { display: none; }
+.cc-ask:has(.cc-ask-other:not(:placeholder-shown)) .cc-send-typed { display: flex; }
 .cc-ask-problem { color: var(--failed); font-size: 12.5px; }
 
 .cc-note { margin: 0; text-align: center; font: 11.5px 'Geist Mono', monospace; color: var(--faint); overflow-wrap: anywhere; }

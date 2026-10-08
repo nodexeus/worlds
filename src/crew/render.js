@@ -10,7 +10,8 @@ export function renderMarkdown(text) {
       if (span.type === 'code') return h('code', null, span.text)
       if (span.type === 'b') return h('strong', null, span.text)
       if (span.type === 'i') return h('em', null, span.text)
-      if (span.type === 'link') return h('a', { href: span.href, target: '_blank', rel: 'noopener noreferrer' }, span.text)
+      // The words of a link are the agent's. Where it goes is shown, whatever they say.
+      if (span.type === 'link') return h('a', { href: span.href, title: span.href, target: '_blank', rel: 'noopener noreferrer' }, span.text)
       return span.text
     })
   for (const block of parseMarkdown(text)) {
@@ -112,7 +113,8 @@ function request(item, { agentName, answer }) {
     controls.push(other)
     el.append(h('p', null, q.question), chips.length ? h('div.cc-opts', null, ...chips) : null, other)
   })
-  if (!quick) el.append(h('div.cc-opts', null, send))
+  // Options answer at a click when there is one plain question. What is typed always needs sending.
+  el.append(h('div.cc-opts', quick && questions[0].options?.length ? { class: 'cc-send-typed' } : null, send))
   el.append(problem)
   return el
 }
@@ -126,7 +128,7 @@ function settled(item) {
 
 function ending(item, { retry }) {
   const el = h('p.cc-note', { data: { type: item.type } }, item.note)
-  if (item.retry) el.append(' ', h('button.cc-link', { type: 'button', onClick: () => retry(item.retry) }, 'Try again'))
+  if (item.retry && retry) el.append(' ', h('button.cc-link', { type: 'button', onClick: () => retry(item.retry) }, 'Try again'))
   return el
 }
 

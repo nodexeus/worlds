@@ -3,6 +3,7 @@ import { createCrewApi } from './api.js'
 import { createCard } from './card.js'
 import { h } from './dom.js'
 import { createPanel } from './panel.js'
+import { createRefresher } from './refresher.js'
 import { createCrewStore } from './store.js'
 import { connectStream } from './stream.js'
 
@@ -39,21 +40,18 @@ export async function installCrew(hud, { toast }) {
 
   // ── keeping current ───────────────────────────────────────────────────────────────────
 
-  let asked = 0
   let rosterSeq = 0
-  /** Everything a snapshot can say. A reply that was overtaken by a later request is dropped. */
-  async function refresh() {
-    const mine = ++asked
+  /** Everything a snapshot can say, read one at a time however many things ask for it. */
+  const refresh = createRefresher(async () => {
     const [roster, workspaces, specialists, settings] = await Promise.all([
       api.agents(), api.workspaces(), api.specialists(), api.settings(),
     ])
-    if (mine !== asked) return
     rosterSeq = roster.seq ?? 0
     store.setWorkspaces(workspaces.workspaces)
     store.setSpecialists(specialists.specialists)
     store.setAutonomy(settings.settings.autonomy)
     store.setRoster(roster)
-  }
+  })
   const quietly = () => refresh().catch(() => {})
 
   let soon = null
@@ -70,7 +68,10 @@ export async function installCrew(hud, { toast }) {
   const cards = new Map()
   let top = 10
 
+  /** Until the crew has been read once there is nothing to compare the saved pins with. */
+  let loaded = false
   const savePins = () => {
+    if (!loaded) return
     const pins = [...cards.values()].filter((card) => card.pinned).map((card) => ({ agentId: card.agentId, ...card.place() }))
     try {
       localStorage.setItem(CARDS_KEY, JSON.stringify(pins))
@@ -121,6 +122,7 @@ export async function installCrew(hud, { toast }) {
       onFront: () => front(card),
       onChange: savePins,
       onNeedWorkspace: () => panel.openWorkspaceForm(),
+      onGone: (name) => toast(`${name} is no longer in this world`),
     })
     cards.set(agentId, card)
     layer.append(card.el)
@@ -135,6 +137,7 @@ export async function installCrew(hud, { toast }) {
 
   try {
     await refresh()
+    loaded = true
   } catch (error) {
     toast(error.message || 'Could not load the crew', 'err')
   }

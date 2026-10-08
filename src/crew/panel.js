@@ -38,6 +38,7 @@ const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
  */
 export function createPanel({ store, api, onOpen, isOpen, refresh, toast }) {
   let form = null
+  let submitting = false
 
   const countEl = h('span.cp-count')
   const demoEl = h('span.cp-tag', { hidden: true, title: 'Agents play a script. No model is called and nothing is changed.' }, 'Demo')
@@ -73,7 +74,8 @@ export function createPanel({ store, api, onOpen, isOpen, refresh, toast }) {
   el.addEventListener('keydown', (event) => {
     // As in a card: the world's single-key shortcuts are not for what is typed here.
     event.stopPropagation()
-    if (event.key === 'Escape' && form) closeForm()
+    // Not while a form is being sent: its answer would have nowhere to go.
+    if (event.key === 'Escape' && form && !submitting) closeForm()
   })
 
   function setCollapsed(collapsed) {
@@ -194,10 +196,13 @@ export function createPanel({ store, api, onOpen, isOpen, refresh, toast }) {
         submit.disabled = true
         cancel.disabled = true
         problem.hidden = true
+        submitting = true
         try {
           await make()
+          submitting = false
           closeForm()
         } catch (error) {
+          submitting = false
           // What was typed stays, with the server's own reason under it.
           problem.textContent = error.message
           problem.hidden = false

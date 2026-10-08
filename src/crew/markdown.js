@@ -16,18 +16,25 @@ const HEADING = /^(#{1,6})\s+(.+)$/
 const ITEM = /^(\s*)(?:([-*+])|(\d{1,9})[.)])\s+(\S.*)$/
 const WEB = /^https?:\/\/[^\s]+$/i
 
-// One pass, no backtracking over more than a line: each alternative is bounded by a
-// character it cannot contain.
-const INLINE = /`([^`\n]+)`|\*\*([^*\n]+)\*\*|\*([^*\s][^*\n]*)\*|\[([^\]\n]+)\]\(([^)\n]*)\)|(https?:\/\/[^\s<>()[\]]+)/g
+// One pass. Each alternative is bounded twice: by a character it cannot contain, and by a
+// length, so a line of nothing but opening brackets costs its length and not its square.
+const INLINE = /`([^`\n]{1,1000})`|\*\*([^*\n]{1,500})\*\*|\*([^*\s][^*\n]{0,500})\*|\[([^\]\n]{1,300})\]\(([^)\n]{0,2000})\)|(https?:\/\/[^\s<>()[\]]+)/g
 
 /** A line's formatting, as spans. */
 function spans(text) {
-  if (text.length > INLINE_LIMIT) return [{ type: 'text', text }]
   const out = []
   const push = (span) => {
     const last = out.at(-1)
     if (span.type === 'text' && last?.type === 'text') last.text += span.text
     else out.push(span)
+  }
+  // The limit is on a line, not on a paragraph: no pattern here crosses a line.
+  if (text.length > INLINE_LIMIT) {
+    for (const [n, line] of text.split('\n').entries()) {
+      if (n) push({ type: 'text', text: '\n' })
+      for (const span of line.length > INLINE_LIMIT ? [{ type: 'text', text: line }] : spans(line)) push(span)
+    }
+    return out
   }
   let at = 0
   for (const match of text.matchAll(INLINE)) {

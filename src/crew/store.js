@@ -60,6 +60,8 @@ export function createCrewStore({ log = console.error } = {}) {
       const latest = heard.get(incoming.id) ?? 0
       if (!was || seq >= latest) {
         unplaced.delete(incoming.id)
+        // Anything the stream has still to say from before this snapshot is old news.
+        heard.set(incoming.id, Math.max(latest, seq))
         return { ...incoming }
       }
       // The stream is ahead of this snapshot: who the agent is comes from the snapshot, how

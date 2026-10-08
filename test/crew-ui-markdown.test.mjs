@@ -65,6 +65,18 @@ test('stray markers are left as they were written', () => {
   assert.deepEqual(parseMarkdown('#hashtag and -dash')[0].spans, [t('#hashtag and -dash')])
 })
 
+test('a long paragraph of ordinary lines keeps its formatting', () => {
+  const blocks = parseMarkdown(Array.from({ length: 200 }, (_, n) => `Line ${n} has **bold** and \`code\` in it.`).join('\n'))
+  assert.equal(blocks.length, 1)
+  assert.equal(blocks[0].spans.filter((span) => span.type === 'b').length, 200)
+})
+
+test('lines made to be slow are still quick', () => {
+  const started = Date.now()
+  for (const piece of ['[', '*a', '`', '**a', '[a](']) parseMarkdown(Array.from({ length: 10 }, () => piece.repeat(Math.floor(4999 / piece.length))).join('\n'))
+  assert.ok(Date.now() - started < 1000, `took ${Date.now() - started}ms`)
+})
+
 test('a very long input is dealt with promptly', () => {
   const started = Date.now()
   const stars = parseMarkdown('* '.repeat(100_000))

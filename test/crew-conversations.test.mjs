@@ -24,6 +24,8 @@ const SCRIPTS = {
     { type: 'finished', text: '' },
   ],
   slow: [{ pause: 300 }, { type: 'finished', text: 'Slow done.' }],
+  // Short on purpose: a dozen messages sent over 120ms land on both sides of its end.
+  brief: [{ pause: 60 }, { type: 'finished', text: 'Brief done.' }],
   long: [{ pause: 5000 }, { type: 'finished', text: 'never' }],
   talk: [{ type: 'delta', text: 'Hel' }, { type: 'delta', text: 'lo' }, { type: 'text', text: 'Hello' }, { type: 'finished', text: 'Hello' }],
   crash: [{ type: 'text', text: 'Starting.' }, { crash: 'The model is out of credit' }],
@@ -369,7 +371,7 @@ test('two tasks arriving together for one agent: one is taken and one is refused
 
 test('a message sent at any moment around the end of a turn is delivered or cancelled, never left waiting', needsDb, async () => {
   await withOne(async (crew, { agent, site }) => {
-    const { conversation } = await crew.conversations.send(agent.id, { text: 'slow', workspaceId: site.id })
+    const { conversation } = await crew.conversations.send(agent.id, { text: 'brief', workspaceId: site.id })
     const sends = []
     for (let n = 0; n < 12; n += 1) {
       sends.push(crew.conversations.send(agent.id, { text: `m${n}` }))
@@ -382,11 +384,13 @@ test('a message sent at any moment around the end of a turn is delivered or canc
     const settledSeqs = new Set(events.filter((event) => event.type === 'queue').flatMap((event) => event.data.of))
     const left = events.filter((event) => event.type === 'message' && event.data.queued && !settledSeqs.has(event.seq))
     assert.deepEqual(left, [])
+    // Some were said while the first turn ran and some after it: the case this is about.
+    assert.ok(crew.scripted.turns.length > 2, `only ${crew.scripted.turns.length} turns: every message landed on one side of the end`)
     assert.equal(events.filter((event) => event.type === 'message').length, 13)
     assert.equal(events.at(-1).status, 'idle')
     // Every message reached the runtime exactly once.
     const delivered = crew.scripted.turns.flatMap((turn) => turn.text.split('\n\n'))
-    assert.deepEqual(delivered.sort(), ['slow', ...Array.from({ length: 12 }, (_, n) => `m${n}`)].sort())
+    assert.deepEqual(delivered.sort(), ['brief', ...Array.from({ length: 12 }, (_, n) => `m${n}`)].sort())
   })
 })
 

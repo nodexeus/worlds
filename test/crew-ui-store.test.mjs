@@ -63,6 +63,17 @@ test('a snapshot behind what the stream has said keeps the stream\'s word', () =
   assert.deepEqual([store.agent('a1').status, store.agent('a1').workspaceId], ['idle', 'w1'], 'level with it, the snapshot wins')
 })
 
+test('a snapshot that wins is not undone by older events still on their way', () => {
+  const { store } = made()
+  // As after a reconnect: the snapshot lands while the stream is still replaying what it missed.
+  store.setRoster({ agents: [{ ...ADA, status: 'idle', conversationId: 'c2', workspaceId: 'w2' }, BO], counts: COUNTS, seq: 30 })
+  store.applyEvent(ev(21, { status: 'working', conversationId: 'c1' }))
+  assert.deepEqual([store.agent('a1').status, store.agent('a1').conversationId], ['idle', 'c2'])
+  assert.equal(store.needsRoster(), false)
+  store.applyEvent(ev(31, { status: 'working', conversationId: 'c2' }))
+  assert.equal(store.agent('a1').status, 'working')
+})
+
 test('a snapshot behind the stream still says where a conversation is, when it is the same one', () => {
   const { store } = made()
   store.applyEvent(ev(9, { status: 'working' }))
