@@ -25,6 +25,9 @@ This work lets a person converse with agents from inside the world:
   is a client of the customer's hosted world. It packages no database and no runtime.
 - **Agents are durable.** Paid tiers limit how many agents a customer has, so an agent is
   a long-lived identity, not a conversation.
+- **Some agents are curated.** Nodexeus will offer ready-made specialists as paid
+  upgrades, for example Sophie, a social media agent. They are available in addition to
+  the tier's agent count, or included in higher tiers.
 - **Runtimes are replaceable.** Hermes and OpenClaw are the expected runtimes. Letta, and
   driving a customer's own Claude or ChatGPT subscription, are possible later.
 - **Memory is shared and separate.** All agents will share one memory and retrieval
@@ -42,7 +45,10 @@ the new module, and that document is rewritten as part of this work.
 | Term | Meaning |
 | --- | --- |
 | World | One customer's campus and everything in it. |
-| Agent | A durable crew member: a name, a robot, a runtime, a role. Counted against the tier. |
+| Agent | A durable crew member: a name, a robot, a runtime, a role. |
+| Standard agent | An agent the customer creates and shapes. Counted against the tier's agent limit. |
+| Curated agent | An agent created from a Nodexeus template, with a set speciality. Needs its own entitlement and does not use a standard slot. |
+| Template | The definition a curated agent is made from: default name, role instructions, skills, look. |
 | Runtime | The software that executes an agent: Claude Code, Hermes, OpenClaw. |
 | Workspace | A named project with a description and its own folder. A plot on the campus. |
 | Conversation | One agent working in one workspace: an ordered record of events. |
@@ -58,7 +64,8 @@ later be lifted into a platform service. It never reads local session files.
 | Part | Responsibility |
 | --- | --- |
 | Store | Postgres access and versioned migrations. Every row carries a world ID. |
-| Roster | Create, rename and retire agents. Enforces the agent limit. |
+| Roster | Create, name, rename and retire agents. Enforces the agent limit and curated entitlements. |
+| Catalog | The curated templates this server knows about. Read-only to the customer. |
 | Workspaces | Create a named workspace and its folder, optionally from a git URL. |
 | Runtime contract | The interface every runtime adapter implements. |
 | Conversations | Records events in order and derives each agent's status. |
@@ -100,9 +107,14 @@ SQLite to read other tools' session stores is unchanged.
 
 All records carry a world ID.
 
-- **Agent**: name (unique in the world), robot kind (plated or rock), runtime, role
-  description, created and retired timestamps. Status is derived from events, never set
-  by hand.
+- **Agent**: a stable ID, name (unique in the world), robot kind (plated or rock),
+  runtime, role instructions, the template it came from if any, created and retired
+  timestamps. Status is derived from events, never set by hand. Everything refers to an
+  agent by its ID, so a rename never breaks history.
+- **Template**: ID, default name, speciality label, role instructions, skills, look and
+  any runtime requirement. Shipped with the server, not edited by customers.
+- **Entitlements**: the standard agent limit and the list of curated templates this world
+  may use. Read from configuration; how billing sets them is out of scope.
 - **Workspace**: name, one-line description, folder under the data directory, optional
   git source.
 - **Conversation**: agent, workspace, title, the runtime's own handle for resuming, kind
@@ -118,11 +130,32 @@ All records carry a world ID.
   post, enforced by the database.
 - **Settings**: one row per world.
 
+## Agents, names and curated agents
+
+- **Names.** A new standard agent is given a name drawn at random from a list of
+  friendly names kept in the repository, skipping any already used in that world. The
+  person can rename an agent at any time. Names stay unique within a world because
+  `@name` addresses an agent in the crew channel; the mention follows the current name.
+- **Standard agents** count against the standard limit. The person writes or edits the
+  role instructions.
+- **Curated agents** are created from a template the world is entitled to. Each template
+  can be instantiated once per entitlement and does not use a standard slot. The agent
+  starts with the template's name (Sophie), which can be changed like any other, while
+  its speciality label stays visible. Its role instructions and skills come from the
+  template and are not editable, so an upgrade to the template reaches existing agents.
+- **To the rest of the system a curated agent is an agent.** It converses, takes tasks
+  and answers the crew channel exactly as a standard one does. The roster panel shows the
+  two counts separately ("4 of 6 agents, 1 specialist") and lists curated agents the
+  world is entitled to but has not yet added.
+- A template may later carry its own robot model. Until one exists it uses one of the two
+  standard kinds.
+
 ## Runtime contract
 
 Each adapter implements five operations:
 
-1. **Start** a conversation for an agent in a workspace folder with an opening message.
+1. **Start** a conversation for an agent in a workspace folder with an opening message
+   and the agent's role instructions and skills.
 2. **Send** a further message into a conversation.
 3. **Answer** an open question or approval request.
 4. **Interrupt** the current turn.
@@ -137,9 +170,25 @@ Adapters, in order:
 - **Scripted fake**: replays fixed event sequences. Used by most tests.
 - **Claude Code**: the server runs the command-line tool headless, one process per turn,
   with streamed input and output and session resume.
-- **Hermes**: second, to prove the contract is not shaped like Claude Code. Its real
-  interface is confirmed when the install is finished, before this adapter is planned.
-- **OpenClaw**: later, through its gateway service.
+- **Hermes**: second, to prove the contract is not shaped like Claude Code.
+- **OpenClaw**: later.
+
+What the installed runtimes offer, checked on 2026-10-07 (Hermes 0.21.5, OpenClaw
+2026.2.14). These are findings from their command-line help, not yet tested:
+
+- Hermes has **profiles**, described as multiple isolated instances. One profile per
+  agent is the natural home for a durable agent's own state, kept under the data
+  directory.
+- Hermes can run as a headless backend (`hermes serve`, a JSON-RPC and WebSocket gateway)
+  and as an **Agent Client Protocol** server (`hermes acp`). It also has a one-shot mode
+  that prints only the final answer, which is too little for a live conversation.
+- OpenClaw also offers an Agent Client Protocol bridge (`openclaw acp`) in front of its
+  gateway.
+- Because both speak the Agent Client Protocol, the Hermes phase starts by testing
+  whether one adapter for that protocol can serve both. If it can, OpenClaw comes almost
+  for free.
+- Hermes lists Hindsight among its installable memory providers, which fits the planned
+  shared memory. That remains out of scope here.
 
 The autonomy setting and the inference gateway are passed to the adapter, which maps them
 onto its runtime's own permission modes and model configuration.
@@ -259,6 +308,7 @@ Autonomy level, inference gateway and key, channel answer limit.
 | Client disconnects | Reconnect and replay from the last sequence number. Nothing lost or duplicated. |
 | Inference fails | A plain message naming the cause: bad key, no credit or gateway unreachable. |
 | Agent limit reached | Creation refused with the count and the limit. |
+| Curated agent without an entitlement | Creation refused, naming the specialist and that it is an upgrade. |
 | Two simultaneous claims | The database grants exactly one. |
 | Data directory or database unavailable at start | The server refuses to start with a clear message. |
 
@@ -280,19 +330,21 @@ Development uses a local Postgres 18 container. A Postgres service is added to
 Each phase is usable or verifiable on its own and becomes one or more tracked issues.
 
 1. Foundation: storage configuration, Postgres store, migrations.
-2. Roster and workspaces.
+2. Roster, names, curated templates and entitlements, and workspaces.
 3. Runtime contract, scripted fake runtime, Claude Code adapter.
 4. Conversations and the live event stream.
 5. Agent card: direct chat and giving a task.
 6. Crew channel and claims.
 7. World integration: roster-driven crew, visitors on desktop.
-8. Hermes adapter.
+8. Hermes adapter, starting with the Agent Client Protocol test.
 
 ## Out of scope
 
 - Shared memory, retrieval and the Library's contents.
-- Customer accounts, sign-in, billing and how a tier sets the agent limit. This design
-  only reads a configured limit.
+- Customer accounts, sign-in, billing and how a tier or purchase sets the agent limit and
+  curated entitlements. This design only reads them from configuration.
+- A storefront for buying curated agents, and the content of real templates such as
+  Sophie. This design builds the mechanism and ships one sample template to prove it.
 - Multi-tenancy inside one server process.
 - A dispatcher that assigns channel tasks on the person's behalf.
 - Tasks that span several workspaces.
