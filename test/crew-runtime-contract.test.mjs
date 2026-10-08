@@ -161,3 +161,74 @@ test('a request is open from when it is asked until it is answered or the turn e
   assert.equal(turn.isOpen('r2'), false)
   assert.throws(() => turn.settle('r2'), refused('unknown_request'), 'answered after the end')
 })
+
+test('an answer has to fit what was asked', () => {
+  const { turn } = recording()
+  turn.emit({ type: 'started', handle: 'h' })
+  turn.emit({ type: 'approval', requestId: 'r1', tool: 'Bash', summary: 'rm' })
+  turn.emit({ type: 'question', requestId: 'r2', questions: [{ question: 'Q', options: [] }] })
+  for (const bad of [null, {}, { allow: 'yes' }, { text: 'ok' }, { allow: false, message: 7 }]) {
+    assert.throws(() => turn.settle('r1', bad), refused('bad_answer'), JSON.stringify(bad))
+  }
+  for (const bad of [null, {}, { allow: true }, { text: 7 }, { text: '  ' }]) {
+    assert.throws(() => turn.settle('r2', bad), refused('bad_answer'), JSON.stringify(bad))
+  }
+  assert.equal(turn.isOpen('r1') && turn.isOpen('r2'), true, 'a refused answer leaves the request waiting')
+  assert.equal(turn.settle('r1', { allow: false, message: 'no' }), 'approval')
+  assert.equal(turn.settle('r2', { text: 'blue' }), 'question')
+})
+
+// ── the scripted runtime ─────────────────────────────────────────────────────────────────
+
+import { createScriptedRuntime } from '../server/crew/runtimes/scripted.mjs'
+import { begin, runtimeContract } from './support/runtime-contract.mjs'
+
+const tool = (status, more = {}) => ({ type: 'tool', id: 't1', name: 'Bash', summary: 'echo hi', status, ...more })
+const SCRIPTS = {
+  'say hello': [{ type: 'delta', text: 'hel' }, { type: 'text', text: 'hello there' }, { type: 'finished', text: 'hello there' }],
+  'use a tool': [tool('started'), tool('finished', { output: 'hi' }), { type: 'text', text: 'ran it' }, { type: 'finished', text: 'ran it' }],
+  'ask first': [
+    tool('started'),
+    { type: 'approval', requestId: 'r1', tool: 'Bash', summary: 'echo hi' },
+    { wait: 'r1', allow: [tool('finished', { output: 'hi' })], deny: [tool('failed', { output: 'denied' })] },
+    { type: 'finished', text: 'ok' },
+  ],
+  'which one': [
+    { type: 'question', requestId: 'q1', questions: [{ question: 'Which colour?', options: ['Blue', 'Red'] }] },
+    { wait: 'q1' },
+    { type: 'finished', text: 'thanks' },
+  ],
+  'take your time': [{ type: 'text', text: 'thinking' }, { pause: 60_000 }, { type: 'finished', text: 'late' }],
+  'fall over': [{ crash: 'The model gateway is unreachable' }],
+}
+
+const scriptedSetup = () => {
+  const runtime = createScriptedRuntime(SCRIPTS)
+  return {
+    runtime,
+    say: { plain: 'say hello', tool: 'use a tool', approval: 'ask first', question: 'which one', slow: 'take your time', broken: 'fall over' },
+    input: (more = {}) => input({ autonomy: 'autonomous', ...more }),
+  }
+}
+
+runtimeContract('scripted runtime', scriptedSetup)
+
+test('the scripted runtime records every turn and every answer it was given', async () => {
+  const { runtime, input: make } = scriptedSetup()
+  const { turn, until } = begin(runtime, make({ text: 'which one', agent: { id: 'a9', name: 'Bolt', role: 'Tester.' } }))
+  const question = await until('question')
+  turn.answer(question.requestId, { text: 'Blue' })
+  await turn.done
+  assert.equal(runtime.turns.length, 1)
+  assert.equal(runtime.turns[0].agent.name, 'Bolt')
+  assert.deepEqual(runtime.turns[0].answers, [{ requestId: 'q1', answer: { text: 'Blue' } }])
+})
+
+test('a message with no script is echoed back, and each new conversation gets its own handle', async () => {
+  const { runtime, input: make } = scriptedSetup()
+  const a = begin(runtime, make({ text: 'anything at all' }))
+  const b = begin(runtime, make({ text: 'something else' }))
+  const [first, second] = await Promise.all([a.turn.done, b.turn.done])
+  assert.notEqual(first.handle, second.handle)
+  assert.equal(a.events.at(-1).text, 'anything at all')
+})

@@ -102,6 +102,22 @@ export function checkEvent(event) {
 }
 
 /**
+ * An answer that fits what was asked: `{ allow, message? }` to an approval, `{ text }` to a
+ * question.
+ */
+export function checkAnswer(kind, answer) {
+  const bad = (what) => new CrewError('bad_answer', what, 400)
+  if (!answer || typeof answer !== 'object') throw bad('An answer is needed')
+  if (kind === 'approval') {
+    if (typeof answer.allow !== 'boolean') throw bad('An approval is answered with allow: true or false')
+    if (answer.message !== undefined && !text(answer.message)) throw bad('The reason for a refusal is text')
+  } else if (!text(answer.text) || !answer.text.trim()) {
+    throw bad('A question is answered with text')
+  }
+  return answer
+}
+
+/**
  * The part of a turn that is the same in every adapter, kept in one place so the rules
  * cannot be got slightly different in each:
  *
@@ -170,10 +186,14 @@ export function turnController(onEvent, { log = console.error } = {}) {
     resolve({ handle, outcome: ending.type })
   }
 
-  /** Take a request off the waiting list, saying which kind it was, or refuse. */
-  function settle(requestId) {
+  /**
+   * Take a request off the waiting list, saying which kind it was, or refuse. An answer that
+   * does not fit what was asked is refused and the request stays waiting.
+   */
+  function settle(requestId, answer) {
     const kind = open.get(requestId)
     if (!kind) throw new CrewError('unknown_request', 'Nothing is waiting for that answer', 409)
+    if (arguments.length > 1) checkAnswer(kind, answer)
     open.delete(requestId)
     return kind
   }
