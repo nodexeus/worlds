@@ -48,7 +48,7 @@ the new module, and that document is rewritten as part of this work.
 | Agent | A durable crew member: a name, a robot, a runtime, a role. |
 | Standard agent | An agent the customer creates and shapes. Counted against the tier's agent limit. |
 | Curated agent | An agent created from a Nodexeus template, with a set speciality. Needs its own entitlement and does not use a standard slot. |
-| Template | The definition a curated agent is made from: default name, role instructions, skills, look. |
+| Template | The definition a curated agent is made from: its fixed, reserved name, role instructions, skills, look. |
 | Runtime | The software that executes an agent: Claude Code, Hermes, OpenClaw. |
 | Workspace | A named project with a description and its own folder. A plot on the campus. |
 | Conversation | One agent working in one workspace: an ordered record of events. |
@@ -111,7 +111,7 @@ All records carry a world ID.
   runtime, role instructions, the template it came from if any, created and retired
   timestamps. Status is derived from events, never set by hand. Everything refers to an
   agent by its ID, so a rename never breaks history.
-- **Template**: ID, default name, speciality label, role instructions, skills, look and
+- **Template**: ID, name, speciality label, role instructions, skills, look and
   any runtime requirement. Shipped with the server, not edited by customers.
 - **Entitlements**: the standard agent limit and the list of curated templates this world
   may use. Read from configuration; how billing sets them is out of scope.
@@ -133,16 +133,20 @@ All records carry a world ID.
 ## Agents, names and curated agents
 
 - **Names.** A new standard agent is given a name drawn at random from a list of
-  friendly names kept in the repository, skipping any already used in that world. The
-  person can rename an agent at any time. Names stay unique within a world because
-  `@name` addresses an agent in the crew channel; the mention follows the current name.
+  friendly names kept in the repository, skipping any already used in that world and any
+  reserved name. The person can rename a standard agent at any time. Names stay unique
+  within a world because `@name` addresses an agent in the crew channel; the mention
+  follows the current name.
+- **Reserved names.** Every curated template's name is reserved in every world, whether
+  or not that world is entitled to it. A standard agent cannot be given or renamed to a
+  reserved name, compared without regard to case.
 - **Standard agents** count against the standard limit. The person writes or edits the
   role instructions.
-- **Curated agents** are created from a template the world is entitled to. Each template
-  can be instantiated once per entitlement and does not use a standard slot. The agent
-  starts with the template's name (Sophie), which can be changed like any other, while
-  its speciality label stays visible. Its role instructions and skills come from the
-  template and are not editable, so an upgrade to the template reaches existing agents.
+- **Curated agents** are created from a template the world is entitled to. A world has at
+  most one agent per template, so there is never a second Sophie, and a curated agent
+  does not use a standard slot. Its name is the template's and cannot be changed. Its
+  role instructions and skills come from the template and are not editable, so an upgrade
+  to the template reaches existing agents.
 - **To the rest of the system a curated agent is an agent.** It converses, takes tasks
   and answers the crew channel exactly as a standard one does. The roster panel shows the
   two counts separately ("4 of 6 agents, 1 specialist") and lists curated agents the
@@ -309,6 +313,8 @@ Autonomy level, inference gateway and key, channel answer limit.
 | Inference fails | A plain message naming the cause: bad key, no credit or gateway unreachable. |
 | Agent limit reached | Creation refused with the count and the limit. |
 | Curated agent without an entitlement | Creation refused, naming the specialist and that it is an upgrade. |
+| Curated agent already in the world | Creation refused: one per template. |
+| Reserved or duplicate name | Naming or renaming refused, saying the name is taken or reserved. |
 | Two simultaneous claims | The database grants exactly one. |
 | Data directory or database unavailable at start | The server refuses to start with a clear message. |
 
