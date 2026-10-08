@@ -163,8 +163,8 @@ async function route(req, url, crew) {
     if (id !== undefined) throw notFound()
     if (method === 'GET') return reply(200, { settings: await crew.settings.get() })
     if (method === 'PATCH') {
-      const { autonomy } = await body(req)
-      return reply(200, { settings: await crew.settings.update({ autonomy }) })
+      const { autonomy, channelLimit } = await body(req)
+      return reply(200, { settings: await crew.settings.update({ autonomy, channelLimit }) })
     }
     throw notAllowed()
   }

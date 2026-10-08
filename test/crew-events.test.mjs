@@ -123,3 +123,31 @@ test('idle resolves once everything asked for has been written', needsDb, async 
     assert.equal(await events.head(), 2)
   })
 })
+
+test('an event about a post needs no conversation, and says which post', needsDb, async () => {
+  await withEvents(async (events, { sql, published, ids }) => {
+    const [post] = await sql`insert into channel_posts (world_id, text) values ('w', 'Anyone?') returning id`
+    const about = await events.append({ type: 'post', postId: post.id, data: { id: post.id, text: 'Anyone?' } })
+    assert.deepEqual(
+      { ...about, at: null },
+      { seq: 1, conversationId: null, agentId: null, type: 'post', status: null, at: null, data: { id: post.id, text: 'Anyone?' }, postId: post.id })
+
+    // An agent answering a post: its own conversation, and the post it is about.
+    const aside = await events.append({ ...ids, type: 'text', status: 'working', data: { text: 'Me.' }, postId: post.id })
+    assert.equal(aside.postId, post.id)
+    // An ordinary event does not grow a field.
+    const plain = await events.append({ ...ids, type: 'text', status: 'working', data: { text: 'Hi.' } })
+    assert.equal('postId' in plain, false)
+
+    assert.deepEqual(published, [about, aside, plain])
+    assert.deepEqual(await events.after(0), [about, aside, plain])
+    assert.deepEqual(await events.page(ids.conversationId), [aside, plain])
+  })
+})
+
+test('an event about nothing at all is refused by the database', needsDb, async () => {
+  await withEvents(async (events) => {
+    await assert.rejects(events.append({ type: 'post', data: {} }), (error) => error.constraint_name === 'events_subject_check')
+    assert.equal(await events.head(), 0)
+  })
+})

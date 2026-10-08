@@ -16,9 +16,9 @@ test('migrations run once, and a second run applies nothing', needsDb, async () 
 test('two servers starting together do not both apply a migration', needsDb, async () => {
   await withDb(async (sql) => {
     await sql`delete from crew_migrations`
-    await sql`drop table events, event_counters, conversations, settings, agents, workspaces`
+    await sql`drop table channel_claims, channel_deliveries, events, event_counters, conversations, channel_posts, settings, agents, workspaces`
     const results = await Promise.all([migrate(sql), migrate(sql)])
-    assert.deepEqual(results.flat().sort(), ['001_roster.sql', '002_conversations.sql'])
+    assert.deepEqual(results.flat().sort(), ['001_roster.sql', '002_conversations.sql', '003_channel.sql'])
   })
 })
 
