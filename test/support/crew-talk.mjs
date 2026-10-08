@@ -22,7 +22,7 @@ import { withDb } from './crew-db.mjs'
  * of everything the hub sent, and a switch that makes writing events fail) and two helpers:
  * `shape` reduces events to what a test compares, `record` reads a conversation that way.
  */
-export const withTalk = (run, { scripts = {}, worldId = 'w', retryDelays = [20, 40] } = {}) =>
+export const withTalk = (run, { scripts = {}, worldId = 'w', retryDelays = [20, 40], limit = 6, entitled = [] } = {}) =>
   withDb(async (sql) => {
     const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'crew-talk-'))
     const catalog = await loadCatalog()
@@ -36,7 +36,7 @@ export const withTalk = (run, { scripts = {}, worldId = 'w', retryDelays = [20, 
       ...stored,
       append: (event) => (store.failing ? Promise.reject(new Error('the database is away')) : stored.append(event)),
     }
-    const roster = createRoster({ sql, worldId, catalog, limit: 6, entitled: [], rand: () => 0 })
+    const roster = createRoster({ sql, worldId, catalog, limit, entitled, rand: () => 0 })
     const workspaces = createWorkspaces({ sql, worldId, dataDir, clone: async () => {} })
     const settings = createSettings({ sql, worldId })
     const runtimes = {
@@ -65,3 +65,55 @@ export const shape = (event) => [event.type, event.status, event.data]
 export const record = async (crew, conversationId) => (await crew.events.page(conversationId, { limit: 500 })).map(shape)
 
 export const refused = (code) => (error) => error instanceof CrewError && error.code === code
+
+/**
+ * Read a server-sent event stream until told to stop. `items` fills with what arrives, as
+ * `{ id, event, data }` (a comment line arrives as `{ comment }`); `until(n)` resolves once
+ * there are `n` of them, not counting comments.
+ */
+export async function listen(url, headers = {}) {
+  const control = new AbortController()
+  const res = await fetch(url, { headers, signal: control.signal })
+  const items = []
+  const comments = []
+  let wake = () => {}
+  const reading = (async () => {
+    if (!res.ok || !res.body) return
+    let pending = ''
+    try {
+      for await (const chunk of res.body.pipeThrough(new TextDecoderStream())) {
+        pending += chunk
+        let cut
+        while ((cut = pending.indexOf('\n\n')) !== -1) {
+          const block = pending.slice(0, cut)
+          pending = pending.slice(cut + 2)
+          const item = {}
+          for (const line of block.split('\n')) {
+            if (line.startsWith(':')) comments.push(line.slice(1).trim())
+            else {
+              const colon = line.indexOf(':')
+              item[line.slice(0, colon)] = line.slice(colon + 1).trimStart()
+            }
+          }
+          if (item.event) items.push({ id: item.id === undefined ? null : Number(item.id), event: item.event, data: JSON.parse(item.data) })
+          wake()
+        }
+      }
+    } catch {
+      // Closed, by the test or by the server: either way there is no more to read.
+    }
+    wake()
+  })()
+  const until = async (count, ms = 3000) => {
+    const deadline = Date.now() + ms
+    while (items.length < count) {
+      if (Date.now() > deadline) throw new Error(`the stream gave ${items.length} of ${count}: ${JSON.stringify(items.map((item) => item.event))}`)
+      await new Promise((resolve) => {
+        wake = resolve
+        setTimeout(resolve, 25)
+      })
+    }
+    return items
+  }
+  return { res, items, comments, until, ended: reading, close: () => control.abort() }
+}
