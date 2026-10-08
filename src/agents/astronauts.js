@@ -9,6 +9,7 @@ import { Props, CHECK_LEN, CHECK_EVERY, pickProp } from './props.js'
 import { projectHitPoint, bodyHitDistance } from './picking.js'
 import { helmetGeometry, visorGeometry, screenGeometry } from './model.js'
 import { ROBOT_KINDS, decorateLights, robotGeometry, robotKind, robotLights } from './robots.js'
+import { nextRoam, visitSpot } from './roaming.js'
 import { campusBuilding } from '../world/campus-buildings.js'
 
 /**
@@ -614,7 +615,8 @@ export class Astronauts {
     // Out of the airlock and down the ramp, or straight onto its plot, a pace off the exact
     // spot so a zone's crew does not appear in a stack. The nav grid sorts out anything
     // that lands on a building.
-    const site = entry.site || door
+    // Somebody with no workspace starts out wherever on the campus takes their fancy.
+    const site = entry.site || (entry.roams && this.world?.roamSpot?.()) || door
     const start = walksOut
       ? new THREE.Vector3(airlock.x, airlock.y, airlock.z)
       : new THREE.Vector3(site.x + jitter(), 0, site.z + jitter())
@@ -630,7 +632,8 @@ export class Astronauts {
       id: entry.id,
       thread: entry.thread,
       status: entry.status,
-      site: entry.site ? entry.site.clone() : new THREE.Vector3(),
+      // The roster's, or for somebody with no workspace the spot picked for them above.
+      site: new THREE.Vector3(site.x, 0, site.z),
       // The thing being worked on, and where round it this astronaut is standing to do it.
       anchor: entry.anchor ? entry.anchor.clone() : null,
       workSpot: new THREE.Vector3(),
@@ -658,8 +661,18 @@ export class Astronauts {
       walkFaceHold: 0,
       walkPersonality: (hash(entry.id) >>> 0) / 0x100000000,
       suit: SUIT_TONES[(hash(entry.id) >>> 3) % SUIT_TONES.length],
-      // Which robot it is. The thread's own doing, and nothing else's: see `robotKind`.
-      kind: robotKind(hash(entry.id)),
+      // Which robot it is. The crew's roster says; a session's is its own doing, and nothing
+      // else's: see `robotKind`.
+      kind: entry.thread?.robot ?? robotKind(hash(entry.id)),
+      // No workspace, so no site: it goes where it likes. See `_roam`.
+      roams: !!entry.roams,
+      roamAt: 0,
+      roamFor: 0,
+      roamArrived: true,
+      resting: false,
+      rested: false,
+      friend: null,
+      greet: 0,
       eye: new THREE.Color(1, 1, 1),
       trim: new THREE.Color(0xffffff),
       hop: 0,
@@ -720,6 +733,18 @@ export class Astronauts {
 
   _updateAgent(agent, entry) {
     agent.thread = entry.thread
+    if (!!entry.roams !== agent.roams) {
+      agent.roams = !!entry.roams
+      // Given a workspace, it gets up and goes there; let go of one, it is at a loose end
+      // from this moment. Either way the site it last heard of is no longer the one it has.
+      agent.resting = false
+      agent.friend = null
+      agent.greet = 0
+      agent.roamAt = 0
+      agent.roamArrived = true
+      agent.given?.set(NaN, 0, NaN)
+      agent.pathVersion = -1
+    }
     if (entry.site) {
       // Measured against the site the roster last handed over, not the one being stood at:
       // an astronaut that gave up on an unreachable site and adopted the ground it reached
@@ -740,6 +765,8 @@ export class Astronauts {
       }
     }
     if (entry.anchor) (agent.anchor ||= new THREE.Vector3()).copy(entry.anchor)
+    // Somebody who has left their workspace has no building to work at any more.
+    else agent.anchor = null
     if (entry.status !== agent.status) {
       agent.status = entry.status
       this._applyStatus(agent, entry.status)
@@ -973,7 +1000,9 @@ export class Astronauts {
       }
 
       case 'at-site': {
-        if (agent.status === 'idle') {
+        if (agent.roams && agent.status === 'idle') {
+          this._roam(agent, dt, elapsed)
+        } else if (agent.status === 'idle') {
           // Idlers potter around their plot, and `_drift` owns their velocity outright.
           this._drift(agent, dt, elapsed)
         } else if (agent.status === 'working' && agent.anchor) {
@@ -1233,6 +1262,67 @@ export class Astronauts {
   }
 
   /**
+   * Somebody with no workspace, passing the time: somewhere else to walk to and potter
+   * about, another of the crew to stop by, or a sit down. What is chosen and for how long
+   * is `nextRoam`; this is the going there and the doing of it.
+   */
+  _roam(agent, dt, elapsed) {
+    if (!agent.roamArrived) {
+      // Just got to where the last choice sent it: the clock on it starts now.
+      agent.roamArrived = true
+      agent.roamAt = elapsed + agent.roamFor
+      if (agent.friend) agent.greet = 2.6
+    }
+    if (elapsed >= agent.roamAt) {
+      const others = this.agents.filter((other) =>
+        other !== agent && other.thread?.crew && other.state === 'at-site' && !other.resting && other.status !== 'leaving')
+      const plan = nextRoam(Math.random, { company: others.length > 0, rested: agent.rested })
+      agent.rested = plan.kind === 'rest'
+      agent.resting = plan.kind === 'rest'
+      agent.friend = null
+      agent.greet = 0
+      agent.roamFor = plan.seconds
+      if (plan.kind === 'rest') {
+        agent.roamAt = elapsed + plan.seconds
+      } else {
+        const friend = plan.kind === 'visit' ? others[Math.floor(Math.random() * others.length)] : null
+        const want = friend ? visitSpot(agent.pos, friend.pos) : this.world?.roamSpot?.()
+        const spot = want && (this.nav ? this.nav.nearestClear(want.x, want.z, 2) : want)
+        if (spot && !this.world?.thoroughfare?.(spot.x, spot.z)) {
+          agent.friend = friend
+          agent.site.set(spot.x, 0, spot.z)
+          agent.wander.copy(agent.site)
+          agent.wanderAt = 0
+          agent.roamArrived = false
+          agent.state = 'walking'
+          agent.stateAge = 0
+          agent.pathVersion = -1
+          return
+        }
+        // Nowhere to go just now: stay about here, and think again shortly.
+        agent.roamAt = elapsed + 4
+      }
+    }
+    if (agent.resting) {
+      agent.vel.set(0, 0, 0)
+      this._settle(agent, dt)
+      return
+    }
+    const friend = agent.friend
+    if (friend && friend.state !== 'gone') {
+      // Stopped by somebody: stand and face them, and say hello first. They look round too,
+      // if they have nothing better to do.
+      agent.vel.set(0, 0, 0)
+      this._faceToward(agent, friend.pos, dt)
+      if (friend.status === 'idle' && !friend.resting && friend.groundSpeed < 0.1) this._faceToward(friend, agent.pos, dt)
+      if (agent.greet > 0) agent.greet -= dt
+      this._settle(agent, dt)
+      return
+    }
+    this._drift(agent, dt, elapsed)
+  }
+
+  /**
    * Push a seated agent out of anyone it has ended up inside, and do nothing else.
    *
    * Separation on its own converges: once no neighbour is within the radius the push is
@@ -1450,8 +1540,10 @@ export class Astronauts {
     else {
       switch (agent.status) {
         case 'working':
+          // With no building to work at there is nothing to hammer: it works where it stands.
+          if (!agent.anchor && rig.clips.workAlt) key = 'workAlt'
           // A check raises the arm, holds it, and lowers it, on its own clock.
-          if (agent.checkStart >= 0) {
+          else if (agent.checkStart >= 0) {
             const t = agent.checkT
             key = t < 0.5 ? 'phoneUp' : t > CHECK_LEN - 0.55 ? 'phoneDown' : 'phone'
           } else key = 'work'
@@ -1471,7 +1563,10 @@ export class Astronauts {
           key = agent.clipKey === 'sit' ? 'sit' : 'sitDown'
           break
         default:
-          key = 'idle'
+          // At a loose end: sat down for a rest, or saying hello to whoever it has stopped by.
+          if (agent.roams && agent.resting) key = agent.clipKey === 'sit' ? 'sit' : 'sitDown'
+          else if (agent.roams && agent.greet > 0) key = 'wave'
+          else key = 'idle'
       }
     }
 

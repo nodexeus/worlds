@@ -51,3 +51,29 @@ test('the Library can be selected by its geometry and releases its resources', a
   assert.equal(scene.children.length, 0)
   assert.equal(disposed, library.meshes.length)
 })
+
+test('a place that says how many platforms it needs gets exactly that many, and gives one back at once', async () => {
+  const { allocateCells } = await import('../src/world/plots.js')
+  // By its sessions a project of this size would get one; it asks for three.
+  const grown = allocateCells([{ id: 'crew', size: 0, cells: 3 }, { id: 'local', size: 3 }])
+  assert.equal(grown.get('crew').length, 3)
+  assert.equal(grown.get('local').length, 1)
+  // A project gives ground back late, so it does not flicker; a place is told its size outright.
+  const shrunk = allocateCells([{ id: 'crew', size: 0, cells: 2 }, { id: 'local', size: 3 }], grown)
+  assert.deepEqual(shrunk.get('crew'), grown.get('crew').slice(0, 2), 'the root stays, the last platform claimed goes')
+  assert.deepEqual(shrunk.get('local'), grown.get('local'))
+})
+
+test('the Library leaves a way round it on a platform that stands apart from its neighbours', async () => {
+  const { walkRadius } = await import('../src/world/library.js')
+  const { PLOT_APOTHEM } = await import('../src/world/plots.js')
+  // The campus: a platform pulled in by this much on every outside edge, and a hall this wide.
+  const gap = 1.38
+  const blocked = walkRadius(4.6, PLOT_APOTHEM, gap)
+  // What is left between the hall and the platform's rim is the only way from the gate to
+  // every workspace, and has to be wide enough for the route finder's grid to see it.
+  assert.ok(PLOT_APOTHEM - gap - blocked >= 1.2, `a lane of ${PLOT_APOTHEM - gap - blocked}`)
+  assert.ok(blocked > 3, 'and the hall is still something to walk round')
+  // On a world whose platforms touch there is ground all round, and nothing to give up.
+  assert.equal(walkRadius(4.6, PLOT_APOTHEM, 0), 4.6)
+})

@@ -2,6 +2,31 @@ import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { bendPoint } from '../core/curve.js'
 
+/** How wide a way is kept clear between the hall and the rim of the platform it stands on. */
+const LANE = 1.25
+
+/**
+ * How far out from its middle the hall is in the way of somebody walking.
+ *
+ * On a world whose platforms stand apart, the hall's platform is the only way from the gate to
+ * every workspace, and the way on and off it is at the middle of each edge: exactly where a
+ * circle round the hall comes nearest the rim. At its full width the hall left less than a
+ * step there, the route finder saw no way through, and everybody arriving stood at the pinch
+ * until they gave up and shouldered past. So the circle gives ground until there is a lane.
+ * Where the platforms touch there is ground all round, and it gives up nothing.
+ *
+ * This is about walking only. Where nobody may stand is still the hall's whole width.
+ *
+ * @param {number} radius   the hall's own
+ * @param {number} apothem  from the middle of its platform to the middle of an edge
+ * @param {number} gap      how far each outside edge is pulled in, or 0
+ * @returns {number}
+ */
+export function walkRadius(radius, apothem, gap) {
+  if (!(gap > 0)) return radius
+  return Math.min(radius, apothem - gap - LANE)
+}
+
 /** Build the permanent reading hall independently of session buildings and their lifecycle. */
 export class Library {
   /** @param {THREE.Scene} scene @param {THREE.Vector3} position */

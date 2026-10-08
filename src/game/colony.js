@@ -20,6 +20,7 @@ import {
   worldToHex,
   DECK_TOP,
   PLOT_PALETTE,
+  PLOT_APOTHEM,
   PLOT_CELL,
 } from '../world/plots.js'
 import { CORE_CELLS, LIBRARY_CELL, translateCells } from '../world/plot-move.js'
@@ -34,7 +35,7 @@ import { campusBuilding, loadCampusBuildings } from '../world/campus-buildings.j
 import { createPipeline, pipelineClearance, pipelineUniforms } from '../world/pipeline.js'
 import { createBuilding, buildingUniforms } from '../world/buildings.js'
 import { Ship } from '../world/ship.js'
-import { Library } from '../world/library.js'
+import { Library, walkRadius } from '../world/library.js'
 import { Astronauts } from '../agents/astronauts.js'
 import { Indicators, BADGE } from '../agents/indicators.js'
 import { MAX_AGENT_CAP } from '../core/settings.js'
@@ -148,6 +149,14 @@ const CROSSING_WALK = 1.05
 const MOUTH_CLEAR = { along: 2.2, across: 1.7 }
 /** How far onto each deck a crossing's walkable strip reaches, so the two always join. */
 const CROSSING_OVERLAP = 0.6
+
+/** Building slots on a place: two to a platform, across its middle from each other. */
+const PLACE_SLOTS = [1, 4]
+const SLOTS_PER_PLATFORM = 7
+/** Where on its plot the nth of a place's buildings stands. */
+const placeSlot = (n) => Math.floor(n / PLACE_SLOTS.length) * SLOTS_PER_PLATFORM + PLACE_SLOTS[n % PLACE_SLOTS.length]
+/** What the nth of a place's buildings is called on the colony's books. */
+const placeBuilding = (place, n) => `${place}#${n}`
 
 export class Colony {
   constructor(scene, settings, camera, renderer) {
@@ -619,13 +628,24 @@ export class Colony {
    * ids — repo name for plots, session id for buildings — so a poll that changes nothing
    * moves nothing on screen.
    */
-  setThreads(threads, archivedIds = new Set(), hiddenProjects = new Set(), knownIds = new Set()) {
+  setThreads(threads, archivedIds = new Set(), hiddenProjects = new Set(), knownIds = new Set(), places = []) {
     const now = Date.now()
     const live = liveThreadsForColony(threads, archivedIds, hiddenProjects)
+    /**
+     * The crew's workspaces. A place is ground in its own right: it is there with nobody on
+     * it, it is as big as it says and no bigger, and it is called by its title, since its
+     * id is nothing a person would read.
+     */
+    const placeOf = new Map(places.map((place) => [place.id, place]))
+    this.places = placeOf
+    // Somebody in the crew with no workspace has no ground of their own, and goes where they like.
+    const roamers = live.filter((thread) => thread.roams)
 
     // Group by repo, biggest project first so the busiest work lands nearest the middle.
     const byProject = new Map()
+    for (const id of placeOf.keys()) byProject.set(id, [])
     for (const thread of live) {
+      if (thread.roams) continue
       const key = thread.project || 'unknown'
       if (!byProject.has(key)) byProject.set(key, [])
       byProject.get(key).push(thread)
@@ -645,7 +665,7 @@ export class Colony {
     const dormant = new Set()
     if (this.settings.get('hideDormant')) {
       for (const [name, list] of byProject) {
-        if (list.every((t) => statusFor(t, now) === 'sleeping')) dormant.add(name)
+        if (!placeOf.has(name) && list.every((t) => statusFor(t, now) === 'sleeping')) dormant.add(name)
       }
       // Never fold away everything: a colony that answers a poll with an empty planet reads as
       // broken rather than tidy, and there is nothing on screen to tell you which it was.
@@ -659,7 +679,7 @@ export class Colony {
       return a[0].localeCompare(b[0])
     })
 
-    this._syncPlots(projects)
+    this._syncPlots(projects, placeOf)
 
     // A repo that is off the map keeps its footprint in layout memory, so showing it again
     // reclaims the same ground if it is still free. Re-inserting the entry also keeps
@@ -674,6 +694,8 @@ export class Colony {
 
     const roster = []
     const seenBuildings = new Set()
+    /** Who is at each of a place's buildings, which are its own and outlast whoever is at them. */
+    const tenants = new Map()
     const stats = { agents: 0, projects: projects.length }
     for (const key of STATUS_ORDER) stats[key] = 0
     // Plots holding anything that wants your attention get a pulsing rim, so you can spot
@@ -703,21 +725,45 @@ export class Colony {
         slotOf.set(thread.id, slot)
       }
 
+      const place = placeOf.get(name)
+      if (place) {
+        // A place is packed: nobody stands past the platforms it has, so whoever was left out
+        // on one that has just been given back moves into the gap that freed it.
+        for (const thread of list) {
+          if (slotOf.get(thread.id) < list.length) continue
+          let slot = 0
+          const held = new Set(slotOf.values())
+          while (held.has(slot)) slot++
+          slotOf.set(thread.id, slot)
+        }
+        // And is never bare: its first building stands whether or not anybody is at it.
+        if (!list.length) {
+          this._syncBuilding({ id: placeBuilding(name, 0) }, plot, placeSlot(0))
+          seenBuildings.add(placeBuilding(name, 0))
+        }
+      }
+
       list.forEach((thread) => {
-        const i = slotOf.get(thread.id)
+        const at = slotOf.get(thread.id)
+        // On a place a building belongs to the spot, two to a platform, and whoever stands
+        // there works at it. Anywhere else a session raises its own.
+        const i = place ? placeSlot(at) : at
+        const home = place ? placeBuilding(name, at) : thread.id
         const status = statusFor(thread, now)
         if (stats[status] !== undefined) stats[status]++
         if (status === 'waiting' || status === 'blocked') urgent.add(plot.id)
         if (status === 'waiting' || status === 'blocked' || status === 'working') active.add(plot.id)
         stats.agents++
 
-        const building = this._syncBuilding(thread, plot, i)
-        seenBuildings.add(thread.id)
+        const building = this._syncBuilding(place ? { id: home } : thread, plot, i)
+        seenBuildings.add(home)
+        if (place) tenants.set(home, thread.id)
 
         roster.push({
           id: thread.id,
           thread,
           status,
+          home,
           site: null, // assigned after all buildings have reached the navigation map
           // Where the work actually is. A working astronaut circles it rather than standing
           // at one spot, so it needs the building, not just a place to stand near it.
@@ -735,12 +781,20 @@ export class Colony {
     }
 
     this.threads = new Map(live.map((t) => [t.id, t]))
+    this.tenants = tenants
     this.urgentPlots = urgent
     this.activePlots = active
     this._rebuildNavigation()
     for (const member of roster) {
-      const entry = this.buildings.get(member.id)
+      const entry = this.buildings.get(member.home)
       member.site = this._workSite(this.plots.get(entry.plot), entry, entry.slot)
+    }
+    for (const thread of roamers) {
+      const status = statusFor(thread, now)
+      if (stats[status] !== undefined) stats[status]++
+      stats.agents++
+      // No site and no building: where it goes next is its own business. See `roamSpot`.
+      roster.push({ id: thread.id, thread, status, site: null, anchor: null, known: knownIds.has(thread.id), roams: true })
     }
     this._syncFaunaSites()
     this.stats = { ...stats, done: stats.celebrating }
@@ -748,12 +802,12 @@ export class Colony {
     return this.stats
   }
 
-  _syncPlots(projects) {
+  _syncPlots(projects, placeOf = new Map()) {
     // The previous layout is an input, so a zone only moves when its own footprint changes
     // — never because a different repo gained or lost a thread. `plotCells` carries it
     // between polls, and the colony file carries it between sessions.
     const layout = allocateCells(
-      projects.map(([name, list]) => ({ id: name, size: list.length })),
+      projects.map(([name, list]) => ({ id: name, size: list.length, cells: placeOf.get(name)?.platforms })),
       this.plotCells
     )
     // Remembered, not replaced: a project that has just lost its last thread keeps its
@@ -767,7 +821,9 @@ export class Colony {
     for (const name of this.plotLevels.keys()) if (!this.plotCells.has(name)) this.plotLevels.delete(name)
 
     const wanted = new Map()
-    for (const [name, cells] of layout) wanted.set(name, `${name}:${cells.map((c) => `${c.q},${c.r}`).join('/')}`)
+    const titleOf = (name) => placeOf.get(name)?.title ?? name
+    // The title is part of it: a workspace that is renamed is put up again under its new name.
+    for (const [name, cells] of layout) wanted.set(name, `${titleOf(name)}:${name}:${cells.map((c) => `${c.q},${c.r}`).join('/')}`)
 
     // Levels are settled for the whole campus at once, so that no workspace is left with
     // nobody near enough in height to be joined to. On a campus that is already connected
@@ -798,11 +854,14 @@ export class Colony {
       const accent = this._pickAccent(name)
       const level = levels.get(name) || 0
       const plot = new Plot({ id: name, name, index, cells, accent, style: this.planet.plot, level })
+      /** What it is called on screen. For a project that is its name; for a place it is not. */
+      plot.title = titleOf(name)
+      plot.crew = placeOf.has(name)
       plot.signature = wanted.get(name)
       this.plots.set(name, plot)
       this.plotGroup.add(plot.group)
 
-      const label = createLabel(name, accent)
+      const label = createLabel(plot.title, accent)
       label.position.set(plot.labelAnchor.x, 3.2 + plot.elev, plot.labelAnchor.z)
       plot.label = label
       this.labelGroup.add(label)
@@ -912,7 +971,33 @@ export class Colony {
       groundAt: (x, z) => this.groundAt(x, z),
       // Where nobody may settle: a walkway or a staircase is the only way through.
       thoroughfare: (x, z) => this._inMouth(x, z),
+      roamSpot: (rand) => this.roamSpot(rand),
     }
+  }
+
+  /**
+   * Somewhere for a member of the crew with no workspace to walk to: a clear spot on one of
+   * the crew's own decks or on the plaza, a step in from the edge and out of every way
+   * through. Null when there is nowhere, which a world with no decks at all can be.
+   *
+   * @param {() => number} [rand]
+   * @returns {THREE.Vector3 | null}
+   */
+  roamSpot(rand = Math.random) {
+    const decks = [...this.plotOrder.filter((plot) => plot.crew), ...(this.plaza ? [this.plaza] : [])]
+    if (!decks.length || !this.nav) return null
+    for (let tries = 0; tries < 8; tries++) {
+      const deck = decks[Math.floor(rand() * decks.length)]
+      const tile = deck.localCenters[Math.floor(rand() * deck.localCenters.length)]
+      const a = rand() * Math.PI * 2
+      const r = Math.sqrt(rand()) * PLOT_CELL * 0.42
+      const x = deck.center.x + tile.x + Math.cos(a) * r
+      const z = deck.center.z + tile.z + Math.sin(a) * r
+      const standable = (px, pz) => deck.standsOn(px, pz, 0.45) && !this._inMouth(px, pz)
+      const free = this.nav.nearestClear(x, z, 2, standable)
+      if (free) return new THREE.Vector3(free.x, 0, free.z)
+    }
+    return null
   }
 
   groundAt(x, z) {
@@ -1065,7 +1150,9 @@ export class Colony {
       obstacles.push({ x: ship.x, z: ship.z, r: 3.4 + AGENT_RADIUS })
     }
     const library = this.library.group.position
-    obstacles.push({ x: library.x, z: library.z, r: this.library.radius + TRAVEL_RADIUS, keep: this.library.radius + AGENT_RADIUS })
+    // Walked round by less than it is stood clear of: see `walkRadius`.
+    const round = walkRadius(this.library.radius, PLOT_APOTHEM, this.planet.plot?.gap || 0)
+    obstacles.push({ x: library.x, z: library.z, r: round + TRAVEL_RADIUS, keep: this.library.radius + AGENT_RADIUS })
     this.nav.rebuild(obstacles, this.planet.plot?.crossings ? (x, z) => this._walkable(x, z) : null)
   }
 
@@ -1362,14 +1449,19 @@ export class Colony {
     }
   }
 
+  /** The session a building is about: its own, or on a place whoever is standing at it. */
+  _threadAt(id) {
+    return this.threads.get(this.tenants?.get(id) ?? id)
+  }
+
   _isLive(id) {
-    const thread = this.threads.get(id)
+    const thread = this._threadAt(id)
     return Boolean(thread && thread.running)
   }
 
   /** A site somebody is standing at: running, or stopped waiting on you. */
   _isActive(id) {
-    const thread = this.threads.get(id)
+    const thread = this._threadAt(id)
     return Boolean(thread && (thread.running || (thread.needsAttention ?? thread.unread) || thread.hasError))
   }
 
