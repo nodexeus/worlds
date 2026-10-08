@@ -11,6 +11,8 @@ files:
   - LICENSE
   - TRADEMARKS.md
   - '!desktop/assets/*.iconset/**/*'
+  - "!node_modules/postgres/**"
+
 asar: true
 npmRebuild: false
 mac:

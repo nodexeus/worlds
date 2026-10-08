@@ -4,10 +4,22 @@ services:
     init: true
     environment:
       BOT_CROSSING_CLAUDE_ACTIVITY: transcript
+      # The crew backend. Both of these hold state that has to outlive the container, so
+      # both point at volumes. See docs/crew-backend.md.
+      WORLDS_DATABASE_URL: postgres://worlds:${WORLDS_DB_PASSWORD:-worlds-dev}@db:5432/worlds
+      WORLDS_DATA_DIR: /var/lib/worlds
+      WORLDS_WORLD_ID: ${WORLDS_WORLD_ID:-default}
+      WORLDS_AGENT_LIMIT: ${WORLDS_AGENT_LIMIT:-6}
+      WORLDS_CURATED_AGENTS: ${WORLDS_CURATED_AGENTS:-}
+      WORLDS_ALLOWED_HOSTS: ${WORLDS_ALLOWED_HOSTS:-}
+    depends_on:
+      db:
+        condition: service_healthy
     ports:
       - "127.0.0.1:${BOT_CROSSING_PORT:-5274}:5274"
     volumes:
       - colony-data:/app/data
+      - worlds-data:/var/lib/worlds
       - type: bind
         source: ${CODEX_HOME:-${HOME}/.codex}
         target: /home/node/.codex
@@ -32,5 +44,22 @@ services:
       start_period: 10s
       retries: 3
 
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: worlds
+      POSTGRES_PASSWORD: ${WORLDS_DB_PASSWORD:-worlds-dev}
+      POSTGRES_DB: worlds
+    volumes:
+      # Postgres 18 keeps each major version in its own directory under this path.
+      - worlds-db:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U worlds -d worlds"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
 volumes:
   colony-data:
+  worlds-data:
+  worlds-db:
