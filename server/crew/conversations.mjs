@@ -476,11 +476,11 @@ export function createConversations({
     })
   }
 
-  /** Stop one answer aside, if that is what the agent is doing. Never a task. */
-  async function stopAside(agentId, conversationId) {
+  /** Stop the agent's turn if it is in this conversation, and only then. */
+  async function stopIn(agentId, conversationId) {
     const entry = await inLine(agentId, async () => {
       const current = running.get(agentId)
-      if (!current?.aside || current.conversation.id !== conversationId) return null
+      if (!current || current.conversation.id !== conversationId) return null
       current.stopped = true
       current.turn?.interrupt()
       return current
@@ -605,5 +605,5 @@ export function createConversations({
     await events.idle()
   }
 
-  return { send, aside, stopAside, answer, stop, dismiss, statuses, list, get, recover, settled, close }
+  return { send, aside, stopIn, answer, stop, dismiss, statuses, list, get, recover, settled, close }
 }

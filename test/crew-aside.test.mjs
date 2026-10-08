@@ -187,20 +187,21 @@ test('stopping an agent that is answering ends the answer and leaves its task as
   })
 })
 
-test('one answer can be stopped by name, and that never stops a task or another answer', needsDb, async () => {
+test('a turn can be stopped by the conversation it is in, and then nothing else is', needsDb, async () => {
   await withPost(async (crew, { ada, bo, site, ask, ends }) => {
     const asked = await ask(ada.id, 'long')
     const task = await crew.conversations.send(bo.id, { text: 'long', workspaceId: site.id })
 
-    assert.deepEqual(await crew.conversations.stopAside(bo.id, task.conversation.id), { stopped: false })
-    assert.deepEqual(await crew.conversations.stopAside(ada.id, task.conversation.id), { stopped: false })
+    assert.deepEqual(await crew.conversations.stopIn(ada.id, task.conversation.id), { stopped: false })
+    assert.deepEqual(await crew.conversations.stopIn(bo.id, asked.conversation.id), { stopped: false })
     assert.equal(await statusOf(crew, bo.id), 'working')
     assert.equal(await statusOf(crew, ada.id), 'working')
 
-    assert.deepEqual(await crew.conversations.stopAside(ada.id, asked.conversation.id), { stopped: true })
+    assert.deepEqual(await crew.conversations.stopIn(ada.id, asked.conversation.id), { stopped: true })
     assert.deepEqual(ends.map(([agentId, ending]) => [agentId, ending.type]), [[ada.id, 'interrupted']])
-    assert.deepEqual(await crew.conversations.stopAside(ada.id, asked.conversation.id), { stopped: false })
-    await crew.conversations.stop(bo.id)
+    assert.deepEqual(await crew.conversations.stopIn(ada.id, asked.conversation.id), { stopped: false })
+    assert.deepEqual(await crew.conversations.stopIn(bo.id, task.conversation.id), { stopped: true })
+    assert.equal(await statusOf(crew, bo.id), 'idle')
   })
 })
 

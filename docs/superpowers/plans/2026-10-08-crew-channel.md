@@ -81,7 +81,7 @@ conversations.aside(agentId, { text, title, postId, instruction, channel, onEnd 
   -> { started: true, conversation } | { started: false, status }   // busy: nothing was begun
 // onEnd({ type: 'finished' | 'failed' | 'interrupted', data, said }) is called, not awaited,
 // once the turn is over, the agent is free and anything waiting on its task has been dealt with.
-conversations.stopAside(agentId, conversationId) -> { stopped }       // only that turn, never a task
+conversations.stopIn(agentId, conversationId) -> { stopped }          // only a turn in that conversation
 conversations.send(agentId, { text, workspaceId, postId })           // postId is kept on the message
 createConversations({ ..., asideDir, onFree })                       // onFree(agentId): it has nothing under way
 // list(agentId) gives task conversations only. statuses() says `working` for an agent mid-answer.
@@ -112,7 +112,7 @@ Routes:
 ## Tasks
 
 1. **Schema, settings and events.** `003_channel.sql`; `settings` reads and writes `channelLimit`; `events.append` takes `postId` and events with no conversation. Tests: `crew-store`, `crew-settings`, `crew-events`.
-2. **A turn aside.** `aside`, `stopAside`, `onFree`, the read-only rule, status during and after, messages sent to the agent meanwhile, recovery of a side conversation left open, history without side conversations. Tests: `crew-aside.test.mjs`.
+2. **A turn aside.** `aside`, `stopIn`, `onFree`, the read-only rule, status during and after, messages sent to the agent meanwhile, recovery of a side conversation left open, history without side conversations. Tests: `crew-aside.test.mjs`.
 3. **The channel.** `parseMove`, `mentions`, posting, delivery, queueing for a named busy agent, the limit, replies and passes, the referee, the winner's task, release and hand-over, recovery, retirement. Tests: `crew-channel.test.mjs`.
 4. **Routes, wiring and the demonstration.** `http.mjs`, `index.mjs`, `demo.mjs`, the page store ignoring what is not about an agent's task. Tests: `crew-http`, `crew-demo`, `crew-ui-store`, `crew-end-to-end`.
 5. **Docs.** `docs/crew-backend.md`, `docs/HANDOFF.md`.
