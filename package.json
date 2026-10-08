@@ -40,7 +40,7 @@
     "assets": "node tools/build-assets.mjs",
     "test": "node --test \"test/**/*.test.mjs\"",
     "test:crew": "WORLDS_TEST_DATABASE_URL=${WORLDS_TEST_DATABASE_URL:-postgres://worlds:worlds-dev@127.0.0.1:55432/worlds} node --test \"test/crew-*.test.mjs\"",
-    "test:crew:live": "WORLDS_LIVE_RUNTIME=${WORLDS_LIVE_RUNTIME:-claude-code} node --test test/crew-live.test.mjs",
+    "test:crew:live": "WORLDS_LIVE_RUNTIME=${WORLDS_LIVE_RUNTIME:-claude-code} WORLDS_TEST_DATABASE_URL=${WORLDS_TEST_DATABASE_URL:-postgres://worlds:worlds-dev@127.0.0.1:55432/worlds} node --test test/crew-live.test.mjs",
     "desktop:dev": "npm run build && electron .",
     "desktop:package": "npm run build && electron-builder --mac dir --arm64",
     "desktop:dist": "npm run build && electron-builder --mac dmg --arm64",

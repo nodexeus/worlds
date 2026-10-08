@@ -7,6 +7,11 @@ import { migrate } from './store/migrate.mjs'
 import { loadCatalog } from './catalog.mjs'
 import { createRoster } from './roster.mjs'
 import { createWorkspaces } from './workspaces.mjs'
+import { createSettings } from './settings.mjs'
+import { createHub } from './hub.mjs'
+import { createEvents } from './events.mjs'
+import { createConversations } from './conversations.mjs'
+import { createRuntimes } from './runtimes/index.mjs'
 
 /**
  * Prove the data directory can be written by writing to it. Asking the filesystem whether
@@ -35,8 +40,10 @@ async function checkDataDir(dataDir) {
  *
  * @param {{databaseUrl: string, schema: string, dataDir: string, worldId: string,
  *   agentLimit: number, entitled: string[]}} config
+ * @param {{runtimes?: {get: (id: string) => any}}} [parts] what runs the agents, when it is
+ *   not the runtimes this server has: a test's own.
  */
-export async function createCrew(config) {
+export async function createCrew(config, { runtimes = createRuntimes() } = {}) {
   const catalog = await loadCatalog()
   const missing = config.entitled.filter((id) => !catalog.byId.has(id))
   if (missing.length) {
@@ -67,11 +74,30 @@ export async function createCrew(config) {
   const retired = await roster.reconcile()
   if (retired.length) console.log(`Crew: retired specialists this world no longer has: ${retired.join(', ')}`)
 
+  const settings = createSettings({ sql, worldId: config.worldId })
+  const hub = createHub()
+  const events = createEvents({ sql, worldId: config.worldId, hub })
+  const conversations = createConversations({
+    sql, worldId: config.worldId, roster, workspaces, settings, runtimes, events, hub,
+  })
+  // A server that stopped took its agents' turns with it. Nothing must wait on one of those.
+  const lost = await conversations.recover()
+  if (lost) console.log(`Crew: ${lost} ${lost === 1 ? 'conversation was' : 'conversations were'} interrupted by the last stop`)
+
   return {
     worldId: config.worldId,
     catalog,
     roster,
     workspaces,
-    close: () => sql.end({ timeout: 5 }),
+    settings,
+    hub,
+    events,
+    conversations,
+    runtimes,
+    /** Stop every agent, finish writing the record, and only then let the database go. */
+    async close() {
+      await conversations.close()
+      await sql.end({ timeout: 5 })
+    },
   }
 }

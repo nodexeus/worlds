@@ -1,6 +1,7 @@
 // server/crew/http.mjs
 import { CrewError } from './errors.mjs'
 import { readJsonBody, send } from '../lib/json-http.mjs'
+import { serveEvents } from './stream.mjs'
 
 /**
  * A database error, without loading the Postgres client to recognise one: this file is
@@ -25,7 +26,7 @@ const publicWorkspace = ({ folder, ...rest }) => rest
 async function body(req) {
   let parsed
   try {
-    parsed = await readJsonBody(req, 64 * 1024)
+    parsed = await readJsonBody(req, 128 * 1024)
   } catch {
     throw new CrewError('bad_json', 'The request body must be a JSON object', 400)
   }
@@ -45,10 +46,29 @@ const DEADLINE = 15_000
 const CLONE_DEADLINE = 150_000
 const LATE = Symbol('late')
 
+const notFound = () => new CrewError('not_found', 'Unknown endpoint', 404)
+
+/** A whole number from the query string, within bounds, or a refusal. Absent is `undefined`. */
+function whole(url, name, { min = 0, max = Number.MAX_SAFE_INTEGER } = {}) {
+  const raw = url.searchParams.get(name)
+  if (raw === null) return undefined
+  const value = /^\d{1,15}$/.test(raw) ? Number(raw) : NaN
+  if (!(value >= min && value <= max)) {
+    throw new CrewError('bad_query', `${name} is a whole number from ${min} to ${max}`, 400)
+  }
+  return value
+}
+
+/** An agent as the page sees it: who it is, how it is doing, and where. */
+const placed = (agent, statuses) => {
+  const at = statuses.get(agent.id)
+  return { ...agent, status: at?.status ?? 'idle', conversationId: at?.conversationId ?? null, workspaceId: at?.workspaceId ?? null }
+}
+
 /** Work out the answer to one request: `[status, body]`, or a thrown refusal. */
 async function route(req, url, crew) {
   const parts = url.pathname.replace(/\/+$/, '').split('/').slice(3)
-  const [collection, id, extra] = parts
+  const [collection, id, extra, more] = parts
   const { method } = req
 
   if (!collection) {
@@ -59,32 +79,89 @@ async function route(req, url, crew) {
   if (!crew) {
     throw new CrewError('crew_disabled', 'This server is a monitor only: no crew backend is configured', 404)
   }
-  if (extra !== undefined) throw new CrewError('not_found', 'Unknown endpoint', 404)
+  if (more !== undefined) throw notFound()
 
   if (collection === 'agents') {
-    const { roster } = crew
+    const { roster, conversations } = crew
+    if (extra === 'messages') {
+      if (method !== 'POST') throw notAllowed()
+      const { text, workspaceId } = await body(req)
+      return reply(202, await conversations.send(id, { text, workspaceId }))
+    }
+    if (extra === 'stop') {
+      if (method !== 'POST') throw notAllowed()
+      return reply(200, await conversations.stop(id))
+    }
+    if (extra === 'conversations') {
+      if (method !== 'GET') throw notAllowed()
+      return reply(200, { conversations: await conversations.list(id) })
+    }
+    if (extra !== undefined) throw notFound()
     if (id === undefined) {
-      if (method === 'GET') return reply(200, { agents: await roster.list(), counts: await roster.counts() })
+      if (method === 'GET') {
+        const [agents, counts, statuses] = await Promise.all([roster.list(), roster.counts(), conversations.statuses()])
+        return reply(200, { agents: agents.map((agent) => placed(agent, statuses)), counts })
+      }
       if (method === 'POST') {
         const input = await body(req)
         const agent = 'templateId' in input ? await roster.createCurated(input.templateId) : await roster.create(input)
-        return reply(201, { agent })
+        return reply(201, { agent: placed(agent, new Map()) })
       }
       throw notAllowed()
     }
     if (method === 'PATCH') {
       const { name, role } = await body(req)
-      return reply(200, { agent: await roster.update(id, { name, role }) })
+      const agent = await roster.update(id, { name, role })
+      return reply(200, { agent: placed(agent, await conversations.statuses()) })
     }
     if (method === 'DELETE') {
       await roster.retire(id)
+      // Retired first, so nothing new can be asked of it while it is being stopped.
+      await conversations.dismiss(id)
       return reply(200, { ok: true })
     }
     throw notAllowed()
   }
 
+  if (collection === 'conversations') {
+    const { conversations, events } = crew
+    if (id === undefined) throw notFound()
+    if (extra === undefined) {
+      if (method !== 'GET') throw notAllowed()
+      return reply(200, { conversation: await conversations.get(id) })
+    }
+    if (extra === 'events') {
+      if (method !== 'GET') throw notAllowed()
+      const after = whole(url, 'after')
+      const before = whole(url, 'before')
+      const limit = whole(url, 'limit', { min: 1, max: 500 })
+      if (after !== undefined && before !== undefined) {
+        throw new CrewError('bad_query', 'Give after or before, not both', 400)
+      }
+      const conversation = await conversations.get(id)
+      return reply(200, { events: await events.page(conversation.id, { after, before, limit }) })
+    }
+    if (extra === 'answers') {
+      if (method !== 'POST') throw notAllowed()
+      return reply(200, await conversations.answer(id, await body(req)))
+    }
+    throw notFound()
+  }
+
+  if (collection === 'settings') {
+    if (id !== undefined) throw notFound()
+    if (method === 'GET') return reply(200, { settings: await crew.settings.get() })
+    if (method === 'PATCH') {
+      const { autonomy } = await body(req)
+      return reply(200, { settings: await crew.settings.update({ autonomy }) })
+    }
+    throw notAllowed()
+  }
+
+  if (extra !== undefined) throw notFound()
+
   if (collection === 'specialists') {
-    if (id !== undefined) throw new CrewError('not_found', 'Unknown endpoint', 404)
+    if (id !== undefined) throw notFound()
     if (method !== 'GET') throw notAllowed()
     return reply(200, { specialists: await crew.roster.specialists() })
   }
@@ -110,7 +187,7 @@ async function route(req, url, crew) {
     throw notAllowed()
   }
 
-  throw new CrewError('not_found', 'Unknown endpoint', 404)
+  throw notFound()
 }
 
 /**
@@ -126,9 +203,32 @@ async function route(req, url, crew) {
  * @param {import('node:http').ServerResponse} res
  * @param {URL} url
  * @param {any | null} crew
- * @param {{deadlineMs?: number, cloneDeadlineMs?: number}} [options]
+ * @param {{deadlineMs?: number, cloneDeadlineMs?: number, stream?: object}} [options]
+ *   `stream` is passed to the live stream: see `stream.mjs`.
  */
-export async function handleCrew(req, res, url, crew, { deadlineMs = DEADLINE, cloneDeadlineMs = CLONE_DEADLINE } = {}) {
+export async function handleCrew(req, res, url, crew, {
+  deadlineMs = DEADLINE, cloneDeadlineMs = CLONE_DEADLINE, stream = {},
+} = {}) {
+  const refuse = (error) => {
+    if (res.headersSent) return res.destroy()
+    if (error instanceof CrewError) return send(res, error.status, { error: error.message, code: error.code })
+    if (unavailable(error)) {
+      return send(res, 503, { error: 'The database cannot be reached right now. Nothing was changed.', code: 'store_unavailable' })
+    }
+    console.error('crew:', error)
+    return send(res, 500, { error: 'Something went wrong on the server', code: 'fault' })
+  }
+
+  // The stream is the one reply that is meant to go on: it has no deadline.
+  if (crew && /^\/api\/crew\/events\/?$/.test(url.pathname)) {
+    try {
+      if (req.method !== 'GET') throw notAllowed()
+      return await serveEvents(req, res, url, crew, stream)
+    } catch (error) {
+      return refuse(error)
+    }
+  }
+
   const cloning = req.method === 'POST' && /\/workspaces\/?$/.test(url.pathname)
   let timer
   const late = new Promise((resolve) => {
@@ -145,12 +245,7 @@ export async function handleCrew(req, res, url, crew, { deadlineMs = DEADLINE, c
     }
     return send(res, ...answer)
   } catch (error) {
-    if (error instanceof CrewError) return send(res, error.status, { error: error.message, code: error.code })
-    if (unavailable(error)) {
-      return send(res, 503, { error: 'The database cannot be reached right now. Nothing was changed.', code: 'store_unavailable' })
-    }
-    console.error('crew:', error)
-    return send(res, 500, { error: 'Something went wrong on the server', code: 'fault' })
+    return refuse(error)
   } finally {
     clearTimeout(timer)
   }

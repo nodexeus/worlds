@@ -13,7 +13,7 @@ Two places hold everything that has to survive a restart or an update:
 
 | Setting | Holds |
 | --- | --- |
-| `WORLDS_DATABASE_URL` | A Postgres 18 database: agents and workspaces. |
+| `WORLDS_DATABASE_URL` | A Postgres 18 database: agents, workspaces, conversations and their events, settings. |
 | `WORLDS_DATA_DIR` | A directory: one folder per workspace under `workspaces/`. |
 
 Mount a persistent volume on the data directory and point the URL at a database that is
@@ -126,8 +126,94 @@ never calls a model. To check an adapter against the real thing, which does:
 
     npm run test:crew:live
 
-Nothing records these events yet. Storing a conversation and deriving an agent's status from
-it is the next phase.
+## Conversations
+
+A conversation is one agent working in one workspace. Only `server/crew/conversations.mjs`
+talks to a runtime: it turns a person's message into a turn, and everything the runtime
+says back into stored events.
+
+- **A message with a workspace** is a new task: a new conversation there, and the agent's
+  previous one is closed. It is refused with `agent_busy` while the agent is in a turn.
+- **A message without one** continues the agent's open conversation. With none open it is
+  refused with `needs_workspace`.
+- **A message to an agent in a turn** is stored as queued. When the turn finishes,
+  everything queued is delivered together as the next turn. When the turn fails or is
+  stopped, it is cancelled, and a `queue` event says which.
+- **An agent has one open task conversation at most.** The database enforces it.
+- **Every turn carries a briefing** on top of the agent's role: the workspace it is in, the
+  other workspaces, and the standing rules (work in this folder, stop and say so if the
+  task belongs elsewhere, ask when unclear, never create a workspace).
+- **Autonomy** is one setting for the world, read at the start of each turn. The default is
+  `autonomous`.
+
+### Events
+
+Each stored event is `{ seq, conversationId, agentId, type, status, at, data }`. Events are
+never changed or deleted.
+
+| Type | `data` |
+| --- | --- |
+| `message` | `text`, and `queued: true` if the agent was busy. |
+| `text` | `text`: something the agent said. |
+| `tool` | `id`, `name`, `summary`, `status`, `output?`. |
+| `question` | `requestId`, `questions`. |
+| `approval` | `requestId`, `tool`, `summary`. |
+| `answer` | `requestId`, and the answer as given. |
+| `queue` | `of` (the sequence numbers of queued messages), `outcome`: `delivered` or `cancelled`. |
+| `finished` | `text`, `costUsd?`, `durationMs?`. |
+| `failed` | `reason`, `code`. |
+| `interrupted` | `reason?`: `restart` when a stopped server left the turn behind, `lost` when its ending could not be recorded. |
+
+A runtime's `started` event only saves the handle, and `delta` fragments are passed on live
+and never stored.
+
+`seq` numbers a world's events from 1, with no gaps, in the order they became visible. That
+is what lets a client ask for "everything after 41" and get exactly what it missed.
+
+### Status
+
+`status` on an event is the agent's status once that event had happened: `idle`, `working`,
+`waiting` (a question or approval is open) or `failed`. An agent's status is the status of
+the last event in its open conversation, or `idle` with none. Nothing else sets it. A failed
+agent takes a message exactly as an idle one does.
+
+### When things go wrong
+
+| What | Result |
+| --- | --- |
+| The runtime fails or cannot be started | A `failed` event with the reason. The next message works. |
+| The database is briefly away mid-turn | Each write is tried three times. Nothing is lost. |
+| The database stays away | The turn is stopped. Its ending is recorded as `failed` if that can be written, and otherwise put right as `interrupted` (`lost`) the next time anything is asked of the agent. |
+| Stop is asked for as a turn finishes | Whatever was queued is cancelled, not delivered. |
+| The server stops | Agents are stopped and the record completed, within three seconds. Anything left is marked `interrupted` (`restart`) at the next start. |
+
+One server runs a world. An agent's messages, answers and runtime events are put in order
+in that server's memory, so two servers on one world's database are not supported.
+
+## The live stream
+
+`GET /api/crew/events` is one long reply of server-sent events for the whole world:
+
+    event: hello
+    data: {"seq":41}
+
+    id: 42
+    event: event
+    data: {"seq":42,"conversationId":"...","agentId":"...","type":"text","status":"working","at":"...","data":{"text":"Done."}}
+
+    event: delta
+    data: {"conversationId":"...","agentId":"...","text":"Do"}
+
+- `hello` gives the number of the world's latest event at the moment of connecting.
+- `?after=<seq>`, or the `Last-Event-ID` header a browser sends when it reconnects, replays
+  everything after that number and then stays live. When both are given the later one is
+  used. With neither, the stream starts from now.
+- A client whose number is ahead of `hello` (the database was restored) should start again.
+- A comment line is sent every 15 seconds to keep the connection open.
+- Catching up is sent at the client's own pace. Once live, a client more than 4 MB behind
+  is disconnected and catches up when it reconnects. At most
+  100 clients are served at once; one more is refused with 503 `too_many_clients`.
+- A proxy in front of the server must not buffer this reply.
 
 ## API
 
@@ -137,17 +223,26 @@ status. `GET /api/crew` answers `{ enabled: false }` on a monitor-only server.
 | Method and path | Purpose |
 | --- | --- |
 | `GET /api/crew` | Whether the backend is on, the world, the counts. |
-| `GET /api/crew/agents` | The roster and the counts. |
+| `GET /api/crew/agents` | The roster and the counts. Each agent has `status`, `conversationId` and `workspaceId`. |
 | `POST /api/crew/agents` | Add a standard agent, or a specialist with `{ "templateId": "..." }`. |
 | `PATCH /api/crew/agents/:id` | Rename, or change the role. |
-| `DELETE /api/crew/agents/:id` | Retire. |
+| `DELETE /api/crew/agents/:id` | Retire, stopping whatever it was doing. |
+| `POST /api/crew/agents/:id/messages` | `{ text, workspaceId? }`. Answers 202 with the conversation, the stored message and `queued`. |
+| `POST /api/crew/agents/:id/stop` | Stop the agent's turn. Answers `{ stopped }`. |
+| `GET /api/crew/agents/:id/conversations` | That agent's conversations, newest first. |
+| `GET /api/crew/conversations/:id` | One conversation. |
+| `GET /api/crew/conversations/:id/events` | Its events, oldest first: the latest 200, or `?before=`, `?after=`, `?limit=` (up to 500). |
+| `POST /api/crew/conversations/:id/answers` | `{ requestId }` with `allow` (and `message`), `answers` or `text`. |
+| `GET /api/crew/events` | The live stream. |
+| `GET /api/crew/settings` | The world's settings: `{ autonomy }`. |
+| `PATCH /api/crew/settings` | Change them. |
 | `GET /api/crew/specialists` | The catalog, with what the world may add and has added. |
 | `GET /api/crew/workspaces` | The workspaces. |
 | `POST /api/crew/workspaces` | Add one. |
 | `PATCH /api/crew/workspaces/:id` | Rename or describe. |
 | `DELETE /api/crew/workspaces/:id` | Archive. |
 
-No request waits for ever. A query is cancelled by Postgres after 10 seconds, and a request
+No request but the stream waits for ever. A query is cancelled by Postgres after 10 seconds, and a request
 the database never answers gets a 503 `store_timeout` after 15 seconds (150 for creating a
 workspace, which may be cloning). After a timed-out change, look before repeating it.
 

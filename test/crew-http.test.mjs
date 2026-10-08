@@ -6,10 +6,8 @@ import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 import { handleCrew } from '../server/crew/http.mjs'
-import { createRoster } from '../server/crew/roster.mjs'
-import { createWorkspaces } from '../server/crew/workspaces.mjs'
-import { loadCatalog } from '../server/crew/catalog.mjs'
-import { needsDb, withDb } from './support/crew-db.mjs'
+import { needsDb } from './support/crew-db.mjs'
+import { withTalk } from './support/crew-talk.mjs'
 import { withEnv } from './support/env.mjs'
 
 /** Serve `crew` (or no crew) on a loopback port and hand back a JSON caller. */
@@ -33,21 +31,7 @@ async function serving(crew, run) {
 }
 
 const withCrew = (run, options = {}) =>
-  withDb(async (sql) => {
-    const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'crew-http-'))
-    const catalog = await loadCatalog()
-    const crew = {
-      worldId: 'w',
-      catalog,
-      roster: createRoster({ sql, worldId: 'w', catalog, limit: 2, entitled: ['quill'], rand: () => 0, ...options }),
-      workspaces: createWorkspaces({ sql, worldId: 'w', dataDir, clone: async () => {} }),
-    }
-    try {
-      return await serving(crew, (call) => run(call, { sql, crew }))
-    } finally {
-      await fs.rm(dataDir, { recursive: true, force: true })
-    }
-  })
+  withTalk((crew) => serving(crew, (call) => run(call, { sql: crew.sql, crew })), { limit: 2, entitled: ['quill'], ...options })
 
 test('with no crew the server says so, and every other route is switched off', async () => {
   await serving(null, async (call) => {
@@ -195,7 +179,7 @@ test('a host named in WORLDS_ALLOWED_HOSTS may reach the API, and no other may',
 
 test('a request the store never answers gets a 503 in bounded time, and says it may have happened', async () => {
   const never = () => new Promise(() => {})
-  const crew = { worldId: 'w', roster: { list: never, counts: never, create: never }, workspaces: {} }
+  const crew = { worldId: 'w', roster: { list: never, counts: never, create: never }, workspaces: {}, conversations: { statuses: never } }
   const server = http.createServer((req, res) =>
     handleCrew(req, res, new URL(req.url, 'http://localhost'), crew, { deadlineMs: 80 })
   )
