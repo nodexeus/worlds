@@ -201,5 +201,28 @@ export function createRoster({ sql, worldId, catalog, limit, entitled, rand = Ma
     }))
   }
 
-  return { list, get, create, createCurated, update, retire, counts, specialists }
+  /**
+   * Retire every specialist this world may no longer have: one it is not entitled to any
+   * more, and one whose template this server no longer carries. Run once, at start, which
+   * is when entitlements and the catalog can have changed.
+   *
+   * Retired like any other agent, so its history is kept. If the world is entitled again
+   * later, adding the specialist makes a new agent.
+   *
+   * @returns {Promise<string[]>} the names retired
+   */
+  async function reconcile() {
+    return sql.begin(async (tx) => {
+      await oneAtATime(tx)
+      const gone = (await living(tx)).filter(
+        (row) => row.templateId && !(catalog.byId.has(row.templateId) && allowed.has(row.templateId))
+      )
+      for (const row of gone) {
+        await tx`update agents set retired_at = now() where id = ${row.id} and world_id = ${worldId}`
+      }
+      return gone.map((row) => row.name)
+    })
+  }
+
+  return { list, get, create, createCurated, update, retire, counts, specialists, reconcile }
 }

@@ -126,3 +126,18 @@ test('a monitor-only server never loads the Postgres client or the store', async
   )
   assert.equal(out.stdout.trim(), 'clean', out.stderr)
 })
+
+test('starting without an entitlement retires the specialist that needed it', needsDb, async () => {
+  await withConfig(async (config) => {
+    const first = await createCrew(config)
+    await first.roster.createCurated('quill')
+    await first.roster.create({ name: 'Ada', runtime: 'hermes' })
+    await first.close()
+    const second = await createCrew({ ...config, entitled: [] })
+    try {
+      assert.deepEqual((await second.roster.list()).map((a) => a.name), ['Ada'])
+    } finally {
+      await second.close()
+    }
+  })
+})

@@ -57,16 +57,20 @@ export async function createCrew(config) {
   const workspaces = createWorkspaces({ sql, worldId: config.worldId, dataDir: config.dataDir })
   await workspaces.sweep()
 
+  const roster = createRoster({
+    sql,
+    worldId: config.worldId,
+    catalog,
+    limit: config.agentLimit,
+    entitled: config.entitled,
+  })
+  const retired = await roster.reconcile()
+  if (retired.length) console.log(`Crew: retired specialists this world no longer has: ${retired.join(', ')}`)
+
   return {
     worldId: config.worldId,
     catalog,
-    roster: createRoster({
-      sql,
-      worldId: config.worldId,
-      catalog,
-      limit: config.agentLimit,
-      entitled: config.entitled,
-    }),
+    roster,
     workspaces,
     close: () => sql.end({ timeout: 5 }),
   }

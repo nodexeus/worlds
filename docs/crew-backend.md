@@ -44,7 +44,9 @@ backend only reads them.
 - A **curated agent** is made from a template in `server/crew/templates/`. Its name and
   instructions are the template's and cannot be changed, a world has at most one of each,
   and it does not count against the limit. Template names are reserved in every world.
-- Names are one word, unique in a world whatever their case.
+- A curated agent is retired at the next start if the world is no longer entitled to it, or
+  the server no longer has its template.
+- Names are one word, unique in a world whatever their case or accents.
 - Agents are retired, never deleted. Retiring gives back the place and the name.
 
 ## Workspaces

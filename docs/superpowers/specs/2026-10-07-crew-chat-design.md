@@ -147,6 +147,9 @@ All records carry a world ID.
   does not use a standard slot. Its name is the template's and cannot be changed. Its
   role instructions and skills come from the template and are not editable, so an upgrade
   to the template reaches existing agents.
+- **Losing a specialist.** When a world is no longer entitled to a template, or the server
+  no longer carries it, that world's agent is retired at the next start. Its history is
+  kept. If the world is entitled again later, adding the specialist makes a new agent.
 - **To the rest of the system a curated agent is an agent.** It converses, takes tasks
   and answers the crew channel exactly as a standard one does. The roster panel shows the
   two counts separately ("4 of 6 agents, 1 specialist") and lists curated agents the

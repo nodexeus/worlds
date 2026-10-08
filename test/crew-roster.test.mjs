@@ -241,3 +241,26 @@ test('a rename and a new role arriving together are both kept', needsDb, async (
     assert.deepEqual([now.name, now.role], ['Grace', 'New role.'])
   })
 })
+
+test('a specialist the world is no longer entitled to is retired, and so is one whose template is gone', needsDb, async () => {
+  await withRoster({}, async (roster, { make }) => {
+    const ada = await roster.create({ name: 'Ada', runtime: 'hermes' })
+    const quill = await roster.createCurated('quill')
+    assert.deepEqual(await roster.reconcile(), [], 'an entitled specialist is left alone')
+
+    const downgraded = make({ entitled: [] })
+    assert.deepEqual(await downgraded.reconcile(), ['Quill'])
+    assert.deepEqual((await downgraded.list()).map((a) => a.id), [ada.id])
+    await assert.rejects(downgraded.get(quill.id), refused('unknown_agent'))
+    assert.deepEqual(await downgraded.reconcile(), [], 'and only once')
+
+    // Entitled again later: a new Quill, not the old one brought back.
+    const again = await roster.createCurated('quill')
+    assert.notEqual(again.id, quill.id)
+
+    const empty = { templates: [], byId: new Map(), reserved: new Set() }
+    const withoutTemplate = make({ catalog: empty, entitled: [] })
+    assert.deepEqual(await withoutTemplate.reconcile(), ['Quill'])
+    assert.deepEqual((await withoutTemplate.list()).map((a) => a.name), ['Ada'])
+  })
+})
