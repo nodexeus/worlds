@@ -45,3 +45,15 @@ export function briefing({ agent, workspace, others }) {
   const role = String(agent.role || '').trim().slice(0, Math.max(0, LIMIT - standing.length - 2))
   return role ? `${role}\n\n${standing}` : standing
 }
+
+/**
+ * What an agent is told when it is asked something aside from its task: its own role, then
+ * the instruction for the occasion. As above, it is the role that gives way.
+ *
+ * @param {{agent: {role?: string}, instruction: string}} input
+ */
+export function asideBriefing({ agent, instruction }) {
+  const standing = String(instruction || '').trim().slice(0, LIMIT)
+  const role = String(agent.role || '').trim().slice(0, Math.max(0, LIMIT - standing.length - 2))
+  return role && standing ? `${role}\n\n${standing}` : role || standing
+}
