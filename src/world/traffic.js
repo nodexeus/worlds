@@ -34,11 +34,11 @@ const REACH = GROUND_SIZE * 0.72
  */
 export function planPass(rand, spec = {}) {
   const [fewest, most] = spec.flight || [1, MOST]
-  // Any heading, and never straight over the middle: off to one side by up to a third of
-  // the way out, so a pass crosses the view and does not just come at it.
+  // Any heading, and close by the middle: a little off to one side at most, because a pass
+  // that stays out by the edge is in the fog the whole way and nobody sees it.
   const bearing = rand() * Math.PI * 2
   const heading = { x: Math.cos(bearing), z: Math.sin(bearing) }
-  const side = (rand() - 0.5) * 2 * REACH * 0.36
+  const side = (rand() - 0.5) * 2 * REACH * 0.16
   const from = { x: -heading.x * REACH - heading.z * side, z: -heading.z * REACH + heading.x * side }
   const count = Math.min(MOST, fewest + Math.floor(rand() * (most - fewest + 1)))
   const craft = []
@@ -48,7 +48,9 @@ export function planPass(rand, spec = {}) {
     const rank = Math.ceil(i / 2)
     craft.push({ back: rank * (9 + rand() * 4), out: wing * rank * (7 + rand() * 3), up: (rand() - 0.5) * 2.4 })
   }
-  return { from, heading, length: REACH * 2, height: 30 + rand() * 18, speed: 22 + rand() * 10, craft }
+  // As high as another world's birds fly: over the tallest thing built, and under the camera at
+  // its usual distance. Higher, and it is only there for someone zoomed all the way out.
+  return { from, heading, length: REACH * 2, height: 15 + rand() * 8, speed: 16 + rand() * 8, craft }
 }
 
 export class Traffic {

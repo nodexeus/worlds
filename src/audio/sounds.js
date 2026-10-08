@@ -42,6 +42,8 @@ const TABLE = {
   /** Thin, high and dusty — a tenth of an atmosphere does not carry a low rumble. */
   'mars-wind': { kind: 'bed', gain: 1 },
   'stream': { kind: 'bed', gain: 1 },
+  /** The campus: a warm chord of pure tones that drifts. */
+  'foundry-pad': { kind: 'bed', gain: 1 },
 
   // One-shots — environment events, and the handful of sounds the colony itself makes.
   'gull': { kind: 'event', gain: 0.8 },
@@ -77,6 +79,26 @@ const TABLE = {
    * that must never grate: two soft marimba notes a fifth apart, and nothing else.
    */
   'chime-attention': { kind: 'event', gain: 0.6 },
+  /** A soft bell, a long way off across the campus. */
+  'far-bell': { kind: 'event', gain: 0.5 },
+  /**
+   * What a robot says when you click it, in the voice of its kind: six phrases each. The rock
+   * crew speak in low chords that slide and waver, and the sixth of theirs is a laugh; the
+   * plated crew in runs of struck tones. See `CREW_VOICES`. Trimmed against each other by
+   * measurement: a chord carries far more than a struck tone does at the same peak.
+   */
+  'rock-1': { kind: 'event', gain: 0.34 },
+  'rock-2': { kind: 'event', gain: 0.34 },
+  'rock-3': { kind: 'event', gain: 0.34 },
+  'rock-4': { kind: 'event', gain: 0.34 },
+  'rock-5': { kind: 'event', gain: 0.34 },
+  'rock-6': { kind: 'event', gain: 0.34 },
+  'unit-1': { kind: 'event', gain: 0.8 },
+  'unit-2': { kind: 'event', gain: 0.8 },
+  'unit-3': { kind: 'event', gain: 0.8 },
+  'unit-4': { kind: 'event', gain: 0.8 },
+  'unit-5': { kind: 'event', gain: 0.8 },
+  'unit-6': { kind: 'event', gain: 0.8 },
 
   // Positional loops — attached to things in the world, heard from where they are.
   'work-hammer': { kind: 'loop', gain: 1 },
@@ -94,6 +116,12 @@ for (const name of Object.keys(TABLE)) {
 }
 
 export const SOUND_NAMES = Object.freeze(Object.keys(SOUNDS))
+
+/**
+ * The voice each kind of crew answers in, and how many phrases it has: `<voice>-1` to
+ * `<voice>-<phrases>`. `select` is the stock crew's.
+ */
+export const CREW_VOICES = Object.freeze({ select: 6, unit: 6, rock: 6 })
 
 /** The bird kinds `bird-call` understands, for a planet preset to pick from. */
 export const BIRD_KINDS = Object.freeze(['gull', 'parrot', 'crow', 'songbird', 'owl'])

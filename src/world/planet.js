@@ -96,9 +96,15 @@ export const PLANETS = {
       // time, with the sky empty for this many seconds between.
       aircraft: { every: [35, 80], flight: [1, 3] },
     },
+    // Quiet. A warm chord that drifts, a bell far off now and then, and nothing else: no
+    // noise of any kind and nothing low, because here both read as a fault. The gate makes no
+    // sound at all (`gate: null`) and nor do the drones: any tone that is simply held, however
+    // soft, wears on the ear in a few seconds.
     audio: {
-      beds: [{ sound: 'lunar-silence', gain: 0.5 }],
-      events: [],
+      beds: [{ sound: 'foundry-pad', gain: 0.5 }],
+      events: [{ sound: 'far-bell', every: [28, 75], gain: 0.4, where: 'ring' }],
+      gate: null,
+      drone: null,
     },
     grade: { saturation: 0.9, warmth: 0.04 },
     buildingTint: 0x8a8a96,
