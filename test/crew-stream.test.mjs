@@ -371,3 +371,54 @@ test('retiring an agent stops what it was doing', needsDb, async () => {
     assert.deepEqual([after.status, after.body.code], [404, 'unknown_agent'])
   })
 })
+
+// Found in review.
+
+test('when a client gives both a query and a last id, the later of the two is where it starts', needsDb, async () => {
+  await withServer(async ({ crew, open, agent, site }) => {
+    await crew.conversations.send(agent.id, { text: 'talk', workspaceId: site.id })
+    await crew.conversations.settled(agent.id)
+    // As a browser reconnects: the address it first used, and the last id it was sent.
+    const back = await open('?after=0', { 'Last-Event-ID': '2' })
+    await back.until(2)
+    await wait(50)
+    assert.deepEqual(back.items.map((item) => item.id), [null, 3])
+    const ahead = await open('?after=3', { 'Last-Event-ID': '1' })
+    await ahead.until(1)
+    await wait(50)
+    assert.deepEqual(ahead.items.map((item) => item.id), [null])
+  })
+})
+
+test('a client reading a long backlog at its own pace is not cut off for being behind', needsDb, async () => {
+  await withServer(async ({ crew, base, agent }) => {
+    const [row] = await crew.sql`insert into conversations (world_id, agent_id, workspace_id)
+      select 'w', ${agent.id}, id from workspaces limit 1 returning id`
+    const big = 'x'.repeat(3000)
+    for (let n = 0; n < 1500; n += 1) {
+      await crew.events.append({ conversationId: row.id, agentId: agent.id, type: 'text', status: 'working', data: { text: big } })
+    }
+    // 4.5 MB of backlog, a 256 KB allowance, and a reader that takes a breath between chunks.
+    const url = new URL(`${base}/events?after=0`)
+    const got = await new Promise((resolve, reject) => {
+      let ids = 0
+      let pending = ''
+      const req = http.get({ host: url.hostname, port: url.port, path: url.pathname + url.search }, (res) => {
+        res.on('data', (chunk) => {
+          pending += chunk
+          ids += (pending.match(/^id: /gm) || []).length
+          pending = pending.slice(pending.lastIndexOf('\n\n') + 2)
+          if (ids >= 1500) {
+            req.destroy()
+            return resolve(ids)
+          }
+          res.pause()
+          setTimeout(() => res.resume(), 2)
+        })
+        res.on('close', () => resolve(ids))
+      })
+      req.on('error', reject)
+    })
+    assert.equal(got, 1500, 'the whole backlog arrived on one connection')
+  }, { stream: { maxBufferedBytes: 256 * 1024 } })
+})

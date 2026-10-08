@@ -94,7 +94,7 @@ serveEvents(req, res, url, { events, hub }, { heartbeatMs?, maxBufferedBytes?, m
 
 | Method and path | Purpose |
 | --- | --- |
-| `GET /events?after=N` | The stream. `Last-Event-ID` is honoured when `after` is absent. |
+| `GET /events?after=N` | The stream. `Last-Event-ID` is honoured too, and the later of the two is used. |
 | `POST /agents/:id/messages` | `{ text, workspaceId? }`. Answers 202 with the conversation and the stored message. |
 | `POST /agents/:id/stop` | Stop the running turn. |
 | `GET /agents/:id/conversations` | That agent's conversations, newest first. |

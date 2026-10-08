@@ -27,6 +27,9 @@ const SCRIPTS = {
   long: [{ pause: 5000 }, { type: 'finished', text: 'never' }],
   talk: [{ type: 'delta', text: 'Hel' }, { type: 'delta', text: 'lo' }, { type: 'text', text: 'Hello' }, { type: 'finished', text: 'Hello' }],
   crash: [{ type: 'text', text: 'Starting.' }, { crash: 'The model is out of credit' }],
+  burst: [{ pause: 50 }, ...Array.from({ length: 5 }, (_, n) => ({ type: 'text', text: `t${n}` })), { pause: 30 }, { type: 'finished', text: 'done' }],
+  flood: [{ pause: 40 }, ...Array.from({ length: 60 }, (_, n) => ({ type: 'text', text: `t${n}` })), { pause: 5000 }, { type: 'finished', text: '' }],
+  sip: [{ type: 'text', text: 'one' }, { pause: 200 }, { type: 'text', text: 'two' }, { pause: 200 }, { type: 'finished', text: '' }],
   drip: [{ type: 'text', text: 'one' }, { pause: 30 }, { type: 'text', text: 'two' }, { pause: 30 }, { type: 'finished', text: '' }],
 }
 
@@ -37,6 +40,15 @@ const withOne = (run, options = {}) =>
     const site = await crew.workspaces.create({ name: 'Site', description: 'The public website.' })
     return run(crew, { agent, site })
   }, { scripts: SCRIPTS, ...options })
+
+/** Wait until the hub has sent a stored event that `match` accepts. */
+async function seen(crew, match, ms = 3000) {
+  const deadline = Date.now() + ms
+  while (!crew.sent.some(([kind, payload]) => kind === 'event' && match(payload))) {
+    if (Date.now() > deadline) throw new Error('the event never came')
+    await wait(5)
+  }
+}
 
 const statusOf = async (crew, agentId) => (await crew.conversations.statuses()).get(agentId)?.status ?? 'idle'
 
@@ -337,8 +349,7 @@ test('two messages arriving together make one turn and one queued message, never
       crew.conversations.send(agent.id, { text: 'second' }),
     ])
     assert.deepEqual(both.map((sent) => sent.queued), [false, true])
-    await wait(20)
-    assert.equal(crew.scripted.turns.length, 2)
+    assert.equal(crew.scripted.turns.length, 2, 'the second message did not start a turn of its own')
     await crew.conversations.settled(agent.id)
     assert.deepEqual(crew.scripted.turns.map((turn) => turn.text), ['hello', 'slow', 'second'])
   })
@@ -381,8 +392,8 @@ test('a message sent at any moment around the end of a turn is delivered or canc
 
 test('when the record cannot be written the turn is stopped, and the agent is not left working for ever', needsDb, async () => {
   await withOne(async (crew, { agent, site }) => {
-    const { conversation } = await crew.conversations.send(agent.id, { text: 'drip', workspaceId: site.id })
-    await wait(15)
+    const { conversation } = await crew.conversations.send(agent.id, { text: 'sip', workspaceId: site.id })
+    await seen(crew, (event) => event.data.text === 'one')
     crew.store.failing = true
     await crew.conversations.settled(agent.id)
     crew.store.failing = false
@@ -392,7 +403,7 @@ test('when the record cannot be written the turn is stopped, and the agent is no
     await crew.conversations.send(agent.id, { text: 'hello' })
     await crew.conversations.settled(agent.id)
     assert.deepEqual(await record(crew, conversation.id), [
-      ['message', 'working', { text: 'drip' }],
+      ['message', 'working', { text: 'sip' }],
       ['text', 'working', { text: 'one' }],
       ['interrupted', 'idle', { reason: 'lost' }],
       ['message', 'working', { text: 'hello' }],
@@ -406,7 +417,7 @@ test('when the record cannot be written the turn is stopped, and the agent is no
 test('a short outage of the record loses nothing', needsDb, async () => {
   await withOne(async (crew, { agent, site }) => {
     const { conversation } = await crew.conversations.send(agent.id, { text: 'drip', workspaceId: site.id })
-    await wait(15)
+    await seen(crew, (event) => event.data.text === 'one')
     crew.store.failing = true
     await wait(30)
     crew.store.failing = false
@@ -423,7 +434,7 @@ test('a short outage of the record loses nothing', needsDb, async () => {
 test('when the record comes back only after the turn was stopped for it, the turn is recorded as failed', needsDb, async () => {
   await withOne(async (crew, { agent, site }) => {
     const { conversation } = await crew.conversations.send(agent.id, { text: 'drip', workspaceId: site.id })
-    await wait(15)
+    await seen(crew, (event) => event.data.text === 'one')
     crew.store.failing = true
     while (!crew.logged.length) await wait(5)
     crew.store.failing = false
@@ -497,5 +508,103 @@ test('agents work side by side, each in its own conversation', needsDb, async ()
     assert.equal((await record(crew, b.conversation.id)).length, 5)
     const seqs = crew.sent.filter(([kind]) => kind === 'event').map(([, event]) => event.seq)
     assert.deepEqual(seqs, seqs.map((_, n) => n + 1), 'published in order with no gaps')
+  })
+})
+
+// Found in review.
+
+test('stop asked for as a turn is finishing still cancels what was waiting', needsDb, async () => {
+  await withOne(async (crew, { agent, site }) => {
+    // Slow writes, so the stop is still in the line behind the agent's last words when the
+    // runtime finishes by itself.
+    const real = crew.events.append
+    crew.events.append = async (event) => {
+      await wait(20)
+      return real(event)
+    }
+    const { conversation } = await crew.conversations.send(agent.id, { text: 'burst', workspaceId: site.id })
+    const queued = await crew.conversations.send(agent.id, { text: 'queued one' })
+    await wait(25)
+    assert.deepEqual(await crew.conversations.stop(agent.id), { stopped: true })
+    await crew.conversations.settled(agent.id)
+    assert.deepEqual(crew.scripted.turns.map((turn) => turn.text), ['burst'])
+    assert.deepEqual((await record(crew, conversation.id)).at(-1), ['queue', 'idle', { of: [queued.event.seq], outcome: 'cancelled' }])
+  })
+})
+
+test('stop answers only once what was waiting has been cancelled in the record', needsDb, async () => {
+  await withOne(async (crew, { agent, site }) => {
+    const real = crew.events.append
+    crew.events.append = async (event) => {
+      if (event.type === 'queue') await wait(60)
+      return real(event)
+    }
+    const { conversation } = await crew.conversations.send(agent.id, { text: 'long', workspaceId: site.id })
+    await crew.conversations.send(agent.id, { text: 'also' })
+    await crew.conversations.stop(agent.id)
+    assert.equal((await record(crew, conversation.id)).at(-1)[0], 'queue')
+  })
+})
+
+test('a queued message whose delivery could not be recorded is not left behind or overtaken', needsDb, async () => {
+  await withOne(async (crew, { agent, site }) => {
+    const real = crew.events.append
+    let failures = 3
+    crew.events.append = (event) => (event.type === 'queue' && failures-- > 0 ? Promise.reject(new Error('blip')) : real(event))
+    const { conversation } = await crew.conversations.send(agent.id, { text: 'slow', workspaceId: site.id })
+    const queued = await crew.conversations.send(agent.id, { text: 'queued one' })
+    await crew.conversations.settled(agent.id)
+    assert.deepEqual(crew.scripted.turns.map((turn) => turn.text), ['slow'], 'every try at recording the delivery failed')
+
+    const newer = await crew.conversations.send(agent.id, { text: 'newer' })
+    await crew.conversations.settled(agent.id)
+    assert.deepEqual(crew.scripted.turns.map((turn) => turn.text), ['slow', 'queued one\n\nnewer'])
+    const events = await record(crew, conversation.id)
+    assert.deepEqual(events.slice(3, 5), [
+      ['message', 'working', { text: 'newer' }],
+      ['queue', 'working', { of: [queued.event.seq], outcome: 'delivered' }],
+    ])
+    assert.equal(newer.queued, false)
+  })
+})
+
+test('one failed try at recording a delivery does not stop it', needsDb, async () => {
+  await withOne(async (crew, { agent, site }) => {
+    const real = crew.events.append
+    let failures = 1
+    crew.events.append = (event) => (event.type === 'queue' && failures-- > 0 ? Promise.reject(new Error('blip')) : real(event))
+    await crew.conversations.send(agent.id, { text: 'slow', workspaceId: site.id })
+    await crew.conversations.send(agent.id, { text: 'queued one' })
+    await crew.conversations.settled(agent.id)
+    assert.deepEqual(crew.scripted.turns.map((turn) => turn.text), ['slow', 'queued one'])
+  })
+})
+
+test('a new task cancels what was left waiting in the conversation it replaces', needsDb, async () => {
+  await withOne(async (crew, { agent, site }) => {
+    const real = crew.events.append
+    let failures = 3
+    crew.events.append = (event) => (event.type === 'queue' && failures-- > 0 ? Promise.reject(new Error('blip')) : real(event))
+    const { conversation } = await crew.conversations.send(agent.id, { text: 'slow', workspaceId: site.id })
+    const queued = await crew.conversations.send(agent.id, { text: 'queued one' })
+    await crew.conversations.settled(agent.id)
+    await crew.conversations.send(agent.id, { text: 'something else', workspaceId: site.id })
+    await crew.conversations.settled(agent.id)
+    assert.deepEqual((await record(crew, conversation.id)).at(-1), ['queue', 'idle', { of: [queued.event.seq], outcome: 'cancelled' }])
+    assert.deepEqual(crew.scripted.turns.map((turn) => turn.text), ['slow', 'something else'])
+  })
+})
+
+test('once the record has failed, the agent is free at once and not after every backlogged event has been retried', needsDb, async () => {
+  await withOne(async (crew, { agent, site }) => {
+    await crew.conversations.send(agent.id, { text: 'flood', workspaceId: site.id })
+    await wait(15)
+    crew.store.failing = true
+    await wait(40)
+    const began = Date.now()
+    await crew.conversations.settled(agent.id)
+    crew.store.failing = false
+    // Sixty events at three tries each would be several seconds.
+    assert.ok(Date.now() - began < 1000, `${Date.now() - began} ms`)
   })
 })

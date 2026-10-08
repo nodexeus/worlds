@@ -20,13 +20,14 @@ const frame = (event, data, id) => `${id === undefined ? '' : `id: ${id}\n`}even
  *   : hb                        now and then, so nothing in between closes a quiet stream
  *
  * A client says where it got to with `?after=<seq>`, or the `Last-Event-ID` header a
- * browser sends by itself when it reconnects, and is sent everything since, then whatever
+ * browser sends by itself when it reconnects (the later of the two when both are given), and is sent everything since, then whatever
  * happens. With neither it starts from now. Nothing is sent twice and nothing is missed:
  * the client is subscribed before the record is read, and what arrived meanwhile is sent
  * after, less what the record already covered.
  *
- * A client that cannot keep up is disconnected. It will come back and catch up, which
- * costs less than holding everything it has not read.
+ * A live client that cannot keep up is disconnected. It will come back and catch up, which
+ * costs less than holding everything it has not read. Catching up itself goes at the
+ * client's own pace.
  *
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
@@ -37,10 +38,13 @@ const frame = (event, data, id) => `${id === undefined ? '' : `id: ${id}\n`}even
 export async function serveEvents(req, res, url, { events, hub }, {
   heartbeatMs = 15_000, maxBufferedBytes = 4 * 1024 * 1024, maxClients = 100,
 } = {}) {
-  const asked = url.searchParams.get('after') ?? req.headers['last-event-id'] ?? null
-  if (asked !== null && !/^\d{1,15}$/.test(asked)) {
+  // A browser that reconnects asks the address it first asked, and adds the last id it was
+  // sent. Whichever is further on is where it got to.
+  const places = [url.searchParams.get('after'), req.headers['last-event-id'] ?? null].filter((value) => value !== null)
+  if (places.some((value) => !/^\d{1,15}$/.test(value))) {
     throw new CrewError('bad_query', 'after is the number of the last event seen', 400)
   }
+  const asked = places.length ? Math.max(...places.map(Number)) : null
   if ((clients.get(hub) ?? 0) >= maxClients) {
     throw new CrewError('too_many_clients', 'Too many clients are connected to this world', 503)
   }
@@ -55,6 +59,18 @@ export async function serveEvents(req, res, url, { events, hub }, {
     res.write(chunk)
     if (res.writableLength > maxBufferedBytes) res.destroy()
   }
+
+  /** Resolves when the client has taken what it was sent, or has gone. */
+  const taken = () =>
+    new Promise((resolve) => {
+      const done = () => {
+        res.off('drain', done)
+        res.off('close', done)
+        resolve()
+      }
+      res.once('drain', done)
+      res.once('close', done)
+    })
 
   const unsubscribe = hub.subscribe((kind, payload) => {
     if (pending) {
@@ -88,7 +104,7 @@ export async function serveEvents(req, res, url, { events, hub }, {
   }
   // A client ahead of the record (the database was restored, say) is started from the head
   // and told where that is, which is how it knows to start again.
-  last = asked === null ? head : Math.min(Number(asked), head)
+  last = asked === null ? head : Math.min(asked, head)
   if (closed) return
 
   res.writeHead(200, {
@@ -107,8 +123,11 @@ export async function serveEvents(req, res, url, { events, hub }, {
       if (closed) return
       const page = await events.after(last, PAGE)
       for (const event of page) {
+        if (closed) return
         last = event.seq
-        write(frame('event', event, event.seq))
+        // Catching up is sent at the client's pace. Being behind is what catching up is: the
+        // limit on how far behind a client may fall is for one that is live.
+        if (!res.write(frame('event', event, event.seq))) await taken()
       }
       if (page.length < PAGE) break
     }

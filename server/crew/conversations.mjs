@@ -45,7 +45,7 @@ export function createConversations({
   /**
    * The turn each agent has under way.
    * @type {Map<string, {conversation: any, turn: any, open: Set<string>, broken: boolean,
-   *   over: Promise<void>, finish: () => void}>}
+   *   stopped: boolean, over: Promise<void>, finish: () => void}>}
    */
   const running = new Map()
   /** The tail of each agent's line. */
@@ -124,7 +124,7 @@ export function createConversations({
 
   async function cancelQueued(conversation, status) {
     const waiting = await queued(conversation)
-    if (waiting.length) await record(conversation, 'queue', status, { of: waiting.map((m) => m.seq), outcome: 'cancelled' })
+    if (waiting.length) await keep(conversation, 'queue', status, { of: waiting.map((m) => m.seq), outcome: 'cancelled' })
   }
 
   /**
@@ -178,7 +178,7 @@ export function createConversations({
    * turn having failed, because by now the person's message is already in the record.
    */
   async function begin(agent, conversation, workspace, text) {
-    const entry = { conversation, turn: null, open: new Set(), broken: false, over: null, finish: null }
+    const entry = { conversation, turn: null, open: new Set(), broken: false, stopped: false, over: null, finish: null }
     entry.over = new Promise((resolve) => {
       entry.finish = resolve
     })
@@ -220,6 +220,9 @@ export function createConversations({
     const { conversation } = entry
     const { type, ...data } = event
     if (type === 'finished' || type === 'failed' || type === 'interrupted') return end(entry, agent, type, data)
+    // The turn is being stopped because nothing can be written. What it said meanwhile is
+    // not tried: each try would hold the agent up, and the ending says what happened.
+    if (entry.broken) return
     try {
       if (type === 'started') {
         if (event.handle && event.handle !== conversation.handle) {
@@ -245,7 +248,11 @@ export function createConversations({
     entry.turn?.interrupt()
   }
 
-  /** A turn's ending: record it, free the agent, and deal with whatever was waiting. */
+  /**
+   * A turn's ending: record it, free the agent, and deal with whatever was waiting. Only
+   * then is the turn over for anyone waiting on it, so a stop answers once the record is
+   * complete.
+   */
   async function end(entry, agent, type, data) {
     const { conversation } = entry
     const ending = entry.broken
@@ -254,40 +261,44 @@ export function createConversations({
     const status = ending[0] === 'failed' ? 'failed' : 'idle'
     try {
       await keep(conversation, ending[0], status, ending[1])
-    } catch (error) {
-      // The record still says the agent is busy. `settleStale` puts that right the next time
-      // anything is asked of it, and at the next start.
-      log('crew conversations: the end of a turn could not be recorded', error)
       running.delete(agent.id)
-      entry.finish()
-      return
-    }
-    running.delete(agent.id)
-    entry.finish()
-    try {
-      await follow(agent.id, conversation, ending[0], status)
+      // A stop means stop, even when the runtime finished by itself a moment before it.
+      await follow(agent.id, conversation, ending[0] === 'finished' && !entry.stopped, status)
     } catch (error) {
-      log('crew conversations: what was waiting could not be dealt with', error)
+      // If the ending itself was not recorded, the record still says the agent is busy.
+      // `settleStale` puts that right the next time anything is asked of it, and at the
+      // next start. What was waiting and could not be dealt with is picked up by `send`.
+      log('crew conversations: the end of a turn could not be recorded in full', error)
+    } finally {
+      if (running.get(agent.id) === entry) running.delete(agent.id)
+      entry.finish()
     }
   }
 
   /** After a turn: deliver what was waiting if it finished, cancel it if it did not. */
-  async function follow(agentId, conversation, ending, status) {
+  async function follow(agentId, conversation, deliver, status) {
     const waiting = await queued(conversation)
     if (!waiting.length) return
     const of = waiting.map((message) => message.seq)
     let agent
     let workspace
-    try {
-      if (ending !== 'finished') throw new Error('the turn did not finish')
-      agent = await roster.get(agentId)
-      runtimes.get(agent.runtime)
-      workspace = await placeOf(conversation, agent)
-    } catch {
-      await record(conversation, 'queue', status, { of, outcome: 'cancelled' })
+    if (deliver) {
+      try {
+        agent = await roster.get(agentId)
+        runtimes.get(agent.runtime)
+        workspace = await placeOf(conversation, agent)
+      } catch (error) {
+        // The agent was retired or its workspace archived meanwhile. Anything else is a
+        // fault, and the messages stay waiting until it has passed.
+        if (!(error instanceof CrewError)) throw error
+        deliver = false
+      }
+    }
+    if (!deliver) {
+      await keep(conversation, 'queue', status, { of, outcome: 'cancelled' })
       return
     }
-    await record(conversation, 'queue', 'working', { of, outcome: 'delivered' })
+    await keep(conversation, 'queue', 'working', { of, outcome: 'delivered' })
     await begin(agent, conversation, workspace, waiting.map((message) => message.text).join('\n\n'))
   }
 
@@ -319,6 +330,8 @@ export function createConversations({
           throw new CrewError('agent_busy', `${agent.name} is in the middle of something. Stop it, or wait, before giving it a new task`, 409)
         }
         workspace = await workspaces.get(workspaceId)
+        // Anything left waiting in the conversation being replaced belongs to the old task.
+        if (conversation) await cancelQueued(conversation, conversation.status ?? 'idle')
         conversation = await openIn(agent, workspace, said, conversation)
       } else {
         if (!conversation) throw needsWorkspace(agent.name)
@@ -330,7 +343,11 @@ export function createConversations({
       }
 
       const event = await record(conversation, 'message', 'working', { text: said })
-      await begin(agent, conversation, workspace, said)
+      // Messages can be left waiting under a free agent when the end of a turn could not be
+      // recorded in full. They were said first, so they go first.
+      const left = await queued(conversation)
+      if (left.length) await keep(conversation, 'queue', 'working', { of: left.map((m) => m.seq), outcome: 'delivered' })
+      await begin(agent, conversation, workspace, [...left.map((m) => m.text), said].join('\n\n'))
       return { conversation: present({ ...conversation, status: 'working' }), event, queued: false }
     })
   }
@@ -361,6 +378,7 @@ export function createConversations({
     const entry = await inLine(agentId, async () => {
       const current = running.get(agentId)
       if (current) {
+        current.stopped = true
         current.turn?.interrupt()
         return current
       }

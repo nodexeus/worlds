@@ -184,6 +184,7 @@ agent takes a message exactly as an idle one does.
 | The runtime fails or cannot be started | A `failed` event with the reason. The next message works. |
 | The database is briefly away mid-turn | Each write is tried three times. Nothing is lost. |
 | The database stays away | The turn is stopped. Its ending is recorded as `failed` if that can be written, and otherwise put right as `interrupted` (`lost`) the next time anything is asked of the agent. |
+| Stop is asked for as a turn finishes | Whatever was queued is cancelled, not delivered. |
 | The server stops | Agents are stopped and the record completed, within three seconds. Anything left is marked `interrupted` (`restart`) at the next start. |
 
 One server runs a world. An agent's messages, answers and runtime events are put in order
@@ -205,10 +206,12 @@ in that server's memory, so two servers on one world's database are not supporte
 
 - `hello` gives the number of the world's latest event at the moment of connecting.
 - `?after=<seq>`, or the `Last-Event-ID` header a browser sends when it reconnects, replays
-  everything after that number and then stays live. With neither, the stream starts from now.
+  everything after that number and then stays live. When both are given the later one is
+  used. With neither, the stream starts from now.
 - A client whose number is ahead of `hello` (the database was restored) should start again.
 - A comment line is sent every 15 seconds to keep the connection open.
-- A client more than 4 MB behind is disconnected and catches up when it reconnects. At most
+- Catching up is sent at the client's own pace. Once live, a client more than 4 MB behind
+  is disconnected and catches up when it reconnects. At most
   100 clients are served at once; one more is refused with 503 `too_many_clients`.
 - A proxy in front of the server must not buffer this reply.
 
