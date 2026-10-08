@@ -13,6 +13,10 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { createRuntimes } from '../server/crew/runtimes/index.mjs'
+import { createCrew } from '../server/crew/index.mjs'
+import { connect } from '../server/crew/store/db.mjs'
+import { TEST_DB } from './support/crew-db.mjs'
+import { randomUUID } from 'node:crypto'
 import { begin } from './support/runtime-contract.mjs'
 
 const LIVE = process.env.WORLDS_LIVE_RUNTIME || ''
@@ -78,4 +82,40 @@ test('live: a question reaches the person and the answer reaches the agent', liv
     assert.equal((await turn.done).outcome, 'finished', JSON.stringify(events.at(-1)))
     assert.match(events.at(-1).text.toLowerCase(), new RegExp(question.questions[0].options[0].toLowerCase()))
   })
+})
+
+test('live: a message to an agent is run on the real runtime and recorded from start to finish', TEST_DB ? live : { skip: 'needs WORLDS_TEST_DATABASE_URL as well' }, async () => {
+  const schema = `t_${randomUUID().replaceAll('-', '')}`
+  const dataDir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'crew-live-world-')))
+  const runtimes = createRuntimes({ claudeCode: { extraArgs: ['--model', process.env.WORLDS_LIVE_MODEL || 'haiku'] } })
+  const crew = await createCrew(
+    { databaseUrl: TEST_DB, schema, dataDir, worldId: 'live', agentLimit: 2, entitled: [] },
+    { runtimes }
+  )
+  try {
+    const agent = await crew.roster.create({ name: 'Ada', runtime: 'claude-code', role: 'You answer in as few words as you can.' })
+    const site = await crew.workspaces.create({ name: 'Site', description: 'A test folder.' })
+    const { conversation } = await crew.conversations.send(agent.id, {
+      text: 'Write the single word "kept" into a file called note.txt, then reply with exactly: done',
+      workspaceId: site.id,
+    })
+    await crew.conversations.settled(agent.id)
+    const events = await crew.events.page(conversation.id, { limit: 500 })
+    assert.equal(events.at(-1).type, 'finished', JSON.stringify(events.at(-1)))
+    assert.equal(events.at(-1).status, 'idle')
+    assert.ok(events.some((event) => event.type === 'tool' && event.data.status === 'finished'), 'the tool call was recorded')
+    assert.match(await fs.readFile(path.join(site.folder, 'note.txt'), 'utf8'), /kept/)
+
+    await crew.conversations.send(agent.id, { text: 'What word did you write into the file? Reply with that word only.' })
+    await crew.conversations.settled(agent.id)
+    const after = await crew.events.page(conversation.id, { limit: 500 })
+    assert.equal(after.at(-1).type, 'finished')
+    assert.match(after.at(-1).data.text, /kept/i, 'the second turn continued the first')
+  } finally {
+    await crew.close()
+    const admin = connect(TEST_DB, { max: 1 })
+    await admin.unsafe(`drop schema if exists "${schema}" cascade`)
+    await admin.end({ timeout: 5 })
+    await fs.rm(dataDir, { recursive: true, force: true })
+  }
 })
