@@ -20,6 +20,7 @@ test('the defaults are one world of six agents with no specialists', () => {
     worldId: 'default',
     agentLimit: 6,
     entitled: [],
+    demoRuntime: false,
   })
 })
 

@@ -12,6 +12,7 @@ import { createHub } from './hub.mjs'
 import { createEvents } from './events.mjs'
 import { createConversations } from './conversations.mjs'
 import { createRuntimes } from './runtimes/index.mjs'
+import { createDemoRuntimes } from './runtimes/demo.mjs'
 
 /**
  * Prove the data directory can be written by writing to it. Asking the filesystem whether
@@ -39,11 +40,11 @@ async function checkDataDir(dataDir) {
  * accept work it could not keep.
  *
  * @param {{databaseUrl: string, schema: string, dataDir: string, worldId: string,
- *   agentLimit: number, entitled: string[]}} config
+ *   agentLimit: number, entitled: string[], demoRuntime?: boolean}} config
  * @param {{runtimes?: {get: (id: string) => any}}} [parts] what runs the agents, when it is
  *   not the runtimes this server has: a test's own.
  */
-export async function createCrew(config, { runtimes = createRuntimes() } = {}) {
+export async function createCrew(config, { runtimes = config.demoRuntime ? createDemoRuntimes() : createRuntimes() } = {}) {
   const catalog = await loadCatalog()
   const missing = config.entitled.filter((id) => !catalog.byId.has(id))
   if (missing.length) {
@@ -94,6 +95,7 @@ export async function createCrew(config, { runtimes = createRuntimes() } = {}) {
     events,
     conversations,
     runtimes,
+    demo: Boolean(config.demoRuntime),
     /** Stop every agent, finish writing the record, and only then let the database go. */
     async close() {
       await conversations.close()
