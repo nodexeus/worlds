@@ -89,7 +89,6 @@ than have you work around it.
 | One bot + one building | One session |
 | A bot with no building of its own | An errand that session has out right now — a subagent |
 | How finished a building looks | How large its transcript is, on a log scale |
-| Scaffolding | Somebody is at that site right now |
 | Walking out of the ship | A thread that just appeared |
 | Walking back into the ship | You archived it |
 
@@ -393,8 +392,8 @@ The rules the bots move by, which are the ones games settled on:
   between buildings stay routes. A shoulder through a wall for a step is the price. When a
   goal is unreachable or the search runs out, the route goes to the closest point reached
   rather than nowhere — a straight line into a wall is how bots used to jam.
-- **Keep-out is for standing, not walking.** Every building, crate, boulder and scaffold
-  pole carries a keep radius (`navigation.js`), and a bot that has arrived is
+- **Keep-out is for standing, not walking.** Every building, crate and boulder
+  carries a keep radius (`navigation.js`), and a bot that has arrived is
   pushed out of it and put back on it after every nudge. Walkers only collide with the grid.
 - **Separation only pushes sideways** while walking, and never harder than a lean. A shove
   straight back is how a stream going one way cancels itself and mills on the spot.

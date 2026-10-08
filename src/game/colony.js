@@ -32,7 +32,7 @@ import { loadModels } from '../world/kit.js'
 import { loadGate } from '../world/gate.js'
 import { campusBuilding, loadCampusBuildings } from '../world/campus-buildings.js'
 import { createPipeline, pipelineClearance, pipelineUniforms } from '../world/pipeline.js'
-import { createBuilding, buildingUniforms, Scaffolds } from '../world/buildings.js'
+import { createBuilding, buildingUniforms } from '../world/buildings.js'
 import { Ship } from '../world/ship.js'
 import { Library } from '../world/library.js'
 import { Astronauts } from '../agents/astronauts.js'
@@ -207,7 +207,6 @@ export class Colony {
     // missing. A badge is a single quad; the spare instances cost almost nothing.
     this.indicators = new Indicators(scene, settings, MAX_AGENT_CAP)
     this.particles = new Particles(scene, settings)
-    this.scaffolds = new Scaffolds(scene, 320)
     // Birds, butterflies, fish and the cargo drones: the life that carries no information.
     this.fauna = new Fauna(scene, settings)
     this.reflections = new SceneryReflections({
@@ -1051,18 +1050,6 @@ export class Colony {
       }
     }
 
-    // Scaffold poles. They stand just outside the building's own keep radius, exactly
-    // where its builder stands, so without these the builder works with a pole through it.
-    for (const site of this._scaffoldSites(true)) {
-      for (let i = 0; i < 4; i++) {
-        const a = (i / 4) * Math.PI * 2 + 0.78
-        const x = site.x + Math.cos(a) * site.radius
-        const z = site.z + Math.sin(a) * site.radius
-        if (site.contains && !site.contains(x, z)) continue
-        obstacles.push({ x, z, r: 0.14 + TRAVEL_RADIUS, keep: 0.14 + AGENT_RADIUS + 0.12 })
-      }
-    }
-
     const ship = shipPosition()
     if (this.planet.gate) {
       // The gate is an arch, and the crew walk through it: its two legs are in the way, the
@@ -1312,7 +1299,7 @@ export class Colony {
       const inward = new THREE.Vector3(b.x - Math.cos(a) * stand, 0, b.z - Math.sin(a) * stand)
       if (onPlot(inward)) site = inward
     }
-    // Pick against the complete, current map, including scaffolds about to rise. A grid
+    // Pick against the complete, current map. A grid
     // cell alone is insufficient: it can still be inside a building's keep-out radius.
     // Wider and wider, but always somewhere standable: the old last resort took any clear
     // cell at all, which on a world with crossings can be the middle of a walkway.
@@ -1358,7 +1345,6 @@ export class Colony {
       sound: (name, x, y, z) => this.onSound?.(name, x, y, z),
     }))
     this._updatePlots(night, elapsed)
-    this._updateScaffolds()
     this._updateLabels(dt)
     this.reflections.update(dt, focus || this.sky.focus, this.camera)
   }
@@ -1511,41 +1497,6 @@ export class Colony {
     for (const plot of this.plotOrder) plot.setNight(night, urgent?.has(plot.id) ?? false, elapsed)
   }
 
-  /** Which buildings have scaffolding up right now, and where its poles stand. */
-  _scaffoldSites(includePlanned = false) {
-    const sites = []
-    for (const [id, entry] of this.buildings) {
-      // Scaffolding says a thread is running here — the README's own promise. It used to be
-      // gated on the building being unfinished as well, which was fine while "unfinished"
-      // was most of them and useless the moment buildings stopped standing in a hole.
-      if (entry.retiring || (!includePlanned && entry.progress <= 0.03)) continue
-      if (!this._isActive(id)) continue
-      const p = entry.mesh.position
-      sites.push({
-        id,
-        x: p.x,
-        z: p.z,
-        y: p.y,
-        radius: (entry.mesh.userData.footprint || 1.4) + 0.25,
-        contains: (x, z) => this.plots.get(entry.plot)?.containsWorld(x, z, 0.2),
-        height: Math.max(0.6, entry.mesh.userData.height * entry.progress + 0.5),
-      })
-    }
-    return sites
-  }
-
-  _updateScaffolds() {
-    const sites = this._scaffoldSites()
-    this.scaffolds.update(sites)
-    // The poles are things to walk round, so a scaffold going up or coming down is a
-    // change to the ground — but only then; the grid is not rebuilt for a building growing.
-    const signature = sites.map((s) => s.id).join('|')
-    if (signature !== this._scaffoldSignature) {
-      this._scaffoldSignature = signature
-      if (this.nav) this._rebuildNavigation()
-    }
-  }
-
   // ── interaction ─────────────────────────────────────────────────────────────────────
 
   pick(ndcX, ndcY, aspect) {
@@ -1582,7 +1533,6 @@ export class Colony {
     this.astronauts.dispose()
     this.indicators.dispose()
     this.particles.dispose()
-    this.scaffolds.dispose()
     disposeTree(this.worldGroup)
     disposeTree(this.plotGroup)
     disposeTree(this.labelGroup)
