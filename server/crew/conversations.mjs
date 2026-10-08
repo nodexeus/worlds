@@ -267,7 +267,10 @@ export function createConversations({
   function after(entry, agentId, type, data) {
     queueMicrotask(() => {
       try {
-        entry.aside?.onEnd?.({ type, data, said: (type === 'finished' && data.text) || entry.said })
+        // A stop means stop, here too: an answer that finished as it was being stopped is
+        // not acted on.
+        const how = type === 'finished' && entry.stopped ? 'interrupted' : type
+        entry.aside?.onEnd?.({ type: how, data, said: (type === 'finished' && data.text) || entry.said })
       } catch (error) {
         log('crew conversations: whoever asked an agent aside threw on its answer', error)
       }
@@ -336,8 +339,10 @@ export function createConversations({
       if (entry.aside) {
         await closeAside(conversation)
         // What was said to the agent meanwhile was said about its task, and is due now.
+        // If it cannot be delivered the agent is as it was before it was asked: the task's
+        // own record says `working` by now, for the message that is waiting in it.
         const task = await openOf(agent.id)
-        if (task) await follow(agent.id, task, true, task.status ?? 'idle')
+        if (task) await follow(agent.id, task, true, entry.aside.rest)
       } else {
         // A stop means stop, even when the runtime finished by itself a moment before it.
         await follow(agent.id, conversation, ending[0] === 'finished' && !entry.stopped, status)

@@ -251,8 +251,8 @@ One place to say something to the whole crew, or to some of it by name
   is released with the reason.
 - **Corrections.** Releasing a claim stops the agent if it is still in that task. Handing a
   post to an agent releases whatever claim stands, grants one to that agent and starts the
-  task. The workspace is the one given, else the last claim's, else the one the agent is
-  in. Making a reply into a task is the same hand-over.
+  task. The workspace is the one given, else the last claim's if it is still there, else
+  the one the agent is in. Making a reply into a task is the same hand-over.
 
 A post, as every route and every event gives it:
 
@@ -271,7 +271,7 @@ A post, as every route and every event gives it:
 | `skipped` | It was not asked. | `working`, `waiting`, `limit`, `runtime`, `taken` or `retired`. |
 
 `claim.state` is `granted` or `released`. A released claim's `reason` is `released`,
-`handed`, `restart`, or why its task could not start.
+`handed`, `retired`, `restart`, or why its task could not start.
 
 Every time anything about a post changes, an event of type `post` goes on the world's
 record with the whole post as its `data`, `postId` set, and no conversation, agent or

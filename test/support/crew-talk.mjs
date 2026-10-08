@@ -64,7 +64,7 @@ export const withTalk = (run, { scripts = {}, worldId = 'w', retryDelays = [20, 
       onFree: (agentId) => hooks.onFree(agentId), log: (...args) => logged.push(args),
     })
     const channelLogged = []
-    const channel = createChannel({ sql, worldId, roster, workspaces, settings, conversations, runtimes, events, log: (...args) => channelLogged.push(args) })
+    const channel = createChannel({ sql, worldId, roster, workspaces, settings, conversations, runtimes, events, retryDelays, log: (...args) => channelLogged.push(args) })
     hooks.onFree = (agentId) => {
       freed.push(agentId)
       channel.freed(agentId)

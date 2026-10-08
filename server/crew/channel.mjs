@@ -1,4 +1,5 @@
 // server/crew/channel.mjs
+import { setTimeout as wait } from 'node:timers/promises'
 import { CrewError } from './errors.mjs'
 import { nameKey } from './names.mjs'
 import { isUniqueViolation } from './store/db.mjs'
@@ -47,7 +48,8 @@ export function mentions(text) {
  * exists, and whether it gets the task, is decided by the channel.
  */
 export function parseMove(said) {
-  const text = typeof said === 'string' ? said.trim() : ''
+  // Without the one character a database will not keep.
+  const text = typeof said === 'string' ? said.replaceAll('\u0000', '').trim() : ''
   if (!text) return { move: 'pass' }
   const [first, ...rest] = text.split('\n')
   const line = first.replace(/^[\s*_`]+|[\s*_`]+$/g, '')
@@ -113,9 +115,12 @@ export function channelInstruction({ named, workspaces }) {
  *
  * @param {{sql: any, worldId: string, roster: any, workspaces: any, settings: any,
  *   conversations: any, runtimes: {get: (id: string) => any}, events: any,
- *   log?: (...args: any[]) => void}} options
+ *   retryDelays?: number[], log?: (...args: any[]) => void}} options
  */
-export function createChannel({ sql, worldId, roster, workspaces, settings, conversations, runtimes, events, log = console.error }) {
+export function createChannel({
+  sql, worldId, roster, workspaces, settings, conversations, runtimes, events,
+  retryDelays = [100, 400], log = console.error,
+}) {
   /** The tail of each post's line. */
   const lines = new Map()
   /** Everything begun and not waited for by whoever began it. */
@@ -203,8 +208,18 @@ export function createChannel({ sql, worldId, roster, workspaces, settings, conv
   /** Say how a post stands now, to everyone watching. Call it in the post's line. */
   async function publish(postId) {
     const [post] = await assemble([postId])
-    if (post) await events.append({ type: 'post', postId, data: post })
-    return post
+    if (!post) return post
+    // Tried again if the record is briefly away, as a turn's events are: whoever is watching
+    // has nothing else to tell them the post has changed.
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await events.append({ type: 'post', postId, data: post })
+        return post
+      } catch (error) {
+        if (attempt >= retryDelays.length) throw error
+        await wait(retryDelays[attempt])
+      }
+    }
   }
 
   // ── changing ────────────────────────────────────────────────────────────────────────
@@ -259,7 +274,7 @@ export function createChannel({ sql, worldId, roster, workspaces, settings, conv
         instruction: channelInstruction({ named: post.named, workspaces: places }),
         channel: { workspaces: places.map((place) => place.name) },
         onEnd: (ending) => {
-          const made = track(inPost(postId, () => answered(postId, agentId, ending)))
+          const made = track(inPost(postId, () => kept(postId, agentId, ending)))
           deciding.set(agentId, made)
           made.finally(() => {
             if (deciding.get(agentId) === made) deciding.delete(agentId)
@@ -286,6 +301,27 @@ export function createChannel({ sql, worldId, roster, workspaces, settings, conv
   }
 
   const deliver = (postId, agentId) => inPost(postId, () => give(postId, agentId))
+
+  /**
+   * An agent's answer has ended, and whatever goes wrong in dealing with it, the post must
+   * not go on saying the agent is answering.
+   */
+  async function kept(postId, agentId, ending) {
+    try {
+      await answered(postId, agentId, ending)
+    } catch (error) {
+      log('crew channel: an answer could not be dealt with', error)
+      try {
+        const delivery = await deliveryOf(postId, agentId)
+        if (delivery?.state !== 'answering') return
+        await setDelivery(postId, agentId, { state: 'failed', reason: 'The answer could not be kept' })
+        await publish(postId)
+      } catch (inner) {
+        // Nothing can be written. `recover` puts it right at the next start.
+        log('crew channel: and that could not be recorded either', inner)
+      }
+    }
+  }
 
   /** An agent's answer has ended. In the post's line. */
   async function answered(postId, agentId, { type, data, said }) {
@@ -465,9 +501,16 @@ export function createChannel({ sql, worldId, roster, workspaces, settings, conv
       }
       const [last] = await sql`
         select workspace_id from channel_claims where world_id = ${worldId} and post_id = ${postId} order by id desc limit 1`
-      const wanted = workspaceId ?? last?.workspaceId ?? at?.workspaceId
-      if (!wanted) throw new CrewError('needs_workspace', `Choose a workspace for ${agent.name} to do this in`, 409)
-      const place = await workspaces.get(wanted)
+      // One that was asked for must be there. One that is only a guess may have gone since.
+      let place = workspaceId === undefined ? null : await workspaces.get(workspaceId)
+      for (const guess of [last?.workspaceId, at?.workspaceId]) {
+        if (place || !guess) continue
+        place = await workspaces.get(guess).catch((error) => {
+          if (error instanceof CrewError) return null
+          throw error
+        })
+      }
+      if (!place) throw new CrewError('needs_workspace', `Choose a workspace for ${agent.name} to do this in`, 409)
 
       const held = await grantedOf(postId)
       const claim = await sql.begin(async (tx) => {
@@ -510,13 +553,20 @@ export function createChannel({ sql, worldId, roster, workspaces, settings, conv
     })())
   }
 
-  /** An agent has left the world. What was waiting for it is not waiting any more. */
+  /**
+   * An agent has left the world. What was waiting for it is not waiting any more, and what
+   * it had taken is nobody's.
+   */
   async function forget(agentId) {
-    const rows = await sql`
+    const waiting = await sql`
       update channel_deliveries set state = 'skipped', reason = 'retired', updated_at = now()
       where world_id = ${worldId} and agent_id = ${agentId} and state = 'queued'
       returning post_id`
-    for (const row of rows) await inPost(row.postId, () => publish(row.postId))
+    const held = await sql`
+      update channel_claims set released_at = now(), reason = 'retired'
+      where world_id = ${worldId} and agent_id = ${agentId} and released_at is null
+      returning post_id`
+    for (const postId of new Set([...waiting, ...held].map((row) => row.postId))) await inPost(postId, () => publish(postId))
   }
 
   /**

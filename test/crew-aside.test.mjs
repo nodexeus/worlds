@@ -11,6 +11,7 @@ const SCRIPTS = {
   slow: [{ pause: 300 }, { type: 'finished', text: 'Slow done.' }],
   long: [{ pause: 5000 }, { type: 'finished', text: 'never' }],
   work: [{ type: 'text', text: 'Done.' }, { type: 'finished', text: 'Done.' }],
+  held: [{ until: null }, { type: 'finished', text: 'CLAIM: Site' }],
   crash: [{ type: 'text', text: 'Starting.' }, { crash: 'The model is out of credit' }],
   meddle: [
     { type: 'approval', requestId: 'a1', tool: 'Bash', summary: 'Bash: rm -rf build' },
@@ -19,6 +20,14 @@ const SCRIPTS = {
     { wait: 'q1' },
     { type: 'finished', text: 'Left alone.' },
   ],
+}
+
+/** A gate for the `held` script, which finishes when it is opened. */
+const gated = () => {
+  const gate = Promise.withResolvers()
+  // The script reads `promise` when it is played, so this must be set before the turn starts.
+  SCRIPTS.held[0].until = gate.promise
+  return gate
 }
 
 const INSTRUCTION = 'This is the crew channel. Answer once.'
@@ -291,5 +300,35 @@ test('a task that came from a post says so on its first message', needsDb, async
     // The task itself is not channel chatter: its events are an ordinary conversation's.
     assert.equal('postId' in sent.event, false)
     await crew.conversations.settled(ada.id)
+  })
+})
+
+test('a message that waited behind an answer and cannot be delivered does not leave the agent working', needsDb, async () => {
+  await withPost(async (crew, { ada, site, ask }) => {
+    const task = await crew.conversations.send(ada.id, { text: 'work', workspaceId: site.id })
+    await crew.conversations.settled(ada.id)
+    const gate = gated()
+    await ask(ada.id, 'held')
+    await crew.conversations.send(ada.id, { text: 'say' })
+    await crew.workspaces.archive(site.id)
+    gate.resolve()
+    await crew.conversations.settled(ada.id)
+
+    assert.deepEqual((await record(crew, task.conversation.id)).at(-1), ['queue', 'idle', { of: [(await crew.events.page(task.conversation.id)).at(-2).seq], outcome: 'cancelled' }])
+    assert.equal(await statusOf(crew, ada.id), 'idle')
+  })
+})
+
+test('a stop that lands as the answer finishes is still a stop to whoever asked', needsDb, async () => {
+  await withPost(async (crew, { ada, ask, ends }) => {
+    const gate = gated()
+    const asked = await ask(ada.id, 'held')
+    // Something ahead of the stop in the agent's line, so the answer finishes while the stop waits.
+    const ahead = ask(ada.id, 'say')
+    const stopping = crew.conversations.stopIn(ada.id, asked.conversation.id)
+    gate.resolve()
+    await Promise.all([ahead, stopping])
+    await crew.conversations.settled(ada.id)
+    assert.deepEqual(ends.map(([, ending]) => ending.type), ['interrupted'])
   })
 })

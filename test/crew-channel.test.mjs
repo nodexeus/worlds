@@ -471,3 +471,84 @@ test('a post in another world is not this world\'s to read or change', needsDb, 
     assert.deepEqual((await crew.channel.list()).posts, [])
   })
 })
+
+test('an answer the channel cannot make sense of, or cannot keep, is a failed answer and not one for ever under way', needsDb, async () => {
+  await withChannel(async (crew, { ada, bo, cy, moves }) => {
+    // A character the database will not store, and no words before it.
+    Object.assign(moves, { Ada: [{ type: 'finished', text: 'Here\u0000there' }] })
+    const odd = await crew.channel.post({ text: '@Ada say something odd' })
+    await rest(crew, [ada, bo, cy])
+    assert.deepEqual(outline(await crew.channel.get(odd.id)), [['Ada', 'replied', null, 'Herethere']])
+
+    const gate = Promise.withResolvers()
+    moves.Ada = after(gate, 'CLAIM: Site')
+    const post = await crew.channel.post({ text: '@Ada fix the footer' })
+    const list = crew.workspaces.list
+    crew.workspaces.list = async () => {
+      throw new Error('the database is away')
+    }
+    gate.resolve()
+    const now = await answeredBy(crew, post.id, 'Ada')
+    crew.workspaces.list = list
+    assert.deepEqual(outline(now), [['Ada', 'failed', 'The answer could not be kept', '']])
+    assert.equal(now.claim, null)
+    await rest(crew, [ada, bo, cy])
+    assert.deepEqual(posted(crew).at(-1).data, JSON.parse(JSON.stringify(now)))
+  })
+})
+
+test('a change to a post that could not be said at once is said a moment later', needsDb, async () => {
+  await withChannel(async (crew, { ada, bo, cy, moves }) => {
+    const gate = Promise.withResolvers()
+    moves.Ada = after(gate, 'Yes.')
+    const post = await crew.channel.post({ text: '@Ada is it green?' })
+    const append = crew.events.append
+    let refused = 0
+    crew.events.append = (event) => {
+      if (event.type !== 'post' || refused) return append(event)
+      refused += 1
+      return Promise.reject(new Error('the database is away'))
+    }
+    gate.resolve()
+    await answeredBy(crew, post.id, 'Ada')
+    await rest(crew, [ada, bo, cy])
+    crew.events.append = append
+    assert.equal(refused, 1)
+    assert.deepEqual(posted(crew).at(-1).data.to.map((one) => one.state), ['replied'])
+  })
+})
+
+test('a post held by an agent that is retired is let go, and says so', needsDb, async () => {
+  await withChannel(async (crew, { ada, moves, tasks }) => {
+    tasks['Fix the footer'] = LONG
+    moves.Ada = 'CLAIM: Site'
+    const post = await crew.channel.post({ text: 'Fix the footer' })
+    await held(crew, post.id)
+    await crew.roster.retire(ada.id)
+    await crew.conversations.dismiss(ada.id)
+    await crew.channel.forget(ada.id)
+
+    const now = await crew.channel.get(post.id)
+    assert.deepEqual([now.claim.agentId, now.claim.state, now.claim.reason], [ada.id, 'released', 'retired'])
+    assert.deepEqual(posted(crew).at(-1).data, JSON.parse(JSON.stringify(now)))
+  })
+})
+
+test('a hand-over with no workspace given passes over one that has been archived', needsDb, async () => {
+  await withChannel(async (crew, { ada, bo, cy, site, api, moves }) => {
+    moves.Ada = 'CLAIM: Api'
+    const post = await crew.channel.post({ text: 'Fix the footer' })
+    await held(crew, post.id)
+    await rest(crew, [ada, bo, cy])
+    await crew.conversations.send(bo.id, { text: 'something', workspaceId: site.id })
+    await rest(crew, [bo])
+    await crew.workspaces.archive(api.id)
+
+    // The claim's workspace has gone. Bo is in Site, so that is where it goes.
+    const handed = await crew.channel.hand(post.id, { agentId: bo.id })
+    assert.equal(handed.claim.workspaceId, site.id)
+    // One asked for by name is another matter: that is a mistake to be told about.
+    await rest(crew, [bo])
+    await assert.rejects(crew.channel.hand(post.id, { agentId: cy.id, workspaceId: api.id }), refused('unknown_workspace'))
+  })
+})
