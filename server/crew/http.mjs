@@ -74,7 +74,15 @@ async function route(req, url, crew) {
   if (!collection) {
     if (method !== 'GET') throw notAllowed()
     if (!crew) return reply(200, { enabled: false })
-    return reply(200, { enabled: true, worldId: crew.worldId, counts: await crew.roster.counts() })
+    return reply(200, {
+      enabled: true,
+      worldId: crew.worldId,
+      // Agents play a script and no model is called. The page says so.
+      demo: Boolean(crew.demo),
+      // An agent may be bound to a runtime this server has no adapter for yet.
+      runtimes: crew.runtimes.available(),
+      counts: await crew.roster.counts(),
+    })
   }
   if (!crew) {
     throw new CrewError('crew_disabled', 'This server is a monitor only: no crew backend is configured', 404)
@@ -99,8 +107,11 @@ async function route(req, url, crew) {
     if (extra !== undefined) throw notFound()
     if (id === undefined) {
       if (method === 'GET') {
+        // Read first, so the statuses are never behind it: a page that has since heard
+        // something newer on the stream knows to keep that.
+        const seq = await crew.events.head()
         const [agents, counts, statuses] = await Promise.all([roster.list(), roster.counts(), conversations.statuses()])
-        return reply(200, { agents: agents.map((agent) => placed(agent, statuses)), counts })
+        return reply(200, { agents: agents.map((agent) => placed(agent, statuses)), counts, seq })
       }
       if (method === 'POST') {
         const input = await body(req)

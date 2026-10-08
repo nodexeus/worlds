@@ -48,8 +48,25 @@ test('the status route gives the world and the counts', needsDb, async () => {
   await withCrew(async (call) => {
     assert.deepEqual(await call('GET', '/api/crew'), {
       status: 200,
-      body: { enabled: true, worldId: 'w', counts: { standard: { used: 0, limit: 2 }, curated: { used: 0 } } },
+      body: {
+        enabled: true, worldId: 'w', demo: false, runtimes: ['claude-code', 'hermes'],
+        counts: { standard: { used: 0, limit: 2 }, curated: { used: 0 } },
+      },
     })
+  })
+})
+
+test('the agent list says which event it is current to', needsDb, async () => {
+  await withCrew(async (call, { crew }) => {
+    assert.equal((await call('GET', '/api/crew/agents')).body.seq, 0)
+    const agent = await crew.roster.create({ name: 'Ada', runtime: 'claude-code' })
+    const workspace = await crew.workspaces.create({ name: 'Site' })
+    await crew.conversations.send(agent.id, { text: 'hello', workspaceId: workspace.id })
+    await crew.conversations.settled(agent.id)
+    const listed = (await call('GET', '/api/crew/agents')).body
+    assert.equal(listed.seq, await crew.events.head())
+    assert.ok(listed.seq >= 3)
+    assert.equal(listed.agents[0].status, 'idle')
   })
 })
 
@@ -179,7 +196,7 @@ test('a host named in WORLDS_ALLOWED_HOSTS may reach the API, and no other may',
 
 test('a request the store never answers gets a 503 in bounded time, and says it may have happened', async () => {
   const never = () => new Promise(() => {})
-  const crew = { worldId: 'w', roster: { list: never, counts: never, create: never }, workspaces: {}, conversations: { statuses: never } }
+  const crew = { worldId: 'w', roster: { list: never, counts: never, create: never }, workspaces: {}, conversations: { statuses: never }, events: { head: never } }
   const server = http.createServer((req, res) =>
     handleCrew(req, res, new URL(req.url, 'http://localhost'), crew, { deadlineMs: 80 })
   )

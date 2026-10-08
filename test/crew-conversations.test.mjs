@@ -23,14 +23,14 @@ const SCRIPTS = {
     { wait: 'a1', allow: [{ type: 'text', text: 'Removed.' }], deny: [{ type: 'text', text: 'Left alone.' }] },
     { type: 'finished', text: '' },
   ],
-  slow: [{ pause: 60 }, { type: 'finished', text: 'Slow done.' }],
+  slow: [{ pause: 300 }, { type: 'finished', text: 'Slow done.' }],
   long: [{ pause: 5000 }, { type: 'finished', text: 'never' }],
   talk: [{ type: 'delta', text: 'Hel' }, { type: 'delta', text: 'lo' }, { type: 'text', text: 'Hello' }, { type: 'finished', text: 'Hello' }],
   crash: [{ type: 'text', text: 'Starting.' }, { crash: 'The model is out of credit' }],
-  burst: [{ pause: 50 }, ...Array.from({ length: 5 }, (_, n) => ({ type: 'text', text: `t${n}` })), { pause: 30 }, { type: 'finished', text: 'done' }],
+  burst: [{ pause: 150 }, { type: 'delta', text: 'go' }, ...Array.from({ length: 5 }, (_, n) => ({ type: 'text', text: `t${n}` })), { pause: 100 }, { type: 'finished', text: 'done' }],
   flood: [{ pause: 40 }, ...Array.from({ length: 60 }, (_, n) => ({ type: 'text', text: `t${n}` })), { pause: 5000 }, { type: 'finished', text: '' }],
   sip: [{ type: 'text', text: 'one' }, { pause: 200 }, { type: 'text', text: 'two' }, { pause: 200 }, { type: 'finished', text: '' }],
-  drip: [{ type: 'text', text: 'one' }, { pause: 30 }, { type: 'text', text: 'two' }, { pause: 30 }, { type: 'finished', text: '' }],
+  drip: [{ type: 'text', text: 'one' }, { pause: 200 }, { type: 'text', text: 'two' }, { pause: 200 }, { type: 'finished', text: '' }],
 }
 
 /** A crew with one agent and one workspace, which most tests want. */
@@ -419,7 +419,8 @@ test('a short outage of the record loses nothing', needsDb, async () => {
     const { conversation } = await crew.conversations.send(agent.id, { text: 'drip', workspaceId: site.id })
     await seen(crew, (event) => event.data.text === 'one')
     crew.store.failing = true
-    await wait(30)
+    // Until one write has been refused, so the outage is over a write and not between two.
+    while (!crew.store.refused) await wait(2)
     crew.store.failing = false
     await crew.conversations.settled(agent.id)
     assert.deepEqual(await record(crew, conversation.id), [
@@ -519,12 +520,15 @@ test('stop asked for as a turn is finishing still cancels what was waiting', nee
     // runtime finishes by itself.
     const real = crew.events.append
     crew.events.append = async (event) => {
-      await wait(20)
+      await wait(30)
       return real(event)
     }
     const { conversation } = await crew.conversations.send(agent.id, { text: 'burst', workspaceId: site.id })
     const queued = await crew.conversations.send(agent.id, { text: 'queued one' })
-    await wait(25)
+    // The fragment is sent on the instant the agent starts talking. From then its words
+    // take 150ms to write and it finishes by itself in 100, so a stop asked now is behind
+    // them in the line when it does.
+    while (!crew.sent.some(([kind, payload]) => kind === 'delta' && payload.text === 'go')) await wait(2)
     assert.deepEqual(await crew.conversations.stop(agent.id), { stopped: true })
     await crew.conversations.settled(agent.id)
     assert.deepEqual(crew.scripted.turns.map((turn) => turn.text), ['burst'])

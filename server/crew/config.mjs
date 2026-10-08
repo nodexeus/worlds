@@ -21,7 +21,7 @@ const WORLD_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/
 /**
  * @param {Record<string, string | undefined>} env
  * @returns {{databaseUrl: string, schema: string, dataDir: string, worldId: string,
- *   agentLimit: number, entitled: string[]} | null}
+ *   agentLimit: number, entitled: string[], demoRuntime: boolean} | null}
  */
 export function loadCrewConfig(env) {
   const databaseUrl = (env.WORLDS_DATABASE_URL || '').trim()
@@ -62,5 +62,7 @@ export function loadCrewConfig(env) {
     worldId,
     agentLimit: Number(rawLimit),
     entitled,
+    // Agents play a script and no model is called: for showing the interface, and testing it.
+    demoRuntime: ['1', 'true'].includes((env.WORLDS_DEMO_RUNTIME || '').trim().toLowerCase()),
   }
 }

@@ -19,7 +19,8 @@ import { withDb } from './crew-db.mjs'
  * server today.
  *
  * `run` is given the crew (as `createCrew` would make it, plus the scripted runtime, a list
- * of everything the hub sent, and a switch that makes writing events fail) and two helpers:
+ * of everything the hub sent, and a switch that makes writing events fail and counts the
+ * writes it refused) and two helpers:
  * `shape` reduces events to what a test compares, `record` reads a conversation that way.
  */
 export const withTalk = (run, { scripts = {}, worldId = 'w', retryDelays = [20, 40], limit = 6, entitled = [] } = {}) =>
@@ -31,10 +32,14 @@ export const withTalk = (run, { scripts = {}, worldId = 'w', retryDelays = [20, 
     const sent = []
     hub.subscribe((kind, payload) => sent.push([kind, payload]))
     const stored = createEvents({ sql, worldId, hub })
-    const store = { failing: false }
+    const store = { failing: false, refused: 0 }
     const events = {
       ...stored,
-      append: (event) => (store.failing ? Promise.reject(new Error('the database is away')) : stored.append(event)),
+      append: (event) => {
+        if (!store.failing) return stored.append(event)
+        store.refused += 1
+        return Promise.reject(new Error('the database is away'))
+      },
     }
     const roster = createRoster({ sql, worldId, catalog, limit, entitled, rand: () => 0 })
     const workspaces = createWorkspaces({ sql, worldId, dataDir, clone: async () => {} })
@@ -44,12 +49,13 @@ export const withTalk = (run, { scripts = {}, worldId = 'w', retryDelays = [20, 
         if (id === 'openclaw') throw new CrewError('runtime_unavailable', 'This server cannot run agents on "openclaw" yet', 501)
         return scripted
       },
+      available: () => ['claude-code', 'hermes'],
     }
     const logged = []
     const conversations = createConversations({
       sql, worldId, roster, workspaces, settings, runtimes, events, hub, retryDelays, log: (...args) => logged.push(args),
     })
-    const crew = { worldId, sql, catalog, roster, workspaces, settings, hub, events, conversations, scripted, sent, store, logged, dataDir }
+    const crew = { worldId, sql, catalog, roster, workspaces, settings, hub, events, conversations, runtimes, demo: false, scripted, sent, store, logged, dataDir }
     try {
       return await run(crew)
     } finally {
