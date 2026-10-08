@@ -232,3 +232,33 @@ test('a message with no script is echoed back, and each new conversation gets it
   assert.notEqual(first.handle, second.handle)
   assert.equal(a.events.at(-1).text, 'anything at all')
 })
+
+// ── the registry ─────────────────────────────────────────────────────────────────────────
+
+import { createRuntimes } from '../server/crew/runtimes/index.mjs'
+import { RUNTIMES } from '../server/crew/names.mjs'
+
+test('the server has Claude Code, and the scripted runtime only when it is given scripts', () => {
+  const plain = createRuntimes()
+  assert.equal(plain.get('claude-code').id, 'claude-code')
+  assert.throws(() => plain.get('scripted'), refused('runtime_unavailable'))
+  assert.deepEqual(plain.available(), ['claude-code'])
+
+  const testing = createRuntimes({ scripted: SCRIPTS })
+  assert.equal(testing.get('scripted').id, 'scripted')
+  assert.deepEqual(testing.available(), ['claude-code', 'scripted'])
+})
+
+test('a runtime an agent may be bound to but that has no adapter yet says so', () => {
+  const runtimes = createRuntimes()
+  for (const id of RUNTIMES.filter((id) => id !== 'claude-code')) {
+    assert.throws(() => runtimes.get(id), (error) => refused('runtime_unavailable')(error) && error.status === 501 && error.message.includes(id))
+  }
+  assert.throws(() => runtimes.get('__proto__'), refused('runtime_unavailable'))
+  assert.throws(() => runtimes.get(undefined), refused('runtime_unavailable'))
+})
+
+test('options for Claude Code reach its adapter', () => {
+  const runtimes = createRuntimes({ claudeCode: { command: '/opt/claude', extraArgs: ['--model', 'haiku'] } })
+  assert.equal(runtimes.get('claude-code').describe().resume, true)
+})

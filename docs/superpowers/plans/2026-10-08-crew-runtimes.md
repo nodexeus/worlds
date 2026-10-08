@@ -29,7 +29,7 @@
 - Output lines seen: `system` (`init`, `hook_started`, `hook_response`, `status`, `thinking_tokens`, `commands_changed`, `permission_denied`), `stream_event` (with `--include-partial-messages`; wraps API events such as `content_block_delta` with `text_delta`), `assistant` (content blocks `text`, `thinking`, `tool_use`), `user` (content blocks `tool_result` with `tool_use_id`, `content`, `is_error`), `rate_limit_event`, `result` (`subtype`, `is_error`, `result`, `total_cost_usd`, `duration_ms`, `permission_denials`).
 - With `--permission-prompt-tool stdio`, a tool that needs approval produces `{"type":"control_request","request_id":"...","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{...},"description":"..."}}`, and the turn waits for `{"type":"control_response","response":{"subtype":"success","request_id":"...","response":{"behavior":"allow","updatedInput":{...}}}}` or `{"behavior":"deny","message":"..."}`. `--permission-prompts host` alone does not produce these.
 - `--permission-mode` accepts `manual`, `acceptEdits`, `bypassPermissions` among others. `--append-system-prompt` adds the agent's role.
-- Not yet verified, and checked by the live test: how the built-in question tool (`AskUserQuestion`) arrives and is answered headless. The adapter treats a `can_use_tool` request for that tool as a question.
+- The built-in question tool (`AskUserQuestion`) arrives as a `can_use_tool` request for that tool, and is answered by allowing it with `updatedInput.answers` keyed by question text. Confirmed by the live check on 2026-10-08.
 
 ## The contract
 
