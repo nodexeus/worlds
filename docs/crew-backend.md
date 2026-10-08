@@ -33,9 +33,26 @@ either fails it exits with a message naming the setting, and does not open its p
 | `WORLDS_AGENT_LIMIT` | `6` | How many standard agents the world may have. |
 | `WORLDS_CURATED_AGENTS` | empty | Comma-separated ids of the specialists the world may add. |
 | `WORLDS_ALLOWED_HOSTS` | empty | Comma-separated host names that may reach the API. |
+| `WORLDS_DEMO_RUNTIME` | off | `1` or `true`: a demonstration. See below. |
 
 The agent limit and the specialist list are how a subscription tier reaches the server. This
 backend only reads them.
+
+### A demonstration
+
+With `WORLDS_DEMO_RUNTIME=1` no agent runs anything. Whatever runtime it is bound to, it
+plays a script: no model is called, no process is started and no file is touched. It is for
+showing the interface and for testing it. The page labels the crew list "Demo".
+
+The script (`server/crew/runtimes/demo.mjs`) is chosen by what the message contains:
+
+| The message says | The agent |
+| --- | --- |
+| `question` | asks one, and goes on when it is answered |
+| `approve` | asks before running a command, unless the world is fully autonomous |
+| `fail` | fails, as a runtime that fell over |
+| `long` | works for a minute, to be stopped or to have messages queued behind it |
+| anything else | reads, edits and answers, over a few seconds |
 
 ## Agents
 
@@ -222,8 +239,8 @@ status. `GET /api/crew` answers `{ enabled: false }` on a monitor-only server.
 
 | Method and path | Purpose |
 | --- | --- |
-| `GET /api/crew` | Whether the backend is on, the world, the counts. |
-| `GET /api/crew/agents` | The roster and the counts. Each agent has `status`, `conversationId` and `workspaceId`. |
+| `GET /api/crew` | Whether the backend is on, the world, the counts, the `runtimes` this server can run and whether it is a `demo`. |
+| `GET /api/crew/agents` | The roster and the counts. Each agent has `status`, `conversationId` and `workspaceId`. `seq` is the event the statuses are current to. |
 | `POST /api/crew/agents` | Add a standard agent, or a specialist with `{ "templateId": "..." }`. |
 | `PATCH /api/crew/agents/:id` | Rename, or change the role. |
 | `DELETE /api/crew/agents/:id` | Retire, stopping whatever it was doing. |
@@ -249,6 +266,33 @@ workspace, which may be cloning). After a timed-out change, look before repeatin
 State-changing requests need an `Origin` header naming this server, as the rest of the API
 does. From a terminal: `-H 'Origin: http://127.0.0.1:5274'`.
 
+## In the page
+
+On a server with a crew backend the page draws a crew list and, from it, a card for each
+agent: its conversation as it happens, and one box to continue it, queue a message behind a
+busy agent, or start a new task in a workspace. All of it is `src/crew/`:
+
+| File | What it is |
+| --- | --- |
+| `api.js` | The calls above. A refusal is thrown with the server's code and wording. |
+| `stream.js` | The live stream: each stored event once, in order, across drops and refusals. |
+| `store.js` | What the page knows: agents, workspaces, the events of conversations on show. |
+| `transcript.js` | A conversation's events as a card shows them. |
+| `compose.js` | What the message box is for, given the agent and the workspace chosen. |
+| `markdown.js` | The markdown agents write, as data. Never HTML. |
+| `panel.js`, `card.js`, `render.js` | The crew list, a card, and an item of a transcript, as elements. |
+| `index.js` | Puts it together, and draws nothing on a monitor-only server. |
+
+The first six touch no DOM and are tested in Node. Nothing an agent or a person wrote is
+ever parsed as HTML: it is set as text, and a link is a link only when it is `http` or
+`https`.
+
+An agent's status in the page is the status on the latest event about it. The roster itself
+(who exists, what they are called) is not on the stream, so the page asks for it again
+after its own changes, after a reconnect, when the window regains focus and every 20
+seconds. `seq` on the agent list is what lets it tell a snapshot that is behind the stream
+from one that is ahead.
+
 ## Running it
 
 With Docker Compose, which starts Postgres 18 alongside the server:
@@ -268,6 +312,13 @@ Against a Postgres of your own:
 runs the crew tests against `WORLDS_TEST_DATABASE_URL`, which defaults to the local
 development database at `127.0.0.1:55432`. Each test makes and drops a schema of its own.
 Under plain `npm test` the tests that need a database are skipped and say why.
+
+    npm run test:crew:ui
+
+builds the page and drives it in Electron, with no window shown, against a real server in
+demonstration mode on a schema of its own: making a workspace and an agent, giving a task,
+queueing, stopping, answering a question and an approval, reading history, a server restart.
+Set `CREW_UI_SHOTS` to a directory to keep the screenshots it takes.
 
 ## Changing the schema
 
