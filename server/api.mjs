@@ -13,6 +13,9 @@ import {
   openThread as harnessOpenThread,
   scanThreads,
 } from './scan.mjs'
+import { readJsonBody, send } from './lib/json-http.mjs'
+import { bootCrew } from './crew/boot.mjs'
+import { handleCrew } from './crew/http.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const DATA_DIR = process.env.BOT_CROSSING_DATA || path.join(here, '..', 'data')
@@ -307,16 +310,6 @@ async function reconcileArchived(threads) {
   return threads.map((t) => (archived(t) ? { ...t, archived: true } : t))
 }
 
-function send(res, status, body) {
-  const payload = JSON.stringify(body)
-  res.writeHead(status, {
-    'Content-Type': 'application/json',
-    'Cache-Control': 'no-store',
-    'Content-Length': Buffer.byteLength(payload),
-  })
-  res.end(payload)
-}
-
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1'])
 
 // The machine's own LAN addresses count as local too, so the colony can be
@@ -327,6 +320,13 @@ for (const addrs of Object.values(os.networkInterfaces())) {
   for (const a of addrs || []) {
     if (a && a.family === 'IPv4' && !a.internal && a.address) LOCAL_HOSTS.add(a.address)
   }
+}
+
+// A server deployment is reached by a name of its own, through whatever proxy signs people
+// in. Naming that host here lets its page drive the API; every other host is still refused,
+// so the DNS rebinding and CSRF checks below keep their meaning.
+for (const host of (process.env.WORLDS_ALLOWED_HOSTS || '').split(',')) {
+  if (host.trim()) LOCAL_HOSTS.add(host.trim().toLowerCase())
 }
 
 /** Hostname out of a `Host:` or `Origin:` value, with the port and any brackets stripped. */
@@ -365,29 +365,6 @@ function isLocalRequest(req) {
   return req.method === 'GET' || req.method === 'HEAD'
 }
 
-function readJsonBody(req, limit = 4 * 1024 * 1024) {
-  return new Promise((resolve, reject) => {
-    let size = 0
-    const chunks = []
-    req.on('data', (c) => {
-      size += c.length
-      if (size > limit) {
-        reject(new Error('Body too large'))
-        req.destroy()
-        return
-      }
-      chunks.push(c)
-    })
-    req.on('end', () => {
-      try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'))
-      } catch (err) {
-        reject(err)
-      }
-    })
-    req.on('error', reject)
-  })
-}
 
 /** Connect-style middleware: handles /api/*, passes everything else through. */
 export async function apiMiddleware(req, res, next) {
@@ -399,6 +376,10 @@ export async function apiMiddleware(req, res, next) {
   }
 
   try {
+    if (url.pathname === '/api/crew' || url.pathname.startsWith('/api/crew/')) {
+      return await handleCrew(req, res, url, await bootCrew())
+    }
+
     if (url.pathname === '/api/threads' && req.method === 'GET') {
       const threads = await reconcileArchived(await scanThreads())
       // A harness that is present but cannot read its own store says so here, rather than

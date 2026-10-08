@@ -70,3 +70,13 @@ test('a database that is not there is reported as unavailable, not as a fault', 
     await sql.end({ timeout: 1 })
   }
 })
+
+test('the API and the store agree on what "the database is not there" looks like', async () => {
+  const fs = await import('node:fs/promises')
+  const codes = async (file) => {
+    const text = await fs.readFile(new URL(file, import.meta.url), 'utf8')
+    const block = text.slice(text.indexOf('const UNREACHABLE = new Set(['), text.indexOf('])', text.indexOf('const UNREACHABLE = new Set([')))
+    return [...block.matchAll(/'([A-Z0-9_]+)'/g)].map((m) => m[1]).sort()
+  }
+  assert.deepEqual(await codes('../server/crew/http.mjs'), await codes('../server/crew/store/db.mjs'))
+})
