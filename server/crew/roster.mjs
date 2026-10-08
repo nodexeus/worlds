@@ -20,9 +20,11 @@ const ROLE_LIMIT = 8000
  * name and keeps its history.
  *
  * @param {{sql: any, worldId: string, catalog: {templates: any[], byId: Map<string, any>,
- *   reserved: Set<string>}, limit: number, entitled: string[], rand?: () => number}} options
+ *   reserved: Set<string>}, limit: number, entitled: string[], runtime?: string,
+ *   rand?: () => number}} options `runtime` is what a new agent runs on. That is the
+ *   server's choice and never the person's: nothing the page sends can set it.
  */
-export function createRoster({ sql, worldId, catalog, limit, entitled, rand = Math.random }) {
+export function createRoster({ sql, worldId, catalog, limit, entitled, runtime: usual = RUNTIMES[0], rand = Math.random }) {
   const allowed = new Set(entitled)
 
   /** What the rest of the server sees. A curated agent's role is read from its template. */
@@ -92,7 +94,8 @@ export function createRoster({ sql, worldId, catalog, limit, entitled, rand = Ma
     return present(row)
   }
 
-  async function create({ name, kind, runtime, role } = {}) {
+  /** `runtime` is for the server's own callers. A request from the page never carries one. */
+  async function create({ name, kind, runtime = usual, role } = {}) {
     if (!RUNTIMES.includes(runtime)) {
       throw new CrewError('bad_runtime', `A runtime is one of ${RUNTIMES.join(', ')}`, 400)
     }

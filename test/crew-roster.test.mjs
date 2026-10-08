@@ -53,7 +53,6 @@ test('a chosen name, kind and role are kept as given', needsDb, async () => {
 
 test('what cannot be an agent is refused, and says why', needsDb, async () => {
   await withRoster({}, async (roster) => {
-    await assert.rejects(roster.create({}), refused('bad_runtime'))
     await assert.rejects(roster.create({ runtime: 'gpt' }), refused('bad_runtime'))
     await assert.rejects(roster.create({ runtime: 'hermes', kind: 'dragon' }), refused('bad_kind'))
     await assert.rejects(roster.create({ runtime: 'hermes', name: 'two words' }), refused('bad_name'))
@@ -262,5 +261,13 @@ test('a specialist the world is no longer entitled to is retired, and so is one 
     const withoutTemplate = make({ catalog: empty, entitled: [] })
     assert.deepEqual(await withoutTemplate.reconcile(), ['Quill'])
     assert.deepEqual((await withoutTemplate.list()).map((a) => a.name), ['Ada'])
+  })
+})
+
+test('an agent runs on what the server runs agents on, unless the server itself says otherwise', needsDb, async () => {
+  await withRoster({}, async (roster, { make }) => {
+    assert.equal((await roster.create({ name: 'Ada' })).runtime, 'claude-code')
+    assert.equal((await make({ runtime: 'hermes' }).create({ name: 'Bo' })).runtime, 'hermes')
+    assert.equal((await roster.create({ name: 'Cy', runtime: 'openclaw' })).runtime, 'openclaw')
   })
 })

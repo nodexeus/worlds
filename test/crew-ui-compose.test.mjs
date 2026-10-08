@@ -5,9 +5,8 @@ import { agentLine, answerFor, composer, payload, statusLabel } from '../src/cre
 
 const SITE = { id: 'w-site', name: 'Site' }
 const API = { id: 'w-api', name: 'Api' }
-const RUNTIMES = ['claude-code']
-const agent = (more = {}) => ({ id: 'a1', name: 'Ada', runtime: 'claude-code', status: 'idle', conversationId: null, workspaceId: null, ...more })
-const view = (more = {}) => composer({ agent: agent(), workspaces: [SITE, API], picked: null, runtimes: RUNTIMES, ...more })
+const agent = (more = {}) => ({ id: 'a1', name: 'Ada', runs: true, status: 'idle', conversationId: null, workspaceId: null, ...more })
+const view = (more = {}) => composer({ agent: agent(), workspaces: [SITE, API], picked: null, ...more })
 
 test('a free agent with a conversation continues it unless a workspace is chosen', () => {
   const there = agent({ conversationId: 'c1', workspaceId: SITE.id })
@@ -77,10 +76,10 @@ test('a busy agent is sent a message to wait its turn, and is never given a work
   }
 })
 
-test('an agent on a runtime this server cannot run cannot be sent anything', () => {
-  const stuck = view({ agent: agent({ runtime: 'hermes', conversationId: 'c1', workspaceId: SITE.id }) })
+test('an agent this server cannot run cannot be sent anything, and is not said to run on anything', () => {
+  const stuck = view({ agent: agent({ runs: false, conversationId: 'c1', workspaceId: SITE.id }) })
   assert.deepEqual([stuck.mode, stuck.canSend], ['unavailable', false])
-  assert.match(stuck.hint, /Hermes/)
+  assert.equal(stuck.hint, 'Ada is not available on this server yet.')
 })
 
 test('what is sent is trimmed', () => {

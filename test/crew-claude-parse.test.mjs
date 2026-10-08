@@ -237,14 +237,15 @@ test('a model that says nothing still finishes', () => {
 
 test('a result that is an error fails the turn, and says which kind', () => {
   const failed = (more) => read(init, result({ is_error: true, subtype: 'error_during_execution', ...more })).events.at(-1)
-  assert.deepEqual(failed({ result: 'Invalid API key · Please run /login' }), { type: 'failed', reason: 'Invalid API key · Please run /login', code: 'auth' })
+  assert.deepEqual(failed({ result: 'Invalid API key · Please run /login' }), { type: 'failed', reason: 'This agent is not signed in on this server', code: 'auth', detail: 'Invalid API key · Please run /login' })
+  assert.equal(failed({ result: 'Claude usage limit reached' }).reason, 'This agent could not get an answer: a limit was reached or the service is busy')
   assert.equal(failed({ result: 'API Error: 401 authentication_error' }).code, 'auth')
   assert.equal(failed({ result: 'API Error: 429 rate_limit_error' }).code, 'inference')
   assert.equal(failed({ result: 'API Error: 529 Overloaded' }).code, 'inference')
   assert.equal(failed({ result: 'Credit balance is too low' }).code, 'inference')
   assert.equal(failed({ result: 'x', api_error_status: 503 }).code, 'inference')
   assert.equal(failed({ result: 'Something else went wrong' }).code, 'runtime')
-  assert.equal(failed({ result: '' }).reason, 'Claude Code ended the turn with an error (error_during_execution)')
+  assert.deepEqual([failed({ result: '' }).reason, failed({ result: '' }).detail], ['This agent could not finish what it was doing', 'The turn ended with an error (error_during_execution)'])
   assert.equal(read(init, result({ subtype: 'error_max_turns', is_error: false, result: 'x' })).events.at(-1).type, 'failed')
 })
 

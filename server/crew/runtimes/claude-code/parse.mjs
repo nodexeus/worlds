@@ -9,7 +9,7 @@
  * It is deliberately deaf: a line it does not recognise, or cannot parse, says nothing. The
  * CLI adds new kinds of line in most releases, and one of them must never fail a turn.
  */
-import { answersOf } from '../contract.mjs'
+import { answersOf, failure } from '../contract.mjs'
 
 const SUMMARY_LIMIT = 160
 const OUTPUT_LIMIT = 2000
@@ -183,8 +183,9 @@ export function createParser() {
       finished = true
       const said = typeof entry.result === 'string' ? entry.result : ''
       if (entry.is_error || (entry.subtype && entry.subtype !== 'success')) {
-        const reason = said.trim() || `Claude Code ended the turn with an error (${entry.subtype || 'unknown'})`
-        events.push({ type: 'failed', reason, code: failureCode(reason, entry.api_error_status) })
+        // What it said can name what it is and how to sign in to it. That is for the log.
+        const detail = said.trim() || `The turn ended with an error (${entry.subtype || 'unknown'})`
+        events.push(failure(failureCode(detail, entry.api_error_status), detail))
       } else {
         const ending = { type: 'finished', text: said }
         if (typeof entry.total_cost_usd === 'number') ending.costUsd = entry.total_cost_usd

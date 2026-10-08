@@ -59,10 +59,16 @@ function whole(url, name, { min = 0, max = Number.MAX_SAFE_INTEGER } = {}) {
   return value
 }
 
+/**
+ * What an agent or a specialist runs on is never told: only whether this server can run it.
+ * The person using a world must not be able to tell one runtime from another.
+ */
+const shown = ({ runtime, ...rest }, crew) => ({ ...rest, runs: crew.runtimes.available().includes(runtime) })
+
 /** An agent as the page sees it: who it is, how it is doing, and where. */
-const placed = (agent, statuses) => {
+const placed = (agent, statuses, crew) => {
   const at = statuses.get(agent.id)
-  return { ...agent, status: at?.status ?? 'idle', conversationId: at?.conversationId ?? null, workspaceId: at?.workspaceId ?? null }
+  return { ...shown(agent, crew), status: at?.status ?? 'idle', conversationId: at?.conversationId ?? null, workspaceId: at?.workspaceId ?? null }
 }
 
 /** Work out the answer to one request: `[status, body]`, or a thrown refusal. */
@@ -79,8 +85,6 @@ async function route(req, url, crew) {
       worldId: crew.worldId,
       // Agents play a script and no model is called. The page says so.
       demo: Boolean(crew.demo),
-      // An agent may be bound to a runtime this server has no adapter for yet.
-      runtimes: crew.runtimes.available(),
       counts: await crew.roster.counts(),
     })
   }
@@ -111,19 +115,21 @@ async function route(req, url, crew) {
         // something newer on the stream knows to keep that.
         const seq = await crew.events.head()
         const [agents, counts, statuses] = await Promise.all([roster.list(), roster.counts(), conversations.statuses()])
-        return reply(200, { agents: agents.map((agent) => placed(agent, statuses)), counts, seq })
+        return reply(200, { agents: agents.map((agent) => placed(agent, statuses, crew)), counts, seq })
       }
       if (method === 'POST') {
         const input = await body(req)
-        const agent = 'templateId' in input ? await roster.createCurated(input.templateId) : await roster.create(input)
-        return reply(201, { agent: placed(agent, new Map()) })
+        // What it runs on is not the person's to choose, so it is not read from what they sent.
+        const { name, kind, role } = input
+        const agent = 'templateId' in input ? await roster.createCurated(input.templateId) : await roster.create({ name, kind, role })
+        return reply(201, { agent: placed(agent, new Map(), crew) })
       }
       throw notAllowed()
     }
     if (method === 'PATCH') {
       const { name, role } = await body(req)
       const agent = await roster.update(id, { name, role })
-      return reply(200, { agent: placed(agent, await conversations.statuses()) })
+      return reply(200, { agent: placed(agent, await conversations.statuses(), crew) })
     }
     if (method === 'DELETE') {
       await roster.retire(id)
@@ -204,7 +210,7 @@ async function route(req, url, crew) {
   if (collection === 'specialists') {
     if (id !== undefined) throw notFound()
     if (method !== 'GET') throw notAllowed()
-    return reply(200, { specialists: await crew.roster.specialists() })
+    return reply(200, { specialists: (await crew.roster.specialists()).map((one) => shown(one, crew)) })
   }
 
   if (collection === 'workspaces') {

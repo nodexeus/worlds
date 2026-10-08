@@ -48,7 +48,7 @@ export const withTalk = (run, { scripts = {}, worldId = 'w', retryDelays = [20, 
     const settings = createSettings({ sql, worldId })
     const runtimes = {
       get(id) {
-        if (id === 'openclaw') throw new CrewError('runtime_unavailable', 'This server cannot run agents on "openclaw" yet', 501)
+        if (id === 'openclaw') throw new CrewError('runtime_unavailable', 'This agent cannot be run on this server yet', 501)
         return scripted
       },
       available: () => ['claude-code', 'hermes'],

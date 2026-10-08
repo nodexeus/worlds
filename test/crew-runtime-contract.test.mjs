@@ -117,7 +117,8 @@ test('an adapter that speaks before starting, or sends nonsense, fails the turn 
   const early = recording()
   early.turn.emit({ type: 'text', text: 'hi' })
   assert.deepEqual(early.seen.map((e) => [e.type, e.code]), [['failed', 'runtime']])
-  assert.match(early.seen[0].reason, /before/)
+  assert.match(early.seen[0].detail, /before/)
+  assert.doesNotMatch(early.seen[0].reason, /runtime|adapter/)
 
   const nonsense = recording()
   nonsense.turn.emit({ type: 'started', handle: 'h' })
@@ -252,7 +253,7 @@ test('the server has Claude Code, and the scripted runtime only when it is given
 test('a runtime an agent may be bound to but that has no adapter yet says so', () => {
   const runtimes = createRuntimes()
   for (const id of RUNTIMES.filter((id) => id !== 'claude-code')) {
-    assert.throws(() => runtimes.get(id), (error) => refused('runtime_unavailable')(error) && error.status === 501 && error.message.includes(id))
+    assert.throws(() => runtimes.get(id), (error) => refused('runtime_unavailable')(error) && error.status === 501 && !error.message.includes(id))
   }
   assert.throws(() => runtimes.get('__proto__'), refused('runtime_unavailable'))
   assert.throws(() => runtimes.get(undefined), refused('runtime_unavailable'))

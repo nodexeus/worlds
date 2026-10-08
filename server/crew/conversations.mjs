@@ -245,7 +245,7 @@ export function createConversations({
       if (running.get(agent.id) === entry) running.delete(agent.id)
       const refusal = error instanceof CrewError
       if (!refusal) log('crew conversations: a turn could not be started', error)
-      const data = { reason: refusal ? error.message : 'The runtime could not be started', code: 'runtime' }
+      const data = { reason: refusal ? error.message : 'This agent could not be started on this server', code: 'runtime' }
       try {
         const status = aside ? aside.rest : 'failed'
         await keep(conversation, 'failed', status, data)
@@ -286,7 +286,10 @@ export function createConversations({
   async function take(entry, agent, event) {
     if (running.get(agent.id) !== entry) return
     const { conversation } = entry
-    const { type, ...data } = event
+    // What a runtime said of its own failure is for whoever runs the server. It names things
+    // the person is never told, so it goes to the log and not into the record.
+    const { type, detail, ...data } = event
+    if (detail) log(`crew conversations: ${agent.name} failed (${data.code}):`, detail)
     if (type === 'finished' || type === 'failed' || type === 'interrupted') return end(entry, agent, type, data)
     // The turn is being stopped because nothing can be written. What it said meanwhile is
     // not tried: each try would hold the agent up, and the ending says what happened.

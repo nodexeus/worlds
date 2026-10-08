@@ -8,10 +8,8 @@
  */
 
 const STATUS = { idle: 'idle', working: 'working', waiting: 'needs you', failed: 'failed' }
-const RUNTIME = { 'claude-code': 'Claude Code', hermes: 'Hermes', openclaw: 'OpenClaw', scripted: 'the demonstration' }
 
 export const statusLabel = (status) => STATUS[status] ?? STATUS.idle
-export const runtimeLabel = (runtime) => RUNTIME[runtime] ?? String(runtime)
 
 const BUSY = ['working', 'waiting']
 
@@ -24,18 +22,19 @@ export function agentLine(agent, workspaces) {
 }
 
 /**
- * @param {{agent: object, workspaces: {id: string, name: string}[], picked: string | null,
- *   runtimes: string[]}} input `picked` is the workspace chip the person chose, if any
+ * @param {{agent: object, workspaces: {id: string, name: string}[], picked: string | null}} input
+ *   `picked` is the workspace chip the person chose, if any. `agent.runs` is whether this
+ *   server can run it. The page is never told what that takes.
  * @returns {{mode: 'continue' | 'task' | 'queue' | 'choose' | 'no-workspace' | 'unavailable',
  *   chips: {id: string, name: string, current: boolean, on: boolean}[], workspaceId: string | null,
  *   placeholder: string, hint: string, canSend: boolean}}
  */
-export function composer({ agent, workspaces, picked, runtimes }) {
+export function composer({ agent, workspaces, picked }) {
   const none = { chips: [], workspaceId: null }
-  if (!runtimes.includes(agent.runtime)) {
+  if (agent.runs === false) {
     return {
       ...none, mode: 'unavailable', canSend: false, placeholder: `${agent.name} cannot be reached`,
-      hint: `${agent.name} runs on ${runtimeLabel(agent.runtime)}, which this server cannot run yet.`,
+      hint: `${agent.name} is not available on this server yet.`,
     }
   }
   if (BUSY.includes(agent.status)) {

@@ -55,7 +55,7 @@ export function createCrewApi({ fetch: ask = (...args) => globalThis.fetch(...ar
     workspaces: () => call('GET', '/workspaces'),
     specialists: () => call('GET', '/specialists'),
     settings: () => call('GET', '/settings'),
-    createAgent: ({ name, runtime, role }) => call('POST', '/agents', filled({ name, runtime, role })),
+    createAgent: ({ name, role }) => call('POST', '/agents', filled({ name, role })),
     addSpecialist: (templateId) => call('POST', '/agents', { templateId }),
     createWorkspace: ({ name, description, gitUrl }) => call('POST', '/workspaces', filled({ name, description, gitUrl })),
     setAutonomy: (autonomy) => call('PATCH', '/settings', { autonomy }),

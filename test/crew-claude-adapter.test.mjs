@@ -173,7 +173,7 @@ test('output that arrives in pieces, or several lines at once, is read as whole 
 test('a process that dies mid-turn fails the turn with the last thing it said', using({}, async (made) => {
   const { turn, events } = begin(made.runtime, made.input({ text: 'crash' }))
   assert.equal((await turn.done).outcome, 'failed')
-  assert.deepEqual(events.at(-1), { type: 'failed', reason: 'fatal: the runtime fell over', code: 'crashed' })
+  assert.deepEqual(events.at(-1), { type: 'failed', reason: 'This agent stopped before finishing', code: 'crashed', detail: 'fatal: the runtime fell over' })
   assert.deepEqual(events.map((e) => e.type), ['started', 'text', 'failed'])
 }))
 
@@ -181,7 +181,8 @@ test('a process that exits without a word fails the turn and says how it exited'
   const { turn, events } = begin(made.runtime, made.input({ text: 'silent-exit' }))
   await turn.done
   assert.equal(events.at(-1).code, 'crashed')
-  assert.match(events.at(-1).reason, /Claude Code stopped before finishing/)
+  assert.equal(events.at(-1).reason, 'This agent stopped before finishing')
+  assert.match(events.at(-1).detail, /exit code/)
 }))
 
 test('a command that is not there fails the turn, naming it', using({ command: '/nonexistent/claude-binary' }, async (made) => {
@@ -189,7 +190,8 @@ test('a command that is not there fails the turn, naming it', using({ command: '
   assert.equal((await turn.done).outcome, 'failed')
   assert.deepEqual(events.map((e) => e.type), ['failed'])
   assert.equal(events[0].code, 'runtime')
-  assert.match(events[0].reason, /\/nonexistent\/claude-binary/)
+  assert.equal(events[0].reason, 'This agent could not be started on this server')
+  assert.match(events[0].detail, /\/nonexistent\/claude-binary/)
 }))
 
 test('a workspace folder that is not there fails the turn and does not crash the server', using({}, async (made) => {
@@ -245,7 +247,7 @@ const faultyParser = () => {
 test('a turn that ends for any reason takes its process with it, and approves nothing afterwards', using({ createParser: faultyParser }, async (made) => {
   const { turn, events } = begin(made.runtime, made.input({ text: 'slow', autonomy: 'autonomous' }))
   assert.equal((await turn.done).outcome, 'failed')
-  assert.match(events.at(-1).reason, /adapter is at fault/)
+  assert.match(events.at(-1).detail, /adapter is at fault/)
   assert.equal(await gone(made), true, 'the process outlived a turn that had already failed')
 }))
 
@@ -311,7 +313,7 @@ test('an agent that goes silent is given up on, but not while it is waiting on t
 test('output that never ends a line is cut off before it fills the server\'s memory', using({ maxLineBytes: 4000 }, async (made) => {
   const { turn, events } = begin(made.runtime, made.input({ text: 'longline' }))
   assert.equal((await turn.done).outcome, 'failed')
-  assert.match(events.at(-1).reason, /too much output/)
+  assert.match(events.at(-1).reason, /more than could be read/)
 }))
 
 test('an agent does not get the server\'s secrets or the server user\'s own Claude Code setup', using({}, async (made) => {
@@ -325,4 +327,13 @@ test('an agent does not get the server\'s secrets or the server user\'s own Clau
 test('the server user\'s setup can be let in on purpose', using({ isolated: false }, async (made) => {
   const { argv } = await commandLine(made)
   assert.ok(!argv.includes('--setting-sources') && !argv.includes('--strict-mcp-config'))
+}))
+
+test('however a turn fails, the words for the person never say what the agent runs on', using({ stallAfterMs: 250 }, async (made) => {
+  for (const text of ['crash', 'silent-exit', 'slow', 'longline']) {
+    const { turn, events } = begin(made.runtime, made.input({ text }))
+    await turn.done
+    const last = events.at(-1)
+    if (last.type === 'failed') assert.doesNotMatch(last.reason, /claude|anthropic|runtime|adapter|cli\b/i, text)
+  }
 }))

@@ -3,7 +3,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createCrewStore } from '../src/crew/store.js'
 
-const ADA = { id: 'a1', name: 'Ada', kind: 'unit', runtime: 'claude-code', role: '', curated: false, status: 'idle', conversationId: null, workspaceId: null }
+const ADA = { id: 'a1', name: 'Ada', kind: 'unit', runs: true, role: '', curated: false, status: 'idle', conversationId: null, workspaceId: null }
 const BO = { ...ADA, id: 'a2', name: 'Bo' }
 const COUNTS = { standard: { used: 2, limit: 6 }, curated: { used: 0 } }
 const ev = (seq, more = {}) => ({ seq, conversationId: 'c1', agentId: 'a1', type: 'text', status: 'working', at: 'now', data: { text: `t${seq}` }, ...more })
@@ -195,7 +195,7 @@ test('starting again from a record that went back forgets what was kept', () => 
 
 test('the rest of what the page knows is set, and told, only when it changes', () => {
   const { store, told } = made()
-  store.setStatus({ enabled: true, worldId: 'w', demo: true, runtimes: ['claude-code'] })
+  store.setStatus({ enabled: true, worldId: 'w', demo: true })
   store.setWorkspaces([{ id: 'w1', name: 'Site', description: '' }])
   store.setWorkspaces([{ id: 'w1', name: 'Site', description: '' }])
   store.setSpecialists([{ id: 'quill', name: 'Quill', entitled: true, agentId: null }])
@@ -204,7 +204,7 @@ test('the rest of what the page knows is set, and told, only when it changes', (
   store.setLink('retrying')
   store.setLink('retrying')
   assert.deepEqual(told.map((what) => what.kind), ['settings', 'workspaces', 'specialists', 'settings', 'link'])
-  assert.deepEqual([store.state.demo, store.state.runtimes, store.state.autonomy, store.state.link], [true, ['claude-code'], 'ask', 'retrying'])
+  assert.deepEqual([store.state.demo, 'runtimes' in store.state, store.state.autonomy, store.state.link], [true, false, 'ask', 'retrying'])
   assert.equal(store.workspace('w1').name, 'Site')
   assert.equal(store.workspace('nope'), null)
 })

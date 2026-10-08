@@ -1,4 +1,4 @@
-import { agentLine, runtimeLabel } from './compose.js'
+import { agentLine } from './compose.js'
 import { face, h, icon } from './dom.js'
 
 const AUTONOMY = [
@@ -110,7 +110,7 @@ export function createPanel({ store, api, onOpen, isOpen, refresh, toast }) {
     h('em', null, agentLine(agent, store.state.workspaces)))
 
   function drawAgents() {
-    const { agents, counts, specialists, runtimes, workspaces } = store.state
+    const { agents, counts, specialists, workspaces } = store.state
     const standard = agents.filter((agent) => !agent.curated)
     const curated = agents.filter((agent) => agent.curated)
     agentsEl.replaceChildren(...(standard.length
@@ -121,10 +121,10 @@ export function createPanel({ store, api, onOpen, isOpen, refresh, toast }) {
     const offered = specialists.filter((specialist) => specialist.entitled && !specialist.agentId)
     specialistsHead.hidden = curated.length + offered.length === 0
     specialistsEl.replaceChildren(...curated.map(row), ...offered.map((specialist) => {
-      const runs = runtimes.includes(specialist.runtime)
+      const runs = specialist.runs !== false
       const add = h('button.cc-b', {
         type: 'button', disabled: !runs,
-        title: runs ? `Add ${specialist.name} to this world` : `${specialist.name} runs on ${runtimeLabel(specialist.runtime)}, which this server cannot run yet`,
+        title: runs ? `Add ${specialist.name} to this world` : `${specialist.name} is not available on this server yet`,
         onClick: async () => {
           add.disabled = true
           try {
@@ -139,7 +139,7 @@ export function createPanel({ store, api, onOpen, isOpen, refresh, toast }) {
       }, 'Add')
       return h('div.cp-row.cp-offer', { role: 'listitem', data: { template: specialist.id } },
         face('idle'),
-        h('span.cp-name', null, specialist.name, h('small', null, runs ? specialist.speciality : `Needs ${runtimeLabel(specialist.runtime)}`)),
+        h('span.cp-name', null, specialist.name, h('small', null, runs ? specialist.speciality : 'Not available yet')),
         add)
     }))
 
@@ -184,11 +184,10 @@ export function createPanel({ store, api, onOpen, isOpen, refresh, toast }) {
     if (kind === 'agent') {
       const name = h('input', { type: 'text', placeholder: 'Leave blank for a random name', autocomplete: 'off' })
       const role = h('textarea', { rows: '3', maxlength: '8000', placeholder: 'What is this agent for? (optional)' })
-      const runtime = h('select.cp-select', null, ...store.state.runtimes.map((id) => h('option', { value: id }, runtimeLabel(id))))
-      fields = [field('Name', name), field('Role', role), store.state.runtimes.length > 1 ? field('Runs on', runtime) : null]
+      fields = [field('Name', name), field('Role', role)]
       submit = h('button.cc-b.cc-primary', { type: 'submit' }, 'Add agent')
       make = async () => {
-        const { agent } = await api.createAgent({ name: name.value, role: role.value, runtime: runtime.value || store.state.runtimes[0] })
+        const { agent } = await api.createAgent({ name: name.value, role: role.value })
         await refresh()
         onOpen(agent.id)
       }
