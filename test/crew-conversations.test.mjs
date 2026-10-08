@@ -62,6 +62,9 @@ test('the briefing gives an agent its role, its workspace, the others, and the s
     others: [{ name: 'Api', description: 'The backend.' }, { name: 'Bare', description: '' }],
   })
   assert.match(text, /^Writes the docs\./)
+  assert.match(text, /You are Ada, a member of this crew\. Speak as Ada\./)
+  assert.match(text, /Do not name the software, the model or the company/)
+  assert.match(text, /say that you are an AI agent/)
   assert.match(text, /You are working in the workspace "Site": The public website\./)
   assert.match(text, /- Api: The backend\.\n- Bare\n/)
   assert.match(text, /belongs in a different workspace/)
@@ -91,8 +94,8 @@ test('a task is run in its workspace and everything said is kept', needsDb, asyn
 
     assert.deepEqual(await record(crew, sent.conversation.id), [
       ['message', 'working', { text: 'work' }],
-      ['tool', 'working', { id: 't1', name: 'Bash', summary: 'Bash: ls', status: 'started' }],
-      ['tool', 'working', { id: 't1', name: 'Bash', summary: 'Bash: ls', status: 'finished', output: 'a.txt' }],
+      ['tool', 'working', { id: 't1', name: 'tool', summary: 'Bash: ls', status: 'started' }],
+      ['tool', 'working', { id: 't1', name: 'tool', summary: 'Bash: ls', status: 'finished', output: 'a.txt' }],
       ['text', 'working', { text: 'Done.' }],
       ['finished', 'idle', { text: 'Done.', costUsd: 0.02, durationMs: 40 }],
     ])
@@ -197,7 +200,7 @@ test('an approval can be given or refused, and either is recorded', needsDb, asy
     await crew.conversations.answer(conversation.id, { requestId: 'a1', allow: false, message: 'Not that folder' })
     await crew.conversations.settled(agent.id)
     assert.deepEqual((await record(crew, conversation.id)).slice(1), [
-      ['approval', 'waiting', { requestId: 'a1', tool: 'Bash', summary: 'Bash: rm -rf build' }],
+      ['approval', 'waiting', { requestId: 'a1', tool: 'tool', summary: 'Bash: rm -rf build' }],
       ['answer', 'working', { requestId: 'a1', allow: false, message: 'Not that folder' }],
       ['text', 'working', { text: 'Left alone.' }],
       ['finished', 'idle', { text: '' }],

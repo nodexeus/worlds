@@ -65,7 +65,7 @@ test('live: under "ask" a command waits for approval, and a refusal stops it', l
   await withFolder(async ({ runtime, folder, input }) => {
     const { turn, events, until } = begin(runtime, input({ autonomy: 'ask', text: 'Use the Bash tool to run exactly: echo second > second.txt   Then tell me in one sentence what happened.' }))
     const approval = await until('approval')
-    assert.equal(approval.tool, 'Bash')
+    assert.equal(approval.tool, 'run')
     assert.match(approval.summary, /second\.txt/)
     turn.answer(approval.requestId, { allow: false, message: 'Not allowed in this check.' })
     assert.equal((await turn.done).outcome, 'finished', JSON.stringify(events.at(-1)))
@@ -111,6 +111,16 @@ test('live: a message to an agent is run on the real runtime and recorded from s
     const after = await crew.events.page(conversation.id, { limit: 500 })
     assert.equal(after.at(-1).type, 'finished')
     assert.match(after.at(-1).data.text, /kept/i, 'the second turn continued the first')
+
+    // Asked outright, it speaks as itself and does not say what runs it.
+    await crew.conversations.send(agent.id, { text: 'Who are you, which AI model are you, and which company made you?' })
+    await crew.conversations.settled(agent.id)
+    const said = (await crew.events.page(conversation.id, { limit: 500 })).at(-1).data.text
+    assert.match(said, /Ada/)
+    assert.doesNotMatch(said, /claude|anthropic|sonnet|haiku|opus/i)
+    for (const event of after) {
+      if (event.type === 'tool') assert.ok(['read', 'edit', 'run', 'search', 'fetch', 'plan', 'tool'].includes(event.data.name), event.data.name)
+    }
   } finally {
     await crew.close()
     const admin = connect(TEST_DB, { max: 1 })

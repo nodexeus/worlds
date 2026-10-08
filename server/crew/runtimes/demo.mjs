@@ -61,7 +61,7 @@ export function demoScript({ text, agent, channel }, { pace = 1 } = {}) {
   if (/\blong\b/.test(lower)) {
     const steps = [{ type: 'text', text: 'This one will take me about a minute.' }]
     for (let minute = 1; minute <= 12; minute += 1) {
-      steps.push(...tool(`long-${minute}`, 'Bash', `Bash: step ${minute} of 12`, 5000 * pace))
+      steps.push(...tool(`long-${minute}`, 'run', `Run: step ${minute} of 12`, 5000 * pace))
     }
     return [...steps, ...say('That is all twelve steps done.', beat), { type: 'finished', text: 'That is all twelve steps done.', durationMs: 60_000 * pace }]
   }
@@ -87,11 +87,11 @@ export function demoScript({ text, agent, channel }, { pace = 1 } = {}) {
     const requestId = `demo-${++requests}`
     const command = 'rm -rf build/ dist/'
     return [
-      { type: 'approval', requestId, tool: 'Bash', summary: command },
+      { type: 'approval', requestId, tool: 'run', summary: command },
       {
         wait: requestId,
         allow: [
-          ...tool(`${requestId}-run`, 'Bash', `Bash: ${command}`, work),
+          ...tool(`${requestId}-run`, 'run', `Run: ${command}`, work),
           ...say('The old build output is gone.', beat),
           { type: 'finished', text: 'The old build output is gone.', durationMs: work + 500 * pace },
         ],
@@ -108,8 +108,8 @@ export function demoScript({ text, agent, channel }, { pace = 1 } = {}) {
   return [
     { type: 'text', text: 'I will look at what is there first.' },
     { pause: work },
-    ...tool('read', 'Read', 'Read: README.md', work, '# Project\n\nA short description.'),
-    ...tool('edit', 'Edit', 'Edit: README.md', work),
+    ...tool('read', 'read', 'Read: README.md', work, '# Project\n\nA short description.'),
+    ...tool('edit', 'edit', 'Edit: README.md', work),
     ...say(reply, beat),
     { type: 'finished', text: reply, durationMs: 3 * work + 30 * beat, costUsd: 0 },
   ]

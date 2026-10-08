@@ -21,6 +21,14 @@ export const AUTONOMY = ['ask', 'workspace', 'autonomous']
 /** The three ways a turn ends. Exactly one of them, exactly once. */
 export const ENDINGS = ['finished', 'failed', 'interrupted']
 
+/**
+ * What a tool is called outside an adapter: by what it does. A runtime's own names for its
+ * tools say which runtime it is, which the person is never told, so each adapter turns its
+ * names into these, and anything else is just a tool.
+ */
+export const TOOL_KINDS = ['read', 'edit', 'run', 'search', 'fetch', 'plan', 'tool']
+export const toolKind = (name) => (TOOL_KINDS.includes(name) ? name : 'tool')
+
 export const EVENT_TYPES = ['started', 'delta', 'text', 'tool', 'approval', 'question', ...ENDINGS]
 
 const TOOL_STATUS = ['started', 'finished', 'failed']

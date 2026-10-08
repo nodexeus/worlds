@@ -78,8 +78,8 @@ test('a tool is started when it is called and finished when its result comes bac
     toolResult('toolu_1', '(Bash completed with no output)')
   )
   assert.deepEqual(events.slice(1), [
-    { type: 'tool', id: 'toolu_1', name: 'Bash', summary: 'echo second > second.txt', status: 'started' },
-    { type: 'tool', id: 'toolu_1', name: 'Bash', summary: 'echo second > second.txt', status: 'finished', output: '(Bash completed with no output)' },
+    { type: 'tool', id: 'toolu_1', name: 'run', summary: 'echo second > second.txt', status: 'started' },
+    { type: 'tool', id: 'toolu_1', name: 'run', summary: 'echo second > second.txt', status: 'finished', output: '(Bash completed with no output)' },
   ])
 })
 
@@ -118,8 +118,8 @@ test('a permission request is an approval, described by what it wants to do', ()
     canUse('req-2', 'Write', { file_path: '/etc/hosts', content: 'x' })
   )
   assert.deepEqual(events.slice(1), [
-    { type: 'approval', requestId: 'req-1', tool: 'Bash', summary: 'rm -rf build' },
-    { type: 'approval', requestId: 'req-2', tool: 'Write', summary: '/etc/hosts' },
+    { type: 'approval', requestId: 'req-1', tool: 'run', summary: 'rm -rf build' },
+    { type: 'approval', requestId: 'req-2', tool: 'edit', summary: '/etc/hosts' },
   ])
 })
 
@@ -256,4 +256,12 @@ test('nothing is read after the result', () => {
 
 test('a result with no init before it still starts the turn first', () => {
   assert.deepEqual(read(result()).events.map((e) => [e.type, e.handle]), [['started', SID], ['finished', undefined]])
+})
+
+test('a tool is named for what it does, never by what the CLI calls it', () => {
+  const kinds = { Read: 'read', Write: 'edit', Edit: 'edit', NotebookEdit: 'edit', Bash: 'run', Grep: 'search', Glob: 'search', WebFetch: 'fetch', WebSearch: 'fetch', TodoWrite: 'plan', Task: 'plan', mcp__linear__save_issue: 'tool', SomethingNew: 'tool' }
+  for (const [name, kind] of Object.entries(kinds)) {
+    const { events } = read(init, assistant({ type: 'tool_use', id: 't', name, input: {} }), canUse('r', name, {}))
+    assert.deepEqual([events.find((e) => e.type === 'tool').name, events.find((e) => e.type === 'approval').tool], [kind, kind], name)
+  }
 })

@@ -114,3 +114,8 @@ test('how an agent is described in a line', () => {
   assert.equal(agentLine(agent(), [SITE]), 'idle')
   assert.equal(agentLine(agent({ status: 'failed', conversationId: 'c', workspaceId: 'gone' }), [SITE]), 'failed')
 })
+
+test('a tool is put in words for what it does, and an unknown one is just a tool', async () => {
+  const { toolDoes } = await import('../src/crew/render.js')
+  assert.deepEqual(['run', 'edit', 'Bash', undefined].map(toolDoes), ['run a command', 'change a file', 'use a tool', 'use a tool'])
+})

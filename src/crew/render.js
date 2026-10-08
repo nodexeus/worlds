@@ -24,12 +24,17 @@ export function renderMarkdown(text) {
   return out
 }
 
+/** What a tool does, in words. The server names a tool only by its kind, never as its maker does. */
+const DOES = { read: 'read a file', edit: 'change a file', run: 'run a command', search: 'search the workspace', fetch: 'look something up online', plan: 'plan its work' }
+export const toolDoes = (kind) => DOES[kind] ?? 'use a tool'
+const capital = (text) => text[0].toUpperCase() + text.slice(1)
+
 const TOOL_MARK = { running: '●', done: '✓', failed: '✕', stopped: '■' }
 
 function tool(item) {
   const line = h('button.cc-tool-line', { type: 'button', 'aria-expanded': 'false', disabled: !item.output },
     h('span.cc-tool-mark', null, TOOL_MARK[item.state]),
-    h('span.cc-tool-what', null, item.summary || item.name || 'Tool'),
+    h('span.cc-tool-what', null, item.summary || capital(toolDoes(item.name))),
     item.output ? h('span.cc-tool-caret', { 'aria-hidden': 'true' }, '▸') : null)
   const el = h('div.cc-tool', { data: { state: item.state } }, line)
   if (item.output) {
@@ -76,7 +81,7 @@ function request(item, { agentName, answer }) {
   if (item.type === 'approval') {
     el.append(
       h('h4', null, 'Approval'),
-      h('p', null, `${agentName} wants to use ${item.tool || 'a tool'}.`),
+      h('p', null, `${agentName} wants to ${toolDoes(item.tool)}.`),
       item.summary ? h('pre.cc-ask-what', null, item.summary) : null,
       h('div.cc-opts', null,
         button('Allow', true, () => submit({ allow: true })),
@@ -122,7 +127,7 @@ function request(item, { agentName, answer }) {
 }
 
 function settled(item) {
-  if (item.state === 'lapsed') return h('p.cc-note', null, item.type === 'approval' ? `not answered: ${item.summary || item.tool}` : 'not answered')
+  if (item.state === 'lapsed') return h('p.cc-note', null, item.type === 'approval' ? `not answered: ${item.summary || toolDoes(item.tool)}` : 'not answered')
   if (item.type === 'approval') return h('p.cc-note', null, `answered: ${answerLabel(item)}`)
   const asked = item.questions?.length === 1 ? `${item.questions[0].question} ` : ''
   return h('p.cc-note', null, `${asked}answered: ${answerLabel(item)}`)

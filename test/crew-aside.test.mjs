@@ -76,7 +76,9 @@ test('an agent answers aside from its task: one turn, in a conversation of its o
     assert.equal(turn.folder, crew.asideDir)
     assert.equal(turn.autonomy, 'ask', 'whatever the world has chosen')
     assert.equal(turn.handle, null)
-    assert.equal(turn.agent.role, `Writes the docs.\n\n${INSTRUCTION}`)
+    // Its role, who it is to anyone it talks to, and then what it is asked here.
+    assert.match(turn.agent.role, /^Writes the docs\.\n\nYou are \w+, a member of this crew\. Speak as \w+\./)
+    assert.ok(turn.agent.role.endsWith(`\n\n${INSTRUCTION}`))
     assert.deepEqual(turn.channel, { workspaces: ['Site'] })
   })
 })

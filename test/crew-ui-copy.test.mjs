@@ -11,7 +11,7 @@ const CREW = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src'
  * The person using a world is never told what an agent runs on, or what a model is reached
  * through. The page is not sent it, so the page has no business knowing any of these names.
  */
-const TECHNOLOGY = /claude|anthropic|codex|openai|hermes|openclaw|litellm|openrouter|\bgpt\b|\bjev\b|runs on|harness/i
+const TECHNOLOGY = /claude|anthropic|codex|openai|hermes|openclaw|litellm|openrouter|\bgpt\b|\bjev\b|runs on|harness|\bbash\b|todowrite/i
 
 test('nothing in the crew\'s part of the page names what an agent runs on', async () => {
   const files = (await fs.readdir(CREW)).filter((name) => /\.(js|css|html)$/.test(name))
