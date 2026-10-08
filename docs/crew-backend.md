@@ -100,6 +100,11 @@ to tell one runtime, model, vendor or gateway from another. So:
   said (`detail` on the adapter's event) is written to the server log and never recorded or
   sent. An adapter builds a failure with `failure(code, detail, reason?)` from
   `runtimes/contract.mjs`.
+- A tool is named by what it does (`TOOL_KINDS` in `runtimes/contract.mjs`: `read`, `edit`,
+  `run`, `search`, `fetch`, `plan`, `tool`). Each adapter maps its own tool names onto these,
+  and anything else is recorded as `tool`. The page puts the kind in words.
+- Every briefing tells an agent to speak as its crew name and, if asked what it is, to say it
+  is an AI agent in this crew without naming the software, model or company behind it.
 - `test/crew-ui-copy.test.mjs` and a test in `test/crew-http.test.mjs` scan the page's code
   and the API's answers for the names.
 

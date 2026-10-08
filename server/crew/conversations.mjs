@@ -2,6 +2,7 @@
 import { setTimeout as wait } from 'node:timers/promises'
 import { asideBriefing, briefing } from './briefing.mjs'
 import { CrewError } from './errors.mjs'
+import { toolKind } from './runtimes/contract.mjs'
 import { isUniqueViolation } from './store/db.mjs'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -290,6 +291,9 @@ export function createConversations({
     // the person is never told, so it goes to the log and not into the record.
     const { type, detail, ...data } = event
     if (detail) log(`crew conversations: ${agent.name} failed (${data.code}):`, detail)
+    // Whatever an adapter let through, a tool is only ever called by what it does.
+    if (type === 'tool') data.name = toolKind(data.name)
+    if (type === 'approval') data.tool = toolKind(data.tool)
     if (type === 'finished' || type === 'failed' || type === 'interrupted') return end(entry, agent, type, data)
     // The turn is being stopped because nothing can be written. What it said meanwhile is
     // not tried: each try would hold the agent up, and the ending says what happened.

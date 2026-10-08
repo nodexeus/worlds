@@ -29,6 +29,17 @@ const filled = (value) => typeof value === 'string' && value.length > 0
  */
 export const oneLine = (value) => JSON.stringify(value).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029')
 
+/** The CLI's tools, by what they do. See `TOOL_KINDS`: its own names never leave this file. */
+const KIND = new Map(Object.entries({
+  Read: 'read', NotebookRead: 'read',
+  Write: 'edit', Edit: 'edit', MultiEdit: 'edit', NotebookEdit: 'edit',
+  Bash: 'run', BashOutput: 'run', KillShell: 'run', KillBash: 'run',
+  Grep: 'search', Glob: 'search', LS: 'search', ToolSearch: 'search',
+  WebFetch: 'fetch', WebSearch: 'fetch',
+  TodoWrite: 'plan', Task: 'plan', Agent: 'plan', ExitPlanMode: 'plan',
+}))
+const kindOf = (name) => KIND.get(name) ?? 'tool'
+
 function summarise(input) {
   if (!input || typeof input !== 'object') return ''
   for (const key of TELLING) {
@@ -134,7 +145,7 @@ export function createParser() {
         if (block?.type === 'text' && typeof block.text === 'string' && block.text) {
           events.push({ type: 'text', text: block.text })
         } else if (block?.type === 'tool_use' && filled(block.id) && filled(block.name)) {
-          const tool = { name: block.name, summary: summarise(block.input) }
+          const tool = { name: kindOf(block.name), summary: summarise(block.input) }
           tools.set(block.id, tool)
           events.push({ type: 'tool', id: block.id, ...tool, status: 'started' })
         } else if (block?.type === 'tool_result' && tools.has(block.tool_use_id)) {
@@ -173,7 +184,7 @@ export function createParser() {
       } else {
         requests.set(entry.request_id, { kind: 'approval', input: request.input ?? {} })
         const summary = summarise(request.input) || summarise({ description: request.description })
-        events.push({ type: 'approval', requestId: entry.request_id, tool: request.tool_name, summary })
+        events.push({ type: 'approval', requestId: entry.request_id, tool: kindOf(request.tool_name), summary })
       }
       return events
     }
