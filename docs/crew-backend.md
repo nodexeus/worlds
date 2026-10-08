@@ -64,6 +64,71 @@ The image ships the ssh client and nothing else: mount those yourself. A private
 source needs credentials in the address, which are then stored with the workspace and
 visible to anyone who can see it, so prefer a read-only deploy token.
 
+## Runtimes
+
+A runtime is what actually runs an agent. Each has an adapter in `server/crew/runtimes/`
+that turns its own output into one stream of events, so nothing else in the server knows a
+session id or a command-line flag.
+
+    const turn = runtimes.get(agent.runtime).start({ agent, folder, text, handle, autonomy, onEvent })
+    turn.answer(requestId, { allow: true })     // or { allow: false, message }
+    turn.answer(requestId, { answers: ['Blue', 'Tomorrow'] })   // one per question; { text } for one
+    turn.interrupt()
+    await turn.done                             // { handle, outcome }, never rejects
+
+`handle` is null to start a conversation. The `started` event gives the handle to pass back
+for the next turn of the same one.
+
+| Event | Meaning |
+| --- | --- |
+| `started` | The runtime accepted the turn. Carries the handle. |
+| `delta` | A fragment of text as it is written. `text` follows with the whole piece. |
+| `text` | Something the agent said. |
+| `tool` | A tool call: `started`, then `finished` or `failed`, under one id. |
+| `approval` | The agent wants to do something it may not do unasked. The turn waits. |
+| `question` | The agent is asking the person. The turn waits. |
+| `finished` | The turn ended normally. |
+| `failed` | The turn ended badly. `code` is `auth`, `inference`, `runtime` or `crashed`. |
+| `interrupted` | The turn was stopped. |
+
+A turn ends exactly once and says nothing afterwards.
+
+Autonomy is passed with each turn:
+
+| Level | Meaning | Claude Code |
+| --- | --- | --- |
+| `ask` | Every action that changes something is an approval. | `--permission-mode manual` |
+| `workspace` | File edits inside the workspace go ahead. Commands, and anything outside it, are an approval. | `--permission-mode acceptEdits` |
+| `autonomous` | Never stopped for approval. Still asks real questions. | `--permission-mode bypassPermissions` |
+
+Adapters today:
+
+- **`claude-code`**: runs the `claude` CLI headless, one process per turn, in the workspace
+  folder. It signs in as whoever the server runs as, and is otherwise kept apart from them:
+  - it is not given the server's own settings (`WORLDS_*`, `DATABASE_URL`, `PG*`);
+  - it does not load that user's Claude Code hooks, plugins or connected services
+    (`--setting-sources local --strict-mcp-config`);
+  - it does still read a `.claude/settings.local.json` inside the workspace, so a
+    repository cloned into a workspace can carry settings of its own. Treat a workspace's
+    source as trusted code.
+
+  Each agent runs in a process group of its own. Stopping an agent, or the server, stops
+  the agent and anything it started. An agent that says nothing for 30 minutes, while not
+  waiting on a person, is given up on.
+- **`scripted`**: plays fixed scripts. For tests and demonstrations; present only when the
+  server is given scripts.
+
+`hermes` and `openclaw` can be named on an agent but have no adapter yet, and starting a
+turn on one is refused with `runtime_unavailable`.
+
+Every adapter must pass the shared suite in `test/support/runtime-contract.mjs`. The suite
+never calls a model. To check an adapter against the real thing, which does:
+
+    npm run test:crew:live
+
+Nothing records these events yet. Storing a conversation and deriving an agent's status from
+it is the next phase.
+
 ## API
 
 All under `/api/crew`, JSON in and out. A refusal answers `{ error, code }` with a 4xx

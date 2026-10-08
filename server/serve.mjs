@@ -17,6 +17,11 @@ try {
   process.exit(1)
 }
 
+// Asked to stop, the server exits in the ordinary way, which is what gives everything that
+// cleans up on exit (running agents, above all) the chance to. The default for a signal is
+// to die where it stands.
+for (const name of ['SIGTERM', 'SIGINT']) process.on(name, () => process.exit(0))
+
 const server = createAppServer({ distDir: path.join(here, '..', 'dist') })
 
 server.listen(port, host, () => {

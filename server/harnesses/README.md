@@ -1,5 +1,10 @@
 # Harness adapters
 
+> **Scope.** This directory is the session *scanner*: it reads other tools' sessions so they
+> can be shown, and everything below about being read-only applies to it and only to it.
+> Driving an agent (sending it a message, running it on a task) is a different job, done by
+> the crew runtimes in `server/crew/runtimes/`. See `docs/crew-backend.md`.
+
 A **harness** is whatever runs the agent threads you want to see as bots — Claude Code,
 Codex CLI, OpenCode, and so on. Bot Crossing does not care which one you use: it asks every
 harness present on the machine for its threads and draws whatever comes back.
@@ -115,7 +120,7 @@ Do not put a file handle, a class instance, or a secret in it.
 
 ## Ground rules
 
-- **Read-only. No exceptions.** `data/colony.json` is the only file Bot Crossing writes,
+- **Read-only, for every scanner here. No exceptions.** `data/colony.json` is the only file Bot Crossing writes,
   anywhere. A harness's transcripts and records are somebody's actual work; the colony is a
   viewer, not an editor. If an adapter seems to need a write, it does not — say so in an issue.
 - **Never run anything out of another application's bundle.** Not to read from it, not to
