@@ -14,7 +14,7 @@ Two places hold everything that has to survive a restart or an update:
 | Setting | Holds |
 | --- | --- |
 | `WORLDS_DATABASE_URL` | A Postgres 18 database: agents, workspaces, conversations and their events, settings. |
-| `WORLDS_DATA_DIR` | A directory: one folder per workspace under `workspaces/`. |
+| `WORLDS_DATA_DIR` | A directory: one folder per workspace under `workspaces/`, and an empty `channel/` that agents in no workspace answer the crew channel from. |
 
 Mount a persistent volume on the data directory and point the URL at a database that is
 backed up. The container image holds nothing of value and can be replaced freely.
@@ -53,6 +53,11 @@ The script (`server/crew/runtimes/demo.mjs`) is chosen by what the message conta
 | `fail` | fails, as a runtime that fell over |
 | `long` | works for a minute, to be stopped or to have messages queued behind it |
 | anything else | reads, edits and answers, over a few seconds |
+
+A post to the crew channel is answered the channel's way: one ending in `?` gets a
+contribution from each agent, one saying `pass` is passed by all, and anything else is
+claimed by every agent it reached, in the world's first workspace, so that only one of them
+getting it can be seen.
 
 ## Agents
 
@@ -166,7 +171,8 @@ says back into stored events.
 ### Events
 
 Each stored event is `{ seq, conversationId, agentId, type, status, at, data }`. Events are
-never changed or deleted.
+never changed or deleted. What concerns the crew channel also carries `postId`: see
+"The crew channel".
 
 | Type | `data` |
 | --- | --- |
@@ -192,7 +198,8 @@ is what lets a client ask for "everything after 41" and get exactly what it miss
 `status` on an event is the agent's status once that event had happened: `idle`, `working`,
 `waiting` (a question or approval is open) or `failed`. An agent's status is the status of
 the last event in its open conversation, or `idle` with none. Nothing else sets it. A failed
-agent takes a message exactly as an idle one does.
+agent takes a message exactly as an idle one does. An agent answering the crew channel is
+`working` until its answer ends, and is then whatever it was before.
 
 ### When things go wrong
 
@@ -206,6 +213,74 @@ agent takes a message exactly as an idle one does.
 
 One server runs a world. An agent's messages, answers and runtime events are put in order
 in that server's memory, so two servers on one world's database are not supported.
+
+## The crew channel
+
+One place to say something to the whole crew, or to some of it by name
+(`server/crew/channel.mjs`).
+
+- **Who gets a post.** With `@name` in it, the agents named, and nobody else. One that is
+  busy has the post queued and is given it when it has nothing under way, after anything
+  queued for its task. With no name, every agent that is free at that moment (`idle` or
+  `failed`): the busy are skipped, and the post says who and why. A name nobody has refuses
+  the post.
+- **The limit.** `channelLimit` in the world's settings is how many agents answer a post
+  that names nobody. Null, the default, is all of them. When more are free than the limit,
+  those asked least recently go first.
+- **How an agent answers.** Once, in a conversation of its own (`kind: channel`), so its
+  task never contains channel chatter. It is told, after its own role, the three things it
+  can do, and its first line decides which:
+
+  | It says | That is |
+  | --- | --- |
+  | `PASS`, or nothing | a pass |
+  | `CLAIM: <workspace name>` | a claim on the post as its task, in that workspace |
+  | anything else | a contribution, kept to 1500 characters |
+
+- **Nothing is changed by answering.** An answer runs at the `ask` level whatever the world
+  has chosen, and the server refuses every approval it raises and answers every question
+  with "nobody can answer here". It runs in the folder of the workspace the agent is in, so
+  it can read what it is asked about, or in the empty `channel/` folder.
+- **The referee.** A claim is a row that only one agent can hold for a post
+  (`channel_claims_granted_key`). However many claim together, one is granted. The others
+  are shown as passed, "taken". Agents still answering are stopped, and those queued are
+  not asked. A claim naming no workspace this world has is not a claim: it is shown as a
+  reply, marked `unplaced`, and no work begins.
+- **The winner's task** is an ordinary one: a new conversation in the workspace it named,
+  whose first message is the post (`data.postId` says which). If it cannot start, the claim
+  is released with the reason.
+- **Corrections.** Releasing a claim stops the agent if it is still in that task. Handing a
+  post to an agent releases whatever claim stands, grants one to that agent and starts the
+  task. The workspace is the one given, else the last claim's if it is still there, else
+  the one the agent is in. Making a reply into a task is the same hand-over.
+
+A post, as every route and every event gives it:
+
+    { id, text, at, named,
+      to: [{ agentId, name, state, reason, text, conversationId }],
+      claim: null | { agentId, name, workspaceId, conversationId, state, reason } }
+
+| `to[].state` | Means | `reason` |
+| --- | --- | --- |
+| `queued` | Waiting to be given to the agent. | |
+| `answering` | The agent has it and has not answered. | |
+| `replied` | It contributed: `text`. | `unplaced` when it wanted the task and named no workspace here. |
+| `passed` | It passed. | `taken` when another agent got the task first. |
+| `claimed` | It took the post: `text` is what it said it would do. | |
+| `failed` | Its answer failed or was stopped. | The runtime's reason, `stopped`, or `restart`. |
+| `skipped` | It was not asked. | `working`, `waiting`, `limit`, `runtime`, `taken` or `retired`. |
+
+`claim.state` is `granted` or `released`. A released claim's `reason` is `released`,
+`handed`, `retired`, `restart`, or why its task could not start.
+
+Every time anything about a post changes, an event of type `post` goes on the world's
+record with the whole post as its `data`, `postId` set, and no conversation, agent or
+status. A client replaces what it has. The events of an agent's answer are ordinary events
+in its side conversation, and carry `postId` too, so a client knows not to take that
+conversation for the agent's task.
+
+After a restart, answers that were under way are marked `failed` (`restart`), a claim whose
+task had not begun is released (`restart`), and posts still queued are delivered.
 
 ## The live stream
 
@@ -246,13 +321,18 @@ status. `GET /api/crew` answers `{ enabled: false }` on a monitor-only server.
 | `DELETE /api/crew/agents/:id` | Retire, stopping whatever it was doing. |
 | `POST /api/crew/agents/:id/messages` | `{ text, workspaceId? }`. Answers 202 with the conversation, the stored message and `queued`. |
 | `POST /api/crew/agents/:id/stop` | Stop the agent's turn. Answers `{ stopped }`. |
-| `GET /api/crew/agents/:id/conversations` | That agent's conversations, newest first. |
+| `GET /api/crew/agents/:id/conversations` | That agent's tasks, newest first. Its answers to the crew channel are not among them. |
 | `GET /api/crew/conversations/:id` | One conversation. |
 | `GET /api/crew/conversations/:id/events` | Its events, oldest first: the latest 200, or `?before=`, `?after=`, `?limit=` (up to 500). |
 | `POST /api/crew/conversations/:id/answers` | `{ requestId }` with `allow` (and `message`), `answers` or `text`. |
 | `GET /api/crew/events` | The live stream. |
-| `GET /api/crew/settings` | The world's settings: `{ autonomy }`. |
-| `PATCH /api/crew/settings` | Change them. |
+| `GET /api/crew/channel` | `{ posts, seq }`: the latest 30 posts, oldest first, or `?before=<post id>`, `?limit=` (up to 100). `seq` is the event they are current to. |
+| `POST /api/crew/channel` | `{ text }`, at most 4000 characters. Answers 202 with the post. |
+| `GET /api/crew/channel/:id` | One post. |
+| `POST /api/crew/channel/:id/release` | Take the post back from the agent that has it. 409 `no_claim` when nobody has. |
+| `POST /api/crew/channel/:id/hand` | `{ agentId, workspaceId? }`. Make the post that agent's task. |
+| `GET /api/crew/settings` | The world's settings: `{ autonomy, channelLimit }`. |
+| `PATCH /api/crew/settings` | Change either, or both. |
 | `GET /api/crew/specialists` | The catalog, with what the world may add and has added. |
 | `GET /api/crew/workspaces` | The workspaces. |
 | `POST /api/crew/workspaces` | Add one. |

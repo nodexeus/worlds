@@ -109,8 +109,10 @@ building beside the arrival hab, with reserved ground and an explicitly unconnec
 knowledge drawer. A crew backend (durable agents and workspaces in Postgres, see
 `docs/crew-backend.md`) is present when a database is configured. Through its API an agent
 can be messaged, given a task, answered and stopped, with everything it does recorded and
-streamed live. On such a server the page shows a crew list and a card for each agent
-(`src/crew/`), from which all of that is done. The campus itself does not yet draw the
+streamed live. A post to the crew channel reaches every free agent, or the ones it names,
+and one of them can take it as its task. On such a server the page shows a crew list and a
+card for each agent (`src/crew/`), from which the first of those is done. The channel has
+no interface yet: it is reached through the API. The campus itself does not yet draw the
 roster: its robots are still the scanned local sessions. There is no memory ingestion, RAG service,
 workflow execution, customer account system or billing: see the crew chat design for the
 order of that work.

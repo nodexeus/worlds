@@ -45,6 +45,31 @@ test('an event sets its agent\'s status and conversation, and an older one does 
   assert.deepEqual(told.map((what) => what.kind), ['roster'])
 })
 
+test('an agent answering the crew channel is busy, and is still in the task it was in', () => {
+  const { store, told } = made()
+  store.applyEvent(ev(5, { status: 'idle' }))
+  store.setPlace('a1', { id: 'c1', workspaceId: 'w1' })
+  told.length = 0
+  store.watch('c1')
+
+  store.applyEvent(ev(6, { conversationId: 'side', postId: 'p1', type: 'message', status: 'working' }))
+  assert.deepEqual([store.agent('a1').status, store.agent('a1').conversationId], ['working', 'c1'])
+  assert.equal(store.needsRoster(), false, 'nothing a fresh snapshot is needed to explain')
+  assert.deepEqual(store.eventsOf('c1').map((event) => event.seq), [], 'and none of it is in the card')
+
+  store.applyEvent(ev(7, { conversationId: 'side', postId: 'p1', type: 'finished', status: 'idle' }))
+  assert.deepEqual([store.agent('a1').status, store.agent('a1').conversationId], ['idle', 'c1'])
+  assert.deepEqual(told.map((what) => what.kind), ['roster', 'roster'])
+})
+
+test('what became of a post is not about any agent', () => {
+  const { store, told } = made()
+  store.applyEvent({ seq: 9, conversationId: null, agentId: null, type: 'post', status: null, at: 'now', data: { id: 'p1' }, postId: 'p1' })
+  assert.deepEqual(told, [])
+  assert.equal(store.needsRoster(), false)
+  assert.deepEqual(store.state.agents.map((agent) => agent.status), ['idle', 'idle'])
+})
+
 test('an event that changes nothing about an agent is not roster news', () => {
   const { store, told } = made()
   store.applyEvent(ev(1))

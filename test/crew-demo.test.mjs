@@ -39,6 +39,23 @@ test('a scripted runtime given a function plays what it returns, and echoes when
   assert.equal(echoed.events.find((event) => event.type === 'text').text, 'anything else')
 })
 
+test('a script can be held until a test lets it go on, and stopping it does not wait for that', async () => {
+  const gate = Promise.withResolvers()
+  const runtime = createScriptedRuntime({ hold: [{ until: gate.promise }, { type: 'text', text: 'after' }] })
+  const held = begin(runtime, input('hold'))
+  await held.until('started')
+  assert.deepEqual(held.types(), ['started'])
+  gate.resolve()
+  await held.until('finished')
+  assert.deepEqual(held.types(), ['started', 'text', 'finished'])
+
+  const stopped = begin(runtime, input('hold'))
+  await stopped.until('started')
+  stopped.turn.interrupt()
+  await stopped.until('interrupted')
+  assert.deepEqual(stopped.types(), ['started', 'interrupted'])
+})
+
 test('in a demonstration every runtime an agent can be bound to is played by the one script', () => {
   const runtimes = createDemoRuntimes()
   assert.deepEqual(runtimes.available(), RUNTIMES)
@@ -96,4 +113,22 @@ test('a message that says fail fails, and one that says long can be stopped', as
   await long.until('text')
   long.turn.interrupt()
   await long.until('interrupted')
+})
+
+test('a post to the crew channel is answered the channel\'s way: a contribution, a pass, or a claim', async () => {
+  const post = (text, channel = { workspaces: ['Site', 'Api'] }) => input(text, { channel, autonomy: 'ask' })
+  const answer = async (turn) => {
+    const played = begin(quick(), turn)
+    const finished = await played.until('finished')
+    assert.deepEqual(played.types(), ['started', 'text', 'finished'], 'nothing is touched while answering')
+    return finished.text
+  }
+  assert.match(await answer(post('Does anyone know why the build is slow?')), /^Ada here\./)
+  assert.equal(await answer(post('Everyone pass on this one')), 'PASS')
+  assert.match(await answer(post('Fix the footer')), /^CLAIM: Site\n/)
+  assert.doesNotMatch(await answer(post('Fix the footer', { workspaces: [] })), /^(CLAIM|PASS)/)
+  // The same words said to the agent directly are an ordinary task.
+  const task = begin(quick(), input('Fix the footer'))
+  await task.until('finished')
+  assert.ok(task.events.some((event) => event.type === 'tool'))
 })

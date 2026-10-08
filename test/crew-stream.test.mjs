@@ -350,12 +350,16 @@ test('the conversation routes refuse what they should', needsDb, async () => {
   })
 })
 
-test('the autonomy level is read and changed over HTTP', needsDb, async () => {
+test('the world\'s settings are read and changed over HTTP, one at a time or together', needsDb, async () => {
   await withServer(async ({ call }) => {
-    assert.deepEqual((await call('GET', '/settings')).body, { settings: { autonomy: 'autonomous' } })
+    assert.deepEqual((await call('GET', '/settings')).body, { settings: { autonomy: 'autonomous', channelLimit: null } })
     const changed = await call('PATCH', '/settings', { autonomy: 'ask' })
-    assert.deepEqual([changed.status, changed.body], [200, { settings: { autonomy: 'ask' } }])
-    assert.deepEqual((await call('GET', '/settings')).body, { settings: { autonomy: 'ask' } })
+    assert.deepEqual([changed.status, changed.body], [200, { settings: { autonomy: 'ask', channelLimit: null } }])
+    const limited = await call('PATCH', '/settings', { channelLimit: 3 })
+    assert.deepEqual([limited.status, limited.body], [200, { settings: { autonomy: 'ask', channelLimit: 3 } }])
+    const refused = await call('PATCH', '/settings', { channelLimit: 0 })
+    assert.deepEqual([refused.status, refused.body.code], [400, 'bad_channel_limit'])
+    assert.deepEqual((await call('GET', '/settings')).body, { settings: { autonomy: 'ask', channelLimit: 3 } })
   })
 })
 

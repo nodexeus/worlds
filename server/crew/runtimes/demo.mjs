@@ -29,14 +29,30 @@ const tool = (id, name, summary, pause, output) => [
  *   - `long`: it works for a minute, to be stopped or to have messages queued behind it;
  *   - anything else: it reads, edits and answers.
  *
- * @param {{text: string, agent: {name: string}}} input
+ * A post to the crew channel is answered in the channel's own three ways: one that ends in
+ * a question mark gets a contribution, one that says `pass` is passed, and anything else is
+ * claimed, in the world's first workspace, by every agent given it, so that only one of them
+ * getting it can be seen.
+ *
+ * @param {{text: string, agent: {name: string}, channel?: {workspaces: string[]}}} input
  * @param {{pace?: number}} [options] `pace` scales the pauses. 0 for a test.
  */
-export function demoScript({ text }, { pace = 1 } = {}) {
+export function demoScript({ text, agent, channel }, { pace = 1 } = {}) {
   const beat = 60 * pace
   const work = 700 * pace
   const said = text.trim().split('\n')[0].slice(0, 120)
   const lower = text.toLowerCase()
+
+  if (channel) {
+    // Not all at the same instant, as real agents would not be.
+    const think = { pause: work * (1 + Math.random()) }
+    const answer = (reply) => [think, { type: 'text', text: reply }, { type: 'finished', text: reply, durationMs: work, costUsd: 0 }]
+    if (/\bpass\b/.test(lower)) return answer('PASS')
+    if (text.trim().endsWith('?')) return answer(`${agent.name} here. I have not looked closely, but I would start with the README. (A demonstration: no model was asked.)`)
+    const [place] = channel.workspaces ?? []
+    if (!place) return answer('I would take this, but there is no workspace to do it in yet.')
+    return answer(`CLAIM: ${place}\nI will take this one.`)
+  }
 
   if (/\bfail/.test(lower)) {
     return [{ type: 'text', text: 'Starting on that.' }, { pause: work }, { crash: 'The demonstration runtime was asked to fail' }]

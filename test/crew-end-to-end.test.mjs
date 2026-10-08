@@ -24,11 +24,11 @@ const SCRIPTS = {
 }
 
 /** A crew made the way the server makes one, in a schema and a directory thrown away after. */
-async function world(run) {
+async function world(run, scripts = SCRIPTS) {
   const schema = `t_${randomUUID().replaceAll('-', '')}`
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'crew-e2e-'))
   const config = { databaseUrl: TEST_DB, schema, dataDir, worldId: 'acme', agentLimit: 3, entitled: [] }
-  const scripted = createScriptedRuntime(SCRIPTS)
+  const scripted = createScriptedRuntime(scripts)
   const start = () => createCrew(config, { runtimes: { get: () => scripted, available: () => ['scripted'] } })
   const crews = []
   try {
@@ -36,7 +36,7 @@ async function world(run) {
       const crew = await start()
       crews.push(crew)
       return crew
-    })
+    }, { dataDir, scripted })
   } finally {
     for (const crew of crews) await crew.close().catch(() => {})
     const admin = connect(TEST_DB, { max: 1 })
@@ -124,4 +124,133 @@ test('closing a crew stops its agents and records that before the database is le
     const last = (await after.events.page(conversation.id)).at(-1)
     assert.deepEqual([last.type, last.data], ['interrupted', {}])
   })
+})
+
+/** Ask until the answer is what is wanted. */
+async function eventually(ask, wanted, ms = 5000) {
+  const deadline = Date.now() + ms
+  for (;;) {
+    const answer = await ask()
+    if (wanted(answer)) return answer
+    if (Date.now() > deadline) throw new Error(`it never came to that: ${JSON.stringify(answer)}`)
+    await new Promise((resolve) => setTimeout(resolve, 15))
+  }
+}
+
+test('the crew channel over HTTP: a post, who answered, the one that took it, and taking it back', needsDb, async () => {
+  const gate = Promise.withResolvers()
+  const said = (text) => [{ type: 'text', text }, { type: 'finished', text }]
+  const scripts = (input) => {
+    if (!input.channel) return input.agent.name === 'Ada' ? [{ pause: 5000 }, { type: 'finished', text: 'never' }] : said('Done.')
+    return input.agent.name === 'Ada' ? [{ until: gate.promise }, ...said('CLAIM: Site\nI will fix it.')] : said('It is in layout.css.')
+  }
+  await world(async (start, { dataDir, scripted }) => {
+    const crew = await start()
+    await serving(crew, async (call, base) => {
+      const ada = (await call('POST', '/agents', { name: 'Ada', runtime: 'claude-code' })).body.agent
+      const bo = (await call('POST', '/agents', { name: 'Bo', runtime: 'claude-code' })).body.agent
+      const site = (await call('POST', '/workspaces', { name: 'Site' })).body.workspace
+      assert.deepEqual((await call('GET', '/channel')).body, { posts: [], seq: 0 })
+      const stream = await listen(`${base}/events?after=0`)
+      try {
+        const made = await call('POST', '/channel', { text: 'Fix the footer' })
+        assert.equal(made.status, 202)
+        const { id } = made.body.post
+        assert.deepEqual(made.body.post.to.map((one) => one.name), ['Ada', 'Bo'])
+
+        await eventually(() => call('GET', `/channel/${id}`), (got) => got.body.post.to[1].state === 'replied')
+        // Ada is still answering, and the roster says she is busy without moving her anywhere.
+        const busy = (await call('GET', '/agents')).body.agents.find((agent) => agent.id === ada.id)
+        assert.deepEqual([busy.status, busy.conversationId, busy.workspaceId], ['working', null, null])
+        gate.resolve()
+        const taken = (await eventually(() => call('GET', `/channel/${id}`), (got) => got.body.post.claim?.conversationId)).body.post
+        assert.deepEqual([taken.claim.agentId, taken.claim.workspaceId, taken.claim.state], [ada.id, site.id, 'granted'])
+        assert.deepEqual(taken.to.map((one) => [one.name, one.state, one.text]), [['Ada', 'claimed', 'I will fix it.'], ['Bo', 'replied', 'It is in layout.css.']])
+
+        const working = (await call('GET', '/agents')).body.agents.find((agent) => agent.id === ada.id)
+        assert.deepEqual([working.status, working.conversationId, working.workspaceId], ['working', taken.claim.conversationId, site.id])
+        // An answer was given from a folder that is nobody's work, at the level that asks.
+        const asides = scripted.turns.filter((turn) => turn.channel)
+        assert.deepEqual(asides.map((turn) => [turn.folder, turn.autonomy]), [[path.join(dataDir, 'channel'), 'ask'], [path.join(dataDir, 'channel'), 'ask']])
+        assert.deepEqual(await fs.readdir(path.join(dataDir, 'channel')), [])
+
+        const listed = (await call('GET', '/channel')).body
+        assert.deepEqual(listed.posts, [taken])
+        assert.ok(listed.seq > 0)
+
+        // The stream said all of it: every change to the post, and each agent's answer marked as the post's.
+        const items = stream.items.filter((item) => item.event === 'event').map((item) => item.data)
+        const about = items.filter((event) => event.type === 'post')
+        assert.ok(about.length >= 4)
+        assert.deepEqual(about.at(-1).data, taken)
+        assert.ok(items.filter((event) => event.conversationId && event.conversationId !== taken.claim.conversationId).every((event) => event.postId === id))
+        assert.ok(items.filter((event) => event.conversationId === taken.claim.conversationId).every((event) => !('postId' in event)))
+
+        const released = await call('POST', `/channel/${id}/release`)
+        assert.deepEqual([released.status, released.body.post.claim.state, released.body.post.claim.reason], [200, 'released', 'released'])
+        assert.equal((await call('GET', '/agents')).body.agents.find((agent) => agent.id === ada.id).status, 'idle')
+        assert.deepEqual([(await call('POST', `/channel/${id}/release`)).status, (await call('POST', `/channel/${id}/release`)).body.code], [409, 'no_claim'])
+
+        const handed = await call('POST', `/channel/${id}/hand`, { agentId: bo.id })
+        assert.deepEqual([handed.status, handed.body.post.claim.agentId, handed.body.post.claim.workspaceId, handed.body.post.claim.state], [200, bo.id, site.id, 'granted'])
+
+        for (const [method, route, body, status, code] of [
+          ['POST', '/channel', {}, 400, 'bad_post'],
+          ['POST', '/channel', { text: '@Nobody hello' }, 400, 'unknown_mention'],
+          ['GET', '/channel?limit=0', undefined, 400, 'bad_query'],
+          ['GET', '/channel?before=yesterday', undefined, 400, 'bad_query'],
+          ['PUT', '/channel', {}, 405, 'method_not_allowed'],
+          ['GET', '/channel/nothing', undefined, 404, 'unknown_post'],
+          ['DELETE', `/channel/${id}`, undefined, 405, 'method_not_allowed'],
+          ['GET', `/channel/${id}/release`, undefined, 405, 'method_not_allowed'],
+          ['POST', `/channel/${id}/hand`, {}, 404, 'unknown_agent'],
+          ['POST', `/channel/${id}/steal`, {}, 404, 'not_found'],
+          ['POST', `/channel/${id}/hand/again`, {}, 404, 'not_found'],
+        ]) {
+          const got = await call(method, route, body)
+          assert.deepEqual([got.status, got.body.code], [status, code], `${method} ${route}`)
+        }
+      } finally {
+        stream.close()
+      }
+    })
+  }, scripts)
+})
+
+test('a post waiting for a busy agent is still delivered by the server that starts next', needsDb, async () => {
+  const said = (text) => [{ type: 'text', text }, { type: 'finished', text }]
+  const scripts = (input) => (input.channel ? said('Here now.') : [{ pause: 5000 }, { type: 'finished', text: 'never' }])
+  await world(async (start) => {
+    const first = await start()
+    const ada = await first.roster.create({ name: 'Ada', runtime: 'claude-code' })
+    const site = await first.workspaces.create({ name: 'Site' })
+    await first.conversations.send(ada.id, { text: 'long', workspaceId: site.id })
+    const post = await first.channel.post({ text: '@Ada when you are done' })
+    assert.deepEqual(post.to.map((one) => one.state), ['queued'])
+
+    // Killed, not closed: the next server finds Ada's turn gone and the post still waiting.
+    const second = await start()
+    const now = await eventually(() => second.channel.get(post.id), (got) => got.to[0].state === 'replied')
+    assert.equal(now.to[0].text, 'Here now.')
+    await second.channel.settled()
+  }, scripts)
+})
+
+test('closing a crew while agents are answering leaves nothing answering and starts nothing new', needsDb, async () => {
+  const scripts = (input) => (input.channel ? [{ pause: 5000 }, { type: 'finished', text: 'CLAIM: Site' }] : [{ type: 'finished', text: 'Done.' }])
+  await world(async (start, { scripted }) => {
+    const crew = await start()
+    const ada = await crew.roster.create({ name: 'Ada', runtime: 'claude-code' })
+    await crew.workspaces.create({ name: 'Site' })
+    const first = await crew.channel.post({ text: '@Ada one' })
+    const second = await crew.channel.post({ text: '@Ada two' })
+    assert.deepEqual([first.to[0].state, second.to[0].state], ['answering', 'queued'])
+    await crew.close()
+    assert.equal(scripted.turns.length, 1, 'being stopped did not hand Ada the post that was waiting')
+
+    const after = await start()
+    assert.deepEqual((await after.channel.get(first.id)).to.map((one) => [one.state, one.reason]), [['failed', 'stopped']])
+    await eventually(() => after.channel.get(second.id), (got) => got.to[0].state === 'answering')
+    assert.equal((await after.conversations.statuses()).get(ada.id).status, 'working')
+  }, scripts)
 })

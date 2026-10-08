@@ -129,6 +129,7 @@ async function route(req, url, crew) {
       await roster.retire(id)
       // Retired first, so nothing new can be asked of it while it is being stopped.
       await conversations.dismiss(id)
+      await crew.channel.forget(id)
       return reply(200, { ok: true })
     }
     throw notAllowed()
@@ -159,12 +160,41 @@ async function route(req, url, crew) {
     throw notFound()
   }
 
+  if (collection === 'channel') {
+    const { channel } = crew
+    if (id === undefined) {
+      if (method === 'GET') {
+        const before = url.searchParams.get('before') ?? undefined
+        return reply(200, await channel.list({ before, limit: whole(url, 'limit', { min: 1, max: 100 }) }))
+      }
+      if (method === 'POST') {
+        const { text } = await body(req)
+        return reply(202, { post: await channel.post({ text }) })
+      }
+      throw notAllowed()
+    }
+    if (extra === undefined) {
+      if (method !== 'GET') throw notAllowed()
+      return reply(200, { post: await channel.get(id) })
+    }
+    if (extra === 'release') {
+      if (method !== 'POST') throw notAllowed()
+      return reply(200, { post: await channel.release(id) })
+    }
+    if (extra === 'hand') {
+      if (method !== 'POST') throw notAllowed()
+      const { agentId, workspaceId } = await body(req)
+      return reply(200, { post: await channel.hand(id, { agentId, workspaceId }) })
+    }
+    throw notFound()
+  }
+
   if (collection === 'settings') {
     if (id !== undefined) throw notFound()
     if (method === 'GET') return reply(200, { settings: await crew.settings.get() })
     if (method === 'PATCH') {
-      const { autonomy } = await body(req)
-      return reply(200, { settings: await crew.settings.update({ autonomy }) })
+      const { autonomy, channelLimit } = await body(req)
+      return reply(200, { settings: await crew.settings.update({ autonomy, channelLimit }) })
     }
     throw notAllowed()
   }

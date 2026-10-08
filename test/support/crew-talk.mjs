@@ -3,6 +3,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { loadCatalog } from '../../server/crew/catalog.mjs'
+import { createChannel } from '../../server/crew/channel.mjs'
 import { createConversations } from '../../server/crew/conversations.mjs'
 import { CrewError } from '../../server/crew/errors.mjs'
 import { createEvents } from '../../server/crew/events.mjs'
@@ -19,8 +20,9 @@ import { withDb } from './crew-db.mjs'
  * server today.
  *
  * `run` is given the crew (as `createCrew` would make it, plus the scripted runtime, a list
- * of everything the hub sent, and a switch that makes writing events fail and counts the
- * writes it refused) and two helpers:
+ * of everything the hub sent, a switch that makes writing events fail and counts the
+ * writes it refused, the folder agents answer the channel in, and the agents the engine has
+ * said were free) and two helpers:
  * `shape` reduces events to what a test compares, `record` reads a conversation that way.
  */
 export const withTalk = (run, { scripts = {}, worldId = 'w', retryDelays = [20, 40], limit = 6, entitled = [] } = {}) =>
@@ -52,14 +54,28 @@ export const withTalk = (run, { scripts = {}, worldId = 'w', retryDelays = [20, 
       available: () => ['claude-code', 'hermes'],
     }
     const logged = []
+    const asideDir = path.join(dataDir, 'channel')
+    await fs.mkdir(asideDir)
+    /** Each agent the engine said had nothing left under way, in the order it said so. */
+    const freed = []
+    const hooks = {}
     const conversations = createConversations({
-      sql, worldId, roster, workspaces, settings, runtimes, events, hub, retryDelays, log: (...args) => logged.push(args),
+      sql, worldId, roster, workspaces, settings, runtimes, events, hub, retryDelays, asideDir,
+      onFree: (agentId) => hooks.onFree(agentId), log: (...args) => logged.push(args),
     })
-    const crew = { worldId, sql, catalog, roster, workspaces, settings, hub, events, conversations, runtimes, demo: false, scripted, sent, store, logged, dataDir }
+    const channelLogged = []
+    const channel = createChannel({ sql, worldId, roster, workspaces, settings, conversations, runtimes, events, retryDelays, log: (...args) => channelLogged.push(args) })
+    hooks.onFree = (agentId) => {
+      freed.push(agentId)
+      channel.freed(agentId)
+    }
+    const crew = { worldId, sql, catalog, roster, workspaces, settings, hub, events, conversations, runtimes, demo: false, scripted, sent, store, logged, dataDir, asideDir, freed, hooks, channel, channelLogged }
     try {
       return await run(crew)
     } finally {
+      channel.shut()
       await conversations.close()
+      await channel.settled()
       await fs.rm(dataDir, { recursive: true, force: true })
     }
   })

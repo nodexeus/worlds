@@ -6,7 +6,7 @@ const PAGE_LIMIT = 500
 
 /**
  * The record of a world: every message, everything an agent said or did, every question and
- * its answer, in one numbered line.
+ * its answer, and what became of each post to the crew channel, in one numbered line.
  *
  * The numbers are the point. A client holds the last number it saw, and asking for
  * everything after it must return exactly what it missed. That needs the numbers to be gap
@@ -34,19 +34,21 @@ export function createEvents({ sql, worldId, hub }) {
     at: row.createdAt.toISOString(),
     // Read as text and parsed here: the keys are an agent's own and are kept as they are.
     data: JSON.parse(row.data),
+    // Only on what concerns the crew channel: see `channel.mjs`.
+    ...(row.postId ? { postId: row.postId } : {}),
   })
 
-  async function write({ conversationId, agentId, type, status, data = {} }) {
+  async function write({ conversationId = null, agentId = null, type, status = null, data = {}, postId = null }) {
     const [row] = await sql`
       with next as (
         insert into event_counters (world_id, seq) values (${worldId}, 1)
         on conflict (world_id) do update set seq = event_counters.seq + 1
         returning seq
       )
-      insert into events (world_id, seq, conversation_id, agent_id, type, status, data)
-      select ${worldId}, next.seq, ${conversationId}, ${agentId}, ${type}, ${status}, ${sql.json(data)}
+      insert into events (world_id, seq, conversation_id, agent_id, type, status, data, post_id)
+      select ${worldId}, next.seq, ${conversationId}, ${agentId}, ${type}, ${status}, ${sql.json(data)}, ${postId}
       from next
-      returning seq, conversation_id, agent_id, type, status, data::text as data, created_at`
+      returning seq, conversation_id, agent_id, type, status, data::text as data, created_at, post_id`
     const event = present(row)
     hub.publish(event)
     return event
@@ -62,7 +64,7 @@ export function createEvents({ sql, worldId, hub }) {
   /** The world's events after `seq`, oldest first. */
   async function after(seq, limit = PAGE_LIMIT) {
     const rows = await sql`
-      select seq, conversation_id, agent_id, type, status, data::text as data, created_at
+      select seq, conversation_id, agent_id, type, status, data::text as data, created_at, post_id
       from events where world_id = ${worldId} and seq > ${seq}
       order by seq limit ${Math.min(limit, PAGE_LIMIT)}`
     return rows.map(present)
@@ -76,13 +78,13 @@ export function createEvents({ sql, worldId, hub }) {
     const size = Math.min(limit, PAGE_LIMIT)
     if (from !== undefined) {
       const rows = await sql`
-        select seq, conversation_id, agent_id, type, status, data::text as data, created_at
+        select seq, conversation_id, agent_id, type, status, data::text as data, created_at, post_id
         from events where world_id = ${worldId} and conversation_id = ${conversationId} and seq > ${from}
         order by seq limit ${size}`
       return rows.map(present)
     }
     const rows = await sql`
-      select seq, conversation_id, agent_id, type, status, data::text as data, created_at
+      select seq, conversation_id, agent_id, type, status, data::text as data, created_at, post_id
       from events
       where world_id = ${worldId} and conversation_id = ${conversationId}
         and seq < ${before ?? Number.MAX_SAFE_INTEGER}
