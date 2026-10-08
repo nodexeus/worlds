@@ -37,6 +37,8 @@ Linear is the source of truth for delivery status; GitHub hosts the code and pul
 | [Docker guide](docker.md) | Compose setup, session mounts, and limitations |
 | [Platform identity](platform-identity.md) | Durable agents versus runtimes, runs, and sessions |
 | [Harness adapters](../server/harnesses/README.md) | Existing local session adapter contract |
+| [Crew backend](crew-backend.md) | Roster, workspaces, storage settings and API of the crew backend |
+| [Crew chat design](superpowers/specs/2026-10-07-crew-chat-design.md) | Durable agents you can converse with, and the order that work is built in |
 | [DECISIONS.md](../DECISIONS.md) | Inherited technical decisions |
 
 The Electron spec and plan retain the original Bot Crossing name as historical context.
@@ -104,8 +106,11 @@ belongs to the old installation.
 
 The app monitors local harness sessions. The Library is a permanent selectable core
 building beside the arrival hab, with reserved ground and an explicitly unconnected
-knowledge drawer. There is no memory ingestion, RAG service, workflow execution,
-customer account system, billing, or platform-runtime lifecycle adapter yet.
+knowledge drawer. A crew backend (durable agents and workspaces in Postgres, see
+`docs/crew-backend.md`) is present when a database is configured. There is no memory
+ingestion, RAG service, workflow execution, customer account system, billing, or
+platform-runtime lifecycle adapter yet, and agents cannot yet be conversed with: see the
+crew chat design for the order of that work.
 
 The platform direction is durable Nodexeus agents with replaceable runtimes such as
 Hermes or OpenClaw, shared memory with access scopes and retrieval evidence, and

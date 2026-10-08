@@ -17,10 +17,15 @@ ENV NODE_ENV=production \
     PORT=5274
 WORKDIR /app
 
-# The server uses only Node built-ins; frontend dependencies are bundled in dist.
+# Frontend dependencies are bundled in dist. The server needs its own few at run time:
+# the Postgres client for the crew backend, and git to seed a workspace from a repository.
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY server ./server
-RUN mkdir -p /app/data && chown node:node /app/data
+RUN mkdir -p /app/data /var/lib/worlds && chown node:node /app/data /var/lib/worlds
 USER node
 
 EXPOSE 5274
