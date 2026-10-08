@@ -262,3 +262,38 @@ test('options for Claude Code reach its adapter', () => {
   const runtimes = createRuntimes({ claudeCode: { command: '/opt/claude', extraArgs: ['--model', 'haiku'] } })
   assert.equal(runtimes.get('claude-code').describe().resume, true)
 })
+
+// ── after review ─────────────────────────────────────────────────────────────────────────
+
+test('several questions are answered one each, and a single text only fits a single question', () => {
+  const { turn } = recording()
+  turn.emit({ type: 'started', handle: 'h' })
+  const two = [{ question: 'Which database?', options: [] }, { question: 'Deploy today?', options: ['Yes', 'No'], multiple: false }]
+  turn.emit({ type: 'question', requestId: 'q2', questions: two })
+  turn.emit({ type: 'question', requestId: 'q1', questions: [{ question: 'Why?', options: [] }] })
+  for (const bad of [{ text: 'Postgres' }, { answers: ['Postgres'] }, { answers: ['a', 'b', 'c'] }, { answers: ['a', 7] }, { answers: ['a', ' '] }, { answers: 'a,b' }]) {
+    assert.throws(() => turn.settle('q2', bad), refused('bad_answer'), JSON.stringify(bad))
+  }
+  assert.equal(turn.settle('q2', { answers: ['Postgres', 'No'] }), 'question')
+  assert.equal(turn.settle('q1', { text: 'Because.' }), 'question')
+})
+
+test('a question may say that more than one option can be chosen, and nothing else may ride along', () => {
+  assert.ok(checkEvent({ type: 'question', requestId: 'r', questions: [{ question: 'Q', options: ['a'], multiple: true }] }))
+  assert.throws(() => checkEvent({ type: 'question', requestId: 'r', questions: [{ question: 'Q', options: [], multiple: 'yes' }] }), /multiple/)
+})
+
+test('an agent\'s role has to be text of a size that can be handed to a runtime', () => {
+  for (const role of [7, null, {}, 'x'.repeat(32_001)]) {
+    assert.throws(() => checkTurnInput(input({ agent: { id: 'a', name: 'Ada', role } })), refused('bad_turn'), String(role).slice(0, 20))
+  }
+  assert.ok(checkTurnInput(input({ agent: { id: 'a', name: 'Ada' } })), 'no role at all is fine')
+})
+
+test('the scripted runtime, like a real one, never stops an autonomous agent for approval', async () => {
+  const { runtime, input: make } = scriptedSetup()
+  const { turn, events } = begin(runtime, make({ text: 'ask first', autonomy: 'autonomous' }))
+  assert.equal((await turn.done).outcome, 'finished')
+  assert.ok(!events.some((event) => event.type === 'approval'))
+  assert.equal(events.filter((event) => event.type === 'tool').at(-1).status, 'finished')
+})

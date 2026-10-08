@@ -60,7 +60,8 @@
 
 // Answer
 { allow: true } | { allow: false, message?: string }   // to an approval
-{ text: string }                                       // to a question
+{ answers: string[] }                                  // to a question: one per thing asked
+{ text: string }                                       // the same, when one thing was asked
 ```
 
 Events, each a plain object with `type`:

@@ -142,9 +142,53 @@ test('a question tool call with no usable questions is treated as an approval, n
   assert.equal(events[1].type, 'approval')
 })
 
-test('other control requests are not the person\'s business', () => {
-  const other = line({ type: 'control_request', request_id: 'r', request: { subtype: 'hook_callback' } })
-  assert.equal(read(init, other).events.length, 1)
+test('other control requests are not the person\'s business, and are answered so the CLI does not wait', () => {
+  const other = line({ type: 'control_request', request_id: 'r-hook', request: { subtype: 'hook_callback' } })
+  const { events, parser } = read(init, other)
+  assert.equal(events.length, 1)
+  const replies = parser.takeReplies().map((reply) => JSON.parse(reply))
+  assert.deepEqual(replies.map((r) => [r.type, r.response.subtype, r.response.request_id]), [['control_response', 'error', 'r-hook']])
+  assert.deepEqual(parser.takeReplies(), [], 'taken once')
+})
+
+test('a single text answers a single question', () => {
+  const ask = { questions: [{ question: 'Why?', options: [] }] }
+  const { parser } = read(init, canUse('req-q', 'AskUserQuestion', ask))
+  assert.deepEqual(JSON.parse(parser.answerLine('req-q', { text: 'Because.' })).response.response.updatedInput.answers, { 'Why?': 'Because.' })
+})
+
+test('a question says when more than one option may be chosen', () => {
+  const ask = { questions: [{ question: 'Which?', options: [{ label: 'A' }, { label: 'B' }], multiSelect: true }] }
+  assert.equal(read(init, canUse('req-q', 'AskUserQuestion', ask)).events[1].questions[0].multiple, true)
+})
+
+test('a tool call or a request with no id or name is ignored, not passed on broken', () => {
+  const { events } = read(
+    init,
+    assistant({ type: 'tool_use', id: '', name: 'Bash', input: {} }, { type: 'tool_use', id: 't', name: '', input: {} }),
+    canUse('', 'Bash', { command: 'x' }),
+    canUse('req', '', { command: 'x' })
+  )
+  assert.equal(events.length, 1)
+})
+
+test('a failure is classed by what the API said, not by words that happen to be in it', () => {
+  const code = (text, more = {}) => read(init, result({ is_error: true, subtype: 'error_during_execution', result: text, ...more })).events.at(-1).code
+  for (const text of [
+    'Tests failed: the login page did not render', 'Could not parse credentials.json in the workspace',
+    'could not find the api key column in schema.sql', 'Error: the file has 500 lines', 'API Error: 400 max_tokens: 512 is below the minimum',
+    'The accredited list could not be loaded', 'Budget of $500 exceeded',
+  ]) assert.equal(code(text), 'runtime', text)
+  for (const text of [
+    'API Error: 403 Your credit balance is too low', 'API Error: 529 Overloaded. If this persists, check your login',
+    'Claude usage limit reached. Resets at 5pm', 'You\'ve hit your session limit', 'Connection error.',
+    'getaddrinfo ENOTFOUND gateway.internal', 'Request timed out', 'connect ECONNREFUSED 127.0.0.1:4000',
+  ]) assert.equal(code(text), 'inference', text)
+  for (const text of ['Not logged in · Please run /login', 'Invalid API key', 'API Error: 401 authentication_error', 'OAuth token has expired']) {
+    assert.equal(code(text), 'auth', text)
+  }
+  assert.equal(code('x', { api_error_status: '503' }), 'inference')
+  assert.equal(code('x', { api_error_status: 401 }), 'auth')
 })
 
 test('answers are written back in the form the CLI waits for', () => {
@@ -158,13 +202,21 @@ test('answers are written back in the form the CLI waits for', () => {
     response: { subtype: 'success', request_id: 'req-1', response: { behavior: 'allow', updatedInput: bash } },
   })
   assert.deepEqual(reply('req-2', { allow: false, message: 'Not today.' }).response.response, { behavior: 'deny', message: 'Not today.' })
-  assert.deepEqual(reply('req-q', { text: 'Blue' }).response.response, {
+  assert.deepEqual(reply('req-q', { answers: ['Blue', 'It is calm.'] }).response.response, {
     behavior: 'allow',
-    updatedInput: { ...ask, answers: { 'Which colour?': 'Blue', 'Why?': 'Blue' } },
+    updatedInput: { ...ask, answers: { 'Which colour?': 'Blue', 'Why?': 'It is calm.' } },
   })
   assert.equal(parser.answerLine('req-1', { allow: true }), null, 'a request is answered once')
   assert.equal(parser.answerLine('nope', { allow: true }), null)
-  assert.ok(!parser.answerLine('req-1', { allow: true })?.includes('\n'))
+})
+
+test('an answer is one line whatever is in it', () => {
+  const { parser } = read(init, canUse('req-1', 'Bash', { command: 'printf "a\nb"\u2028' }), canUse('req-2', 'Bash', { command: 'x' }))
+  for (const written of [parser.answerLine('req-1', { allow: true }), parser.answerLine('req-2', { allow: false, message: 'no\n{"type":"control_response"}\u2029' })]) {
+    assert.ok(written.length > 20)
+    assert.ok(!/[\n\r\u2028\u2029]/.test(written), written)
+    assert.doesNotThrow(() => JSON.parse(written))
+  }
 })
 
 test('a refusal with no reason still gives the agent one', () => {

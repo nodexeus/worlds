@@ -29,6 +29,12 @@ const FAILURE_CODES = ['auth', 'inference', 'runtime', 'crashed']
 /** A person's message is long; a pasted log is longer; a megabyte is a mistake. */
 const TEXT_LIMIT = 100_000
 
+/**
+ * A role reaches some runtimes as a command-line argument, and an operating system only
+ * takes so much of one.
+ */
+const ROLE_LIMIT = 32_000
+
 const text = (value) => typeof value === 'string'
 const filled = (value) => typeof value === 'string' && value.length > 0
 
@@ -41,6 +47,9 @@ export function checkTurnInput(input) {
   if (!input || typeof input !== 'object') throw bad('an agent, a folder and a message')
   const { agent, folder, text: said, handle, autonomy, onEvent } = input
   if (!agent || !filled(agent.id) || !filled(agent.name)) throw bad('an agent with an id and a name')
+  if (agent.role !== undefined && (!text(agent.role) || agent.role.length > ROLE_LIMIT)) {
+    throw bad(`an agent whose role is text of at most ${ROLE_LIMIT} characters`)
+  }
   if (!filled(folder) || !path.isAbsolute(folder)) throw bad('an absolute workspace folder')
   if (!text(said) || !said.trim()) throw bad('a message')
   if (said.length > TEXT_LIMIT) throw bad(`a message of at most ${TEXT_LIMIT} characters`)
@@ -84,6 +93,7 @@ export function checkEvent(event) {
       for (const q of event.questions) {
         if (!q || !filled(q.question)) throw wrong('questions')
         if (!Array.isArray(q.options) || q.options.some((option) => !text(option))) throw wrong('options')
+        if (q.multiple !== undefined && typeof q.multiple !== 'boolean') throw wrong('multiple')
       }
       break
     case 'finished':
@@ -102,20 +112,38 @@ export function checkEvent(event) {
 }
 
 /**
- * An answer that fits what was asked: `{ allow, message? }` to an approval, `{ text }` to a
- * question.
+ * An answer that fits what was asked.
+ *
+ *   - to an approval: `{ allow: true }` or `{ allow: false, message? }`;
+ *   - to a question: `{ answers: string[] }`, one for each thing asked, in order. When only
+ *     one thing was asked, `{ text }` says the same.
+ *
+ * @param {'approval' | 'question'} kind
+ * @param {object} answer
+ * @param {number} [asked] how many questions the request held
  */
-export function checkAnswer(kind, answer) {
+export function checkAnswer(kind, answer, asked = 1) {
   const bad = (what) => new CrewError('bad_answer', what, 400)
+  const said = (value) => text(value) && value.trim().length > 0
   if (!answer || typeof answer !== 'object') throw bad('An answer is needed')
   if (kind === 'approval') {
     if (typeof answer.allow !== 'boolean') throw bad('An approval is answered with allow: true or false')
     if (answer.message !== undefined && !text(answer.message)) throw bad('The reason for a refusal is text')
-  } else if (!text(answer.text) || !answer.text.trim()) {
-    throw bad('A question is answered with text')
+    return answer
   }
+  if (answer.answers !== undefined) {
+    if (!Array.isArray(answer.answers) || answer.answers.length !== asked || !answer.answers.every(said)) {
+      throw bad(`${asked} ${asked === 1 ? 'question was' : 'questions were'} asked: give an answer to each`)
+    }
+    return answer
+  }
+  if (asked !== 1) throw bad(`${asked} questions were asked: give an answer to each, as answers`)
+  if (!said(answer.text)) throw bad('A question is answered with text')
   return answer
 }
+
+/** A question's answers as a list, one per thing asked, whichever way they were given. */
+export const answersOf = (answer) => answer.answers ?? [answer.text]
 
 /**
  * The part of a turn that is the same in every adapter, kept in one place so the rules
@@ -136,7 +164,7 @@ export function turnController(onEvent, { log = console.error } = {}) {
   let begun = false
   let ended = false
   let handle = null
-  /** @type {Map<string, 'approval' | 'question'>} */
+  /** @type {Map<string, {kind: 'approval' | 'question', asked: number}>} */
   const open = new Map()
   let resolve
   const done = new Promise((r) => {
@@ -167,7 +195,8 @@ export function turnController(onEvent, { log = console.error } = {}) {
       begun = true
       handle = event.handle
     }
-    if (event.type === 'approval' || event.type === 'question') open.set(event.requestId, event.type)
+    if (event.type === 'approval') open.set(event.requestId, { kind: 'approval', asked: 1 })
+    if (event.type === 'question') open.set(event.requestId, { kind: 'question', asked: event.questions.length })
     deliver(event)
   }
 
@@ -191,11 +220,11 @@ export function turnController(onEvent, { log = console.error } = {}) {
    * does not fit what was asked is refused and the request stays waiting.
    */
   function settle(requestId, answer) {
-    const kind = open.get(requestId)
-    if (!kind) throw new CrewError('unknown_request', 'Nothing is waiting for that answer', 409)
-    if (arguments.length > 1) checkAnswer(kind, answer)
+    const waiting = open.get(requestId)
+    if (!waiting) throw new CrewError('unknown_request', 'Nothing is waiting for that answer', 409)
+    if (arguments.length > 1) checkAnswer(waiting.kind, answer, waiting.asked)
     open.delete(requestId)
-    return kind
+    return waiting.kind
   }
 
   return {
@@ -203,6 +232,10 @@ export function turnController(onEvent, { log = console.error } = {}) {
     end,
     settle,
     isOpen: (requestId) => open.has(requestId),
+    /** Whether the turn is stopped on the person: a runtime is not stalled while it waits. */
+    get waiting() {
+      return open.size > 0
+    },
     get ended() {
       return ended
     },

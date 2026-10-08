@@ -71,7 +71,8 @@ that turns its own output into one stream of events, so nothing else in the serv
 session id or a command-line flag.
 
     const turn = runtimes.get(agent.runtime).start({ agent, folder, text, handle, autonomy, onEvent })
-    turn.answer(requestId, { allow: true })     // or { allow: false, message }, or { text }
+    turn.answer(requestId, { allow: true })     // or { allow: false, message }
+    turn.answer(requestId, { answers: ['Blue', 'Tomorrow'] })   // one per question; { text } for one
     turn.interrupt()
     await turn.done                             // { handle, outcome }, never rejects
 
@@ -97,13 +98,23 @@ Autonomy is passed with each turn:
 | Level | Meaning | Claude Code |
 | --- | --- | --- |
 | `ask` | Every action that changes something is an approval. | `--permission-mode manual` |
-| `workspace` | Edits inside the workspace go ahead; the rest is an approval. | `--permission-mode acceptEdits` |
+| `workspace` | File edits inside the workspace go ahead. Commands, and anything outside it, are an approval. | `--permission-mode acceptEdits` |
 | `autonomous` | Never stopped for approval. Still asks real questions. | `--permission-mode bypassPermissions` |
 
 Adapters today:
 
 - **`claude-code`**: runs the `claude` CLI headless, one process per turn, in the workspace
-  folder. It uses whatever credentials that CLI finds in the server's environment.
+  folder. It signs in as whoever the server runs as, and is otherwise kept apart from them:
+  - it is not given the server's own settings (`WORLDS_*`, `DATABASE_URL`, `PG*`);
+  - it does not load that user's Claude Code hooks, plugins or connected services
+    (`--setting-sources local --strict-mcp-config`);
+  - it does still read a `.claude/settings.local.json` inside the workspace, so a
+    repository cloned into a workspace can carry settings of its own. Treat a workspace's
+    source as trusted code.
+
+  Each agent runs in a process group of its own. Stopping an agent, or the server, stops
+  the agent and anything it started. An agent that says nothing for 30 minutes, while not
+  waiting on a person, is given up on.
 - **`scripted`**: plays fixed scripts. For tests and demonstrations; present only when the
   server is given scripts.
 

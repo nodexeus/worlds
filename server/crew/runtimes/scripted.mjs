@@ -9,7 +9,8 @@ import { ENDINGS, checkTurnInput, turnController } from './contract.mjs'
  *   - an event (`text`, `tool`, `approval`, `question`, or an ending). `started` is not in
  *     the script: the runtime sends it itself, with the conversation's handle;
  *   - `{ wait: requestId, allow?: Step[], deny?: Step[] }`: stop until that request is
- *     answered, then play `deny` if an approval was refused and `allow` otherwise;
+ *     answered, then play `deny` if an approval was refused and `allow` otherwise. Under
+ *     `autonomous` an approval is never raised and `allow` is played at once;
  *   - `{ pause: ms }`: take that long;
  *   - `{ crash: reason }`: fail as if the runtime had fallen over.
  *
@@ -33,11 +34,18 @@ export function createScriptedRuntime(scripts = {}) {
     const handle = input.handle ?? `scripted:${++conversations}`
     /** What the script is stopped on: a request's answer, or a pause. */
     let waiting = null
+    /** Approvals an autonomous agent was never asked. */
+    const skipped = new Set()
 
     const play = async (steps) => {
       for (const step of steps) {
         if (turn.ended) return
-        if ('wait' in step) {
+        if (step.type === 'approval' && input.autonomy === 'autonomous') {
+          // As a real runtime would: an autonomous agent is not stopped to be asked.
+          skipped.add(step.requestId)
+        } else if ('wait' in step && skipped.has(step.wait)) {
+          await play(step.allow ?? [])
+        } else if ('wait' in step) {
           const answer = await new Promise((resolve) => {
             waiting = { requestId: step.wait, resolve }
           })

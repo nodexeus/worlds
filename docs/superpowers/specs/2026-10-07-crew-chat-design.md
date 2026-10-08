@@ -240,7 +240,9 @@ robot walks to that plot.
 One setting per world with three levels. The default is the third.
 
 1. Ask before every action.
-2. Free inside the workspace folder, ask for anything beyond it.
+2. Free inside the workspace folder, ask for anything beyond it. How closely a runtime can
+   honour this is the runtime's: Claude Code lets file edits in the workspace go ahead
+   and still asks before running a command there.
 3. Fully autonomous: ask only real questions about the task.
 
 At level 3 the only wall around an agent is the customer's own instance, which is one

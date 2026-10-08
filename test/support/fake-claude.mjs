@@ -27,6 +27,8 @@ const result = (text, more = {}) =>
   write({ type: 'result', subtype: 'success', is_error: false, result: text, total_cost_usd: 0.001, duration_ms: 5, session_id: session, ...more })
 
 const lines = createInterface({ input: process.stdin })[Symbol.asyncIterator]()
+// Note: this reader, like Node's readline, also breaks a line at U+2028 and U+2029. The
+// adapter must therefore never write those raw, which the `echo:` scenario checks.
 const next = async () => {
   const { value, done } = await lines.next()
   return done ? null : JSON.parse(value)
@@ -91,11 +93,38 @@ if (text === 'plain') {
   const two = JSON.stringify({ type: 'assistant', session_id: session, message: { role: 'assistant', content: [{ type: 'text', text: 'together' }] } })
   const three = JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'done', session_id: session })
   process.stdout.write(one.slice(55) + '\n' + two + '\n' + three + '\n')
+} else if (text === 'grandchild' || text === 'holdpipe') {
+  // A tool the agent started: a process of its own, which must not outlive the turn.
+  const { spawn } = await import('node:child_process')
+  const child = spawn('sleep', [text === 'holdpipe' ? '3' : '30'], { stdio: ['ignore', text === 'holdpipe' ? 'inherit' : 'ignore', 'ignore'] })
+  fs.writeFileSync(process.env.FAKE_CLAUDE_PIDFILE + '.child', String(child.pid))
+  say('started a child')
+  if (text === 'holdpipe') process.exit(3)
+  await sleep(60_000)
+} else if (text === 'othercontrol') {
+  write({ type: 'control_request', request_id: 'req-other', request: { subtype: 'mcp_message', server_name: 'x' } })
+  for (;;) {
+    const reply = await next()
+    if (!reply) process.exit(0)
+    if (reply.type === 'control_response' && reply.response?.request_id === 'req-other') break
+  }
+  say('carried on')
+  result('carried on')
+} else if (text === 'separators') {
+  say('line\u2028separator and paragraph\u2029separator')
+  result('ok')
+} else if (text.startsWith('echo:')) {
+  say(text)
+  result('echoed')
+} else if (text === 'longline') {
+  process.stdout.write('x'.repeat(50_000))
+  await sleep(60_000)
 } else if (text === 'lingers') {
   result('done')
   await sleep(60_000)
 } else {
   // `args`: say what it was run with, so a test can read the command line the adapter built.
-  say(JSON.stringify({ argv, cwd: process.cwd(), marker: process.env.FAKE_CLAUDE_MARKER ?? null }))
+  const secrets = Object.keys(process.env).filter((key) => /^WORLDS_|DATABASE_URL|^PG/.test(key))
+  say(JSON.stringify({ argv, cwd: process.cwd(), marker: process.env.FAKE_CLAUDE_MARKER ?? null, secrets }))
   result('args')
 }
