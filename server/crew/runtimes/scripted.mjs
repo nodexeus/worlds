@@ -14,6 +14,7 @@ import { ENDINGS, checkTurnInput, turnController } from './contract.mjs'
  *     may be a function of the answer. Under `autonomous` an approval is never raised and
  *     `allow` is played at once;
  *   - `{ pause: ms }`: take that long;
+ *   - `{ until: promise }`: go on when it settles, for a test that must order two agents;
  *   - `{ crash: reason }`: fail as if the runtime had fallen over.
  *
  * A script that runs out without an ending finishes. A message with no script is echoed.
@@ -61,6 +62,12 @@ export function createScriptedRuntime(scripts = {}) {
           await new Promise((resolve) => {
             const timer = setTimeout(resolve, step.pause)
             waiting = { resolve: () => (clearTimeout(timer), resolve()) }
+          })
+          waiting = null
+        } else if ('until' in step) {
+          await new Promise((resolve) => {
+            waiting = { resolve }
+            Promise.resolve(step.until).then(resolve, resolve)
           })
           waiting = null
         } else if ('crash' in step) {

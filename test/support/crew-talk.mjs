@@ -3,6 +3,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { loadCatalog } from '../../server/crew/catalog.mjs'
+import { createChannel } from '../../server/crew/channel.mjs'
 import { createConversations } from '../../server/crew/conversations.mjs'
 import { CrewError } from '../../server/crew/errors.mjs'
 import { createEvents } from '../../server/crew/events.mjs'
@@ -57,16 +58,24 @@ export const withTalk = (run, { scripts = {}, worldId = 'w', retryDelays = [20, 
     await fs.mkdir(asideDir)
     /** Each agent the engine said had nothing left under way, in the order it said so. */
     const freed = []
-    const hooks = { onFree: (agentId) => freed.push(agentId) }
+    const hooks = {}
     const conversations = createConversations({
       sql, worldId, roster, workspaces, settings, runtimes, events, hub, retryDelays, asideDir,
       onFree: (agentId) => hooks.onFree(agentId), log: (...args) => logged.push(args),
     })
-    const crew = { worldId, sql, catalog, roster, workspaces, settings, hub, events, conversations, runtimes, demo: false, scripted, sent, store, logged, dataDir, asideDir, freed, hooks }
+    const channelLogged = []
+    const channel = createChannel({ sql, worldId, roster, workspaces, settings, conversations, runtimes, events, log: (...args) => channelLogged.push(args) })
+    hooks.onFree = (agentId) => {
+      freed.push(agentId)
+      channel.freed(agentId)
+    }
+    const crew = { worldId, sql, catalog, roster, workspaces, settings, hub, events, conversations, runtimes, demo: false, scripted, sent, store, logged, dataDir, asideDir, freed, hooks, channel, channelLogged }
     try {
       return await run(crew)
     } finally {
+      channel.shut()
       await conversations.close()
+      await channel.settled()
       await fs.rm(dataDir, { recursive: true, force: true })
     }
   })

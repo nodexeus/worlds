@@ -122,6 +122,8 @@ export function createChannel({ sql, worldId, roster, workspaces, settings, conv
   const work = new Set()
   /** What is still being made of each agent's latest answer. */
   const deciding = new Map()
+  /** The server is stopping: what is under way is recorded, and nothing new is begun. */
+  let shut = false
 
   function inPost(postId, step) {
     const result = (lines.get(postId) ?? Promise.resolve()).then(step)
@@ -325,6 +327,8 @@ export function createChannel({ sql, worldId, roster, workspaces, settings, conv
     await setDelivery(postId, agentId, { state: 'claimed', text: move.text })
     await taken(postId, agentId)
     await publish(postId)
+    // A claim won as the server stops is let go when it next starts: see `recover`.
+    if (shut) return
     await begin(postId, claim.id, agentId, place.id).catch((error) => {
       // The claim has been let go and the post says why. There is nobody here to tell.
       if (!(error instanceof CrewError)) throw error
@@ -490,6 +494,7 @@ export function createChannel({ sql, worldId, roster, workspaces, settings, conv
    * next waits for the next time it is free, so its task's own messages are never jumped.
    */
   function freed(agentId) {
+    if (shut) return Promise.resolve()
     return track((async () => {
       // If its last answer was a claim, the task that follows comes before any other post.
       await deciding.get(agentId)
@@ -537,5 +542,11 @@ export function createChannel({ sql, worldId, roster, workspaces, settings, conv
     while (work.size || lines.size) await Promise.all([...work, ...lines.values()])
   }
 
-  return { post, list, get, release, hand, freed, forget, recover, settled }
+  return {
+    post, list, get, release, hand, freed, forget, recover, settled,
+    /** The server is stopping. Agents being stopped must not be given what was waiting for them. */
+    shut() {
+      shut = true
+    },
+  }
 }

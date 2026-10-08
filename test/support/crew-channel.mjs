@@ -1,5 +1,4 @@
 // test/support/crew-channel.mjs
-import { createChannel } from '../../server/crew/channel.mjs'
 import { withTalk } from './crew-talk.mjs'
 
 const said = (text) => [{ type: 'text', text }, { type: 'finished', text }]
@@ -14,10 +13,6 @@ const said = (text) => [{ type: 'text', text }, { type: 'finished', text }]
  */
 export const withChannel = (run, { moves = {}, tasks = {}, ...options } = {}) =>
   withTalk(async (crew) => {
-    const logged = []
-    crew.channel = createChannel({ ...crew, log: (...args) => logged.push(args) })
-    crew.channelLogged = logged
-    crew.hooks.onFree = (agentId) => crew.channel.freed(agentId)
     const ada = await crew.roster.create({ name: 'Ada', runtime: 'claude-code', role: 'Writes the docs.' })
     const bo = await crew.roster.create({ name: 'Bo', runtime: 'claude-code' })
     const cy = await crew.roster.create({ name: 'Cy', runtime: 'hermes' })
@@ -53,13 +48,20 @@ export const outline = (post) => post.to.map((one) => [one.name, one.state, one.
 /** The `post` events the hub has sent, oldest first. */
 export const posted = (crew) => crew.sent.filter(([kind, payload]) => kind === 'event' && payload.type === 'post').map(([, payload]) => payload)
 
-/** Wait for the post to be held by an agent whose task has begun, and give it back. */
-export async function held(crew, postId, ms = 3000) {
+/** Wait until the post is as `test` wants it, and give it back. */
+export async function until(crew, postId, test, ms = 5000) {
   const deadline = Date.now() + ms
   for (;;) {
     const post = await crew.channel.get(postId)
-    if (post.claim?.state === 'granted' && post.claim.conversationId) return post
-    if (Date.now() > deadline) throw new Error(`the post was never taken: ${JSON.stringify(post)}`)
+    if (test(post)) return post
+    if (Date.now() > deadline) throw new Error(`the post never came to that: ${JSON.stringify(post)}`)
     await new Promise((resolve) => setTimeout(resolve, 10))
   }
 }
+
+/** Wait for the post to be held by an agent whose task has begun. */
+export const held = (crew, postId) => until(crew, postId, (post) => post.claim?.state === 'granted' && post.claim.conversationId)
+
+/** Wait for an agent to have had its say on a post. */
+export const answeredBy = (crew, postId, name) =>
+  until(crew, postId, (post) => !['queued', 'answering'].includes(post.to.find((one) => one.name === name)?.state))

@@ -4,10 +4,11 @@ import assert from 'node:assert/strict'
 import { channelInstruction, mentions, parseMove } from '../server/crew/channel.mjs'
 import { CrewError } from '../server/crew/errors.mjs'
 import { needsDb } from './support/crew-db.mjs'
-import { held, outline, posted, rest, withChannel } from './support/crew-channel.mjs'
+import { answeredBy, held, outline, posted, rest, withChannel } from './support/crew-channel.mjs'
 import { record, refused } from './support/crew-talk.mjs'
 
-const slowly = (text, ms = 150) => [{ pause: ms }, { type: 'text', text }, { type: 'finished', text }]
+/** Say `text` once `gate.promise` settles: for putting one agent's answer after another's. */
+const after = (gate, text) => [{ until: gate.promise }, { type: 'text', text }, { type: 'finished', text }]
 const LONG = [{ pause: 5000 }, { type: 'finished', text: 'never' }]
 
 test('the names after an @ are found, and an address is not one', () => {
@@ -57,9 +58,13 @@ test('an agent is told the three ways to answer, that it may not change anything
 
 test('a post goes to every free agent, and each answers once: a claim, a contribution, a pass', needsDb, async () => {
   await withChannel(async (crew, { ada, bo, cy, site, moves }) => {
-    // Ada takes a moment longer, so Bo has said its piece before the post is taken.
-    Object.assign(moves, { Ada: slowly('CLAIM: site\nI will fix the footer.'), Bo: 'The footer is in layout.css.' })
+    // Ada answers last, so the others have said their piece before the post is taken.
+    const gate = Promise.withResolvers()
+    Object.assign(moves, { Ada: after(gate, 'CLAIM: site\nI will fix the footer.'), Bo: 'The footer is in layout.css.' })
     const post = await crew.channel.post({ text: '  Who can fix the footer?  ' })
+    await answeredBy(crew, post.id, 'Bo')
+    await answeredBy(crew, post.id, 'Cy')
+    gate.resolve()
     assert.equal(post.text, 'Who can fix the footer?')
     assert.equal(post.named, false)
     assert.deepEqual(post.to.map((one) => [one.name, one.agentId]), [['Ada', ada.id], ['Bo', bo.id], ['Cy', cy.id]])
@@ -157,7 +162,8 @@ test('a world with no agents has nobody to post to', needsDb, async () => {
 
 test('a named agent that is busy has the post queued, and gets it when it is free', needsDb, async () => {
   await withChannel(async (crew, { ada, bo, site, moves, tasks }) => {
-    tasks.slow = slowly('Slow done.', 250)
+    const gate = Promise.withResolvers()
+    tasks.slow = after(gate, 'Slow done.')
     Object.assign(moves, { Ada: 'Now I can say: yes.', Bo: 'Yes.' })
     await crew.conversations.send(ada.id, { text: 'slow', workspaceId: site.id })
 
@@ -166,6 +172,8 @@ test('a named agent that is busy has the post queued, and gets it when it is fre
     const second = await crew.channel.post({ text: '@Ada and another thing' })
     assert.deepEqual(second.to.map((one) => [one.name, one.state]), [['Ada', 'queued']])
 
+    gate.resolve()
+    await answeredBy(crew, second.id, 'Ada')
     await rest(crew, [ada, bo])
     assert.deepEqual(outline(await crew.channel.get(post.id)), [['Ada', 'replied', null, 'Now I can say: yes.'], ['Bo', 'replied', null, 'Yes.']])
     assert.deepEqual(outline(await crew.channel.get(second.id)), [['Ada', 'replied', null, 'Now I can say: yes.']])
@@ -199,10 +207,13 @@ test('two agents claiming at the same moment: one is given the task, the other i
 
 test('when one agent takes the task, those still answering are stopped and those waiting are not asked', needsDb, async () => {
   await withChannel(async (crew, { ada, bo, cy, site, moves, tasks }) => {
-    tasks.slow = slowly('Slow done.', 300)
+    const gate = Promise.withResolvers()
+    tasks.slow = after(gate, 'Slow done.')
     Object.assign(moves, { Ada: 'CLAIM: Site', Bo: LONG, Cy: 'CLAIM: Site' })
     await crew.conversations.send(cy.id, { text: 'slow', workspaceId: site.id })
     const post = await crew.channel.post({ text: '@Ada @Bo @Cy fix the footer' })
+    await held(crew, post.id)
+    gate.resolve()
     await rest(crew, [ada, bo, cy])
 
     assert.deepEqual(outline(await crew.channel.get(post.id)), [
@@ -306,8 +317,12 @@ test('releasing a claim stops the agent if it is still on it, and leaves the pos
 test('a post can be handed to an agent as its task, which takes it from whoever had it', needsDb, async () => {
   await withChannel(async (crew, { ada, bo, cy, site, api, moves, tasks }) => {
     tasks['Fix the footer'] = LONG
-    Object.assign(moves, { Ada: slowly('CLAIM: Api'), Bo: 'It is in layout.css.' })
+    const gate = Promise.withResolvers()
+    Object.assign(moves, { Ada: after(gate, 'CLAIM: Api'), Bo: 'It is in layout.css.' })
     const post = await crew.channel.post({ text: 'Fix the footer' })
+    await answeredBy(crew, post.id, 'Bo')
+    await answeredBy(crew, post.id, 'Cy')
+    gate.resolve()
     const first = await held(crew, post.id)
     await rest(crew, [bo, cy])
 

@@ -102,15 +102,19 @@ export function createCrewStore({ log = console.error } = {}) {
   }
 
   function applyEvent(event) {
+    // What became of a post to the crew channel: no agent did it and no card shows it.
+    if (!event.agentId) return
     const one = agent(event.agentId)
     if (!one) strangers = true
     else if (event.seq > (heard.get(one.id) ?? 0)) {
       heard.set(one.id, event.seq)
-      const moved = event.conversationId !== one.conversationId
+      // An agent answering the channel is busy, and is still in the task it was in.
+      const aside = Boolean(event.postId)
+      const moved = !aside && event.conversationId !== one.conversationId
       if (moved) unplaced.add(one.id)
       if (moved || event.status !== one.status) {
         state.agents = state.agents.map((each) =>
-          each.id === one.id ? { ...each, status: event.status, conversationId: event.conversationId } : each)
+          each.id === one.id ? { ...each, status: event.status, conversationId: aside ? each.conversationId : event.conversationId } : each)
         tell({ kind: 'roster' })
       }
     }

@@ -11,6 +11,7 @@ import { createSettings } from './settings.mjs'
 import { createHub } from './hub.mjs'
 import { createEvents } from './events.mjs'
 import { createConversations } from './conversations.mjs'
+import { createChannel } from './channel.mjs'
 import { createRuntimes } from './runtimes/index.mjs'
 import { createDemoRuntimes } from './runtimes/demo.mjs'
 
@@ -22,6 +23,8 @@ async function checkDataDir(dataDir) {
   const probe = path.join(dataDir, `.write-check-${randomUUID()}`)
   try {
     await fs.mkdir(path.join(dataDir, 'workspaces'), { recursive: true })
+    // Where an agent that is in no workspace answers the crew channel from. Always empty.
+    await fs.mkdir(path.join(dataDir, 'channel'), { recursive: true })
     await fs.writeFile(probe, '')
     await fs.rm(probe, { force: true })
   } catch (error) {
@@ -78,12 +81,18 @@ export async function createCrew(config, { runtimes = config.demoRuntime ? creat
   const settings = createSettings({ sql, worldId: config.worldId })
   const hub = createHub()
   const events = createEvents({ sql, worldId: config.worldId, hub })
+  let channel = null
   const conversations = createConversations({
     sql, worldId: config.worldId, roster, workspaces, settings, runtimes, events, hub,
+    asideDir: path.join(config.dataDir, 'channel'),
+    // A post may be waiting for an agent that has just finished what it was doing.
+    onFree: (agentId) => channel?.freed(agentId),
   })
+  channel = createChannel({ sql, worldId: config.worldId, roster, workspaces, settings, conversations, runtimes, events })
   // A server that stopped took its agents' turns with it. Nothing must wait on one of those.
   const lost = await conversations.recover()
   if (lost) console.log(`Crew: ${lost} ${lost === 1 ? 'conversation was' : 'conversations were'} interrupted by the last stop`)
+  await channel.recover()
 
   return {
     worldId: config.worldId,
@@ -94,11 +103,15 @@ export async function createCrew(config, { runtimes = config.demoRuntime ? creat
     hub,
     events,
     conversations,
+    channel,
     runtimes,
     demo: Boolean(config.demoRuntime),
     /** Stop every agent, finish writing the record, and only then let the database go. */
     async close() {
+      channel.shut()
       await conversations.close()
+      await channel.settled()
+      await events.idle()
       await sql.end({ timeout: 5 })
     },
   }
