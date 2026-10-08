@@ -80,3 +80,14 @@ test('the API and the store agree on what "the database is not there" looks like
   }
   assert.deepEqual(await codes('../server/crew/http.mjs'), await codes('../server/crew/store/db.mjs'))
 })
+
+test('a query the database never finishes is given up on, and counts as the database being away', needsDb, async () => {
+  const sql = connect(process.env.WORLDS_TEST_DATABASE_URL, { max: 1, statementTimeout: 200 })
+  try {
+    const started = Date.now()
+    await assert.rejects(sql`select pg_sleep(5)`, (error) => isUnavailable(error))
+    assert.ok(Date.now() - started < 3000)
+  } finally {
+    await sql.end({ timeout: 1 })
+  }
+})

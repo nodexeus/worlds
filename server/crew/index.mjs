@@ -54,6 +54,9 @@ export async function createCrew(config) {
     throw new Error(`WORLDS_DATABASE_URL could not be used: ${error.message || error.code || error}`)
   }
 
+  const workspaces = createWorkspaces({ sql, worldId: config.worldId, dataDir: config.dataDir })
+  await workspaces.sweep()
+
   return {
     worldId: config.worldId,
     catalog,
@@ -64,7 +67,7 @@ export async function createCrew(config) {
       limit: config.agentLimit,
       entitled: config.entitled,
     }),
-    workspaces: createWorkspaces({ sql, worldId: config.worldId, dataDir: config.dataDir }),
+    workspaces,
     close: () => sql.end({ timeout: 5 }),
   }
 }

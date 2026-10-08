@@ -192,3 +192,58 @@ test('a host named in WORLDS_ALLOWED_HOSTS may reach the API, and no other may',
     await fs.rm(dir, { recursive: true, force: true })
   }
 })
+
+test('a request the store never answers gets a 503 in bounded time, and says it may have happened', async () => {
+  const never = () => new Promise(() => {})
+  const crew = { worldId: 'w', roster: { list: never, counts: never, create: never }, workspaces: {} }
+  const server = http.createServer((req, res) =>
+    handleCrew(req, res, new URL(req.url, 'http://localhost'), crew, { deadlineMs: 80 })
+  )
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  try {
+    const base = `http://127.0.0.1:${server.address().port}`
+    const started = Date.now()
+    const read = await fetch(`${base}/api/crew/agents`, { signal: AbortSignal.timeout(3000) })
+    assert.equal(read.status, 503)
+    assert.equal((await read.json()).code, 'store_timeout')
+    assert.ok(Date.now() - started < 2000)
+    const write = await fetch(`${base}/api/crew/agents`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"runtime":"hermes"}', signal: AbortSignal.timeout(3000),
+    })
+    assert.equal(write.status, 503)
+    assert.match((await write.json()).error, /may or may not/)
+  } finally {
+    server.closeAllConnections()
+    await new Promise((resolve) => server.close(resolve))
+  }
+})
+
+test('a named host may change things only from its own page', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'crew-hosts-'))
+  try {
+    await withEnv({ BOT_CROSSING_DATA: dir, WORLDS_ALLOWED_HOSTS: 'worlds.example.com', WORLDS_DATABASE_URL: undefined }, async () => {
+      const { apiMiddleware } = await import(`../server/api.mjs?hosts-post-${Date.now()}`)
+      const server = http.createServer((req, res) => apiMiddleware(req, res, null))
+      await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+      const post = (origin) =>
+        new Promise((resolve, reject) => {
+          const req = http.request(
+            { host: '127.0.0.1', port: server.address().port, path: '/api/crew/agents', method: 'POST',
+              headers: { Host: 'worlds.example.com', 'Content-Type': 'application/json', ...(origin ? { Origin: origin } : {}) } },
+            (res) => { res.resume(); res.on('end', () => resolve(res.statusCode)) }
+          )
+          req.on('error', reject)
+          req.end('{}')
+        })
+      try {
+        assert.equal(await post('https://worlds.example.com'), 404, 'let through, then told there is no crew')
+        assert.equal(await post('https://evil.example.com'), 403)
+        assert.equal(await post(undefined), 403)
+      } finally {
+        await new Promise((resolve) => server.close(resolve))
+      }
+    })
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
+})

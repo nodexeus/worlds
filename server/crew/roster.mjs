@@ -149,26 +149,27 @@ export function createRoster({ sql, worldId, catalog, limit, entitled, rand = Ma
   }
 
   async function update(id, { name, role } = {}) {
-    const current = await get(id)
-    if (current.curated && name !== undefined) {
-      throw new CrewError('name_fixed', `${current.name} is a specialist and keeps its name`, 409)
-    }
-    if (current.curated && role !== undefined) {
-      throw new CrewError('role_fixed', `${current.name} is a specialist and keeps its role`, 409)
-    }
-    if (name === undefined && role === undefined) return current
-    const text = role === undefined ? current.role : checkRole(role)
+    const before = await get(id)
+    if (name === undefined && role === undefined) return before
+    const fixed = (what) =>
+      new CrewError(`${what}_fixed`, `${before.name} is a specialist and keeps its ${what}`, 409)
+    if (before.curated && name !== undefined) throw fixed('name')
+    if (before.curated && role !== undefined) throw fixed('role')
+    const text = role === undefined ? undefined : checkRole(role)
 
     try {
       return await sql.begin(async (tx) => {
         await oneAtATime(tx)
+        // Read again now that nothing else can be changing it: what was read before the lock
+        // may be a moment old, and writing that back would undo somebody else's change.
         const rows = await living(tx)
+        const current = rows.find((row) => row.id === id)
+        if (!current) throw new CrewError('unknown_agent', 'There is no such agent in this world', 404)
         const chosen = name === undefined ? current.name : checkFree(name, rows, id)
         const [row] = await tx`
-          update agents set name = ${chosen}, role = ${text}
+          update agents set name = ${chosen}, role = ${text ?? current.role}
           where id = ${id} and world_id = ${worldId} and retired_at is null
           returning id, name, kind, runtime, role, template_id, created_at`
-        if (!row) throw new CrewError('unknown_agent', 'There is no such agent in this world', 404)
         return present(row)
       })
     } catch (error) {

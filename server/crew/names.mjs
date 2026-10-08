@@ -24,15 +24,26 @@ export const NAMES = [
 /** A letter first, then letters, digits, hyphens or underscores: 2 to 24 characters, one word. */
 const NAME = /^\p{L}[\p{L}\p{N}_-]{1,23}$/u
 
-/** The form in which two names are the same name. */
-export const nameKey = (name) => String(name).trim().toLowerCase()
+/**
+ * The form in which two names are the same name: no case, no accents, no difference between
+ * a composed letter and a letter with a mark after it.
+ *
+ * It has to fold at least as much as the database's `lower(name)` does, or a name could get
+ * past the reserved check here and still hold a specialist's name there. A capital I with a
+ * dot is the case that proves it: Postgres lowers it to a plain i, JavaScript to an i with a
+ * combining dot, and dropping marks brings the two back together.
+ */
+export const nameKey = (name) =>
+  String(name).trim().toLowerCase().normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase()
 
 /**
  * A name somebody typed, trimmed, or a refusal that says what a name has to be.
  * One word, because a crew member is addressed as `@name`.
  */
 export function checkName(name) {
-  const trimmed = typeof name === 'string' ? name.trim() : ''
+  // Composed first: a keyboard may send an accented letter as two code points, and that is
+  // the same name to the person typing it.
+  const trimmed = typeof name === 'string' ? name.trim().normalize('NFC') : ''
   if (!NAME.test(trimmed)) {
     throw new CrewError(
       'bad_name',

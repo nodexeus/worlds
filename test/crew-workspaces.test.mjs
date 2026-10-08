@@ -11,6 +11,9 @@ import { needsDb, withDb } from './support/crew-db.mjs'
 const refused = (code) => (error) => error instanceof CrewError && error.code === code
 const exists = (file) => fs.access(file).then(() => true, () => false)
 
+/** Set by `withWorkspaces` so a test's own clone function can look at the list mid-clone. */
+let listNow = async () => []
+
 const withWorkspaces = (run, options = {}) =>
   withDb(async (sql) => {
     const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'crew-ws-'))
@@ -20,8 +23,10 @@ const withWorkspaces = (run, options = {}) =>
       await fs.writeFile(path.join(folder, 'README.md'), `from ${url}`)
     }
     const make = (more = {}) => createWorkspaces({ sql, worldId: 'w', dataDir, clone, ...options, ...more })
+    const first = make()
+    listNow = () => first.list()
     try {
-      return await run(make(), { sql, dataDir, cloned, make })
+      return await run(first, { sql, dataDir, cloned, make })
     } finally {
       await fs.rm(dataDir, { recursive: true, force: true })
     }
@@ -86,7 +91,7 @@ test('a git source is cloned into the folder', needsDb, async () => {
   await withWorkspaces(async (workspaces, { cloned }) => {
     const repo = await workspaces.create({ name: 'Repo', gitUrl: 'https://example.com/a.git' })
     assert.equal(repo.gitUrl, 'https://example.com/a.git')
-    assert.deepEqual(cloned, [['https://example.com/a.git', repo.folder]])
+    assert.deepEqual(cloned.map(([url]) => url), ['https://example.com/a.git'])
     assert.equal(await fs.readFile(path.join(repo.folder, 'README.md'), 'utf8'), 'from https://example.com/a.git')
   })
 })
@@ -142,5 +147,69 @@ test('one world never sees another world\'s workspaces', needsDb, async () => {
     await assert.rejects(theirs.get(mine.id), refused('unknown_workspace'))
     await assert.rejects(theirs.archive(mine.id), refused('unknown_workspace'))
     assert.equal((await theirs.create({ name: 'Alpha' })).name, 'Alpha')
+  })
+})
+
+test('a workspace does not exist until its source has arrived, and a taken name is refused before any cloning', needsDb, async () => {
+  let during = null
+  let clones = 0
+  await withWorkspaces(
+    async (workspaces) => {
+      const repo = await workspaces.create({ name: 'Repo', gitUrl: 'https://example.com/a.git' })
+      assert.deepEqual(during, [], 'it was on the list while still being cloned')
+      assert.deepEqual((await workspaces.list()).map((w) => w.id), [repo.id])
+      await assert.rejects(workspaces.create({ name: 'repo', gitUrl: 'https://example.com/b.git' }), refused('workspace_name_taken'))
+      assert.equal(clones, 1, 'cloned a source for a name that was already taken')
+    },
+    {
+      clone: async (url, folder) => {
+        clones++
+        during = await createWorkspacesList()
+        await fs.writeFile(path.join(folder, 'README.md'), url)
+      },
+    }
+  )
+  async function createWorkspacesList() {
+    return listNow()
+  }
+})
+
+test('a clone that fails while the database is away still leaves nothing behind', needsDb, async () => {
+  await withWorkspaces(async (_unused, { sql, dataDir, make }) => {
+    const workspaces = make({
+      clone: async () => {
+        await sql.end({ timeout: 1 })
+        throw new Error('fatal: could not read from remote')
+      },
+    })
+    await assert.rejects(workspaces.create({ name: 'Half', gitUrl: 'https://example.com/a.git' }), refused('clone_failed'))
+    assert.deepEqual(await fs.readdir(path.join(dataDir, 'workspaces')), [])
+  })
+})
+
+test('what a creation cut short left behind is swept away at start, and real workspaces are not', needsDb, async () => {
+  await withWorkspaces(async (workspaces, { dataDir }) => {
+    const kept = await workspaces.create({ name: 'Kept' })
+    await fs.writeFile(path.join(kept.folder, 'work.txt'), 'kept')
+    const stale = path.join(dataDir, 'workspaces', '.incoming-0193a7c0-0000-7000-8000-000000000000')
+    await fs.mkdir(stale, { recursive: true })
+    await fs.writeFile(path.join(stale, 'partial'), '')
+    await workspaces.sweep()
+    assert.equal(await exists(stale), false)
+    assert.equal(await fs.readFile(path.join(kept.folder, 'work.txt'), 'utf8'), 'kept')
+  })
+})
+
+test('a rename and a new description arriving together are both kept', needsDb, async () => {
+  await withWorkspaces(async (workspaces) => {
+    for (let round = 0; round < 25; round++) {
+      const space = await workspaces.create({ name: `Space${round}`, description: 'old' })
+      await Promise.all([
+        workspaces.update(space.id, { name: `Renamed${round}` }),
+        workspaces.update(space.id, { description: 'new' }),
+      ])
+      const now = await workspaces.get(space.id)
+      assert.deepEqual([now.name, now.description], [`Renamed${round}`, 'new'], `round ${round}`)
+    }
   })
 })

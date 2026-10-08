@@ -53,6 +53,15 @@ A workspace is a name, a description and a folder named by the workspace's id. I
 seeded from an `https://` or `ssh://` git address. Archiving removes it from the world and
 keeps its files.
 
+A workspace appears only once its folder is complete: a source is cloned into a folder
+named `.incoming-<id>` and moved into place before the workspace is recorded. Anything a
+creation cut short leaves behind is removed at the next start.
+
+An `ssh://` source needs a key and a `known_hosts` entry for the user the server runs as.
+The image ships the ssh client and nothing else: mount those yourself. A private `https://`
+source needs credentials in the address, which are then stored with the workspace and
+visible to anyone who can see it, so prefer a read-only deploy token.
+
 ## API
 
 All under `/api/crew`, JSON in and out. A refusal answers `{ error, code }` with a 4xx
@@ -70,6 +79,10 @@ status. `GET /api/crew` answers `{ enabled: false }` on a monitor-only server.
 | `POST /api/crew/workspaces` | Add one. |
 | `PATCH /api/crew/workspaces/:id` | Rename or describe. |
 | `DELETE /api/crew/workspaces/:id` | Archive. |
+
+No request waits for ever. A query is cancelled by Postgres after 10 seconds, and a request
+the database never answers gets a 503 `store_timeout` after 15 seconds (150 for creating a
+workspace, which may be cloning). After a timed-out change, look before repeating it.
 
 State-changing requests need an `Origin` header naming this server, as the rest of the API
 does. From a terminal: `-H 'Origin: http://127.0.0.1:5274'`.

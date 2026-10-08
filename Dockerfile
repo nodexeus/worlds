@@ -19,7 +19,8 @@ WORKDIR /app
 
 # Frontend dependencies are bundled in dist. The server needs its own few at run time:
 # the Postgres client for the crew backend, and git to seed a workspace from a repository.
-RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
+# The ssh client is named because git only recommends it, and ssh:// sources need it.
+RUN apt-get update && apt-get install -y --no-install-recommends git openssh-client ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force

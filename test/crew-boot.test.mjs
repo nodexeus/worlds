@@ -103,3 +103,26 @@ test('the process has one crew, however many times it is asked for', needsDb, as
     await resetCrewForTests()
   })
 })
+
+test('a monitor-only server never loads the Postgres client or the store', async () => {
+  const { execFile } = await import('node:child_process')
+  const script = `
+    import { register } from 'node:module'
+    register('data:text/javascript,' + encodeURIComponent(
+      "export async function resolve(specifier, context, next) {" +
+      "  const found = await next(specifier, context);" +
+      "  if (specifier === 'postgres' || /crew\\\\/(index\\\\.mjs|store\\\\/)/.test(found.url)) throw new Error('LOADED ' + found.url);" +
+      "  return found }"
+    ))
+    const { apiMiddleware } = await import('./server/api.mjs')
+    const { bootCrew } = await import('./server/crew/boot.mjs')
+    await import('./server/http-server.mjs')
+    if ((await bootCrew({})) !== null || typeof apiMiddleware !== 'function') throw new Error('unexpected')
+    console.log('clean')
+  `
+  const out = await new Promise((resolve) =>
+    execFile(process.execPath, ['--input-type=module', '-e', script], { cwd: new URL('..', import.meta.url), env: { ...process.env, WORLDS_DATABASE_URL: '' } },
+      (error, stdout, stderr) => resolve({ stdout, stderr }))
+  )
+  assert.equal(out.stdout.trim(), 'clean', out.stderr)
+})

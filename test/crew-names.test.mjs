@@ -75,3 +75,15 @@ test('an empty catalog is allowed', async () => {
   assert.deepEqual(catalog.templates, [])
   assert.equal(catalog.reserved.size, 0)
 })
+
+test('two names are the same name however they are accented, cased or composed', () => {
+  // Postgres lowers a dotted capital I to a plain i. If this side did not, "QUİLL" would get
+  // past the reserved check and then hold the specialist's name in the database.
+  assert.equal(nameKey('QUİLL'), 'quill')
+  assert.equal(nameKey('Zoë'), nameKey('Zoë'))
+  assert.equal(nameKey('Zoë'), nameKey('zoe'))
+})
+
+test('a name typed in decomposed form is accepted and stored composed', () => {
+  assert.equal(checkName('Zoë'), 'Zoë')
+})

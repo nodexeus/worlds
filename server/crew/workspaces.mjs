@@ -9,6 +9,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const NAME_LIMIT = 48
 const DESCRIPTION_LIMIT = 200
 
+/** A workspace folder that is still being filled, and is not yet anybody's workspace. */
+const INCOMING = '.incoming-'
+
 /** https, ssh, or the `user@host:path` short form. Nothing local and nothing git runs. */
 const GIT_URL = /^(https:\/\/|ssh:\/\/|[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:)[^\s\u0000-\u001f]+$/
 
@@ -112,39 +115,63 @@ export function createWorkspaces({ sql, worldId, dataDir, clone = gitClone }) {
     const about = checkDescription(description)
     const source = gitUrl === undefined || gitUrl === null ? null : checkGitUrl(gitUrl)
 
-    let row
-    try {
-      ;[row] = await sql`
-        insert into workspaces (world_id, name, description, git_url)
-        values (${worldId}, ${chosen}, ${about}, ${source})
-        returning id, name, description, git_url, created_at`
-    } catch (error) {
-      throw taken(error)
-    }
+    // Refused before anything is fetched: a clone can take minutes, and finding out after it
+    // that the name was never free would waste all of them. The index still has the last word.
+    const [clash] = await sql`
+      select 1 as found from workspaces
+      where world_id = ${worldId} and lower(name) = lower(${chosen}) and archived_at is null`
+    if (clash) throw new CrewError('workspace_name_taken', 'There is already a workspace with that name', 409)
 
-    const folder = folderOf(row.id)
+    // The folder is made complete under a name of its own, moved into place, and only then
+    // recorded. So a workspace that is on the list always has all of its files, whatever
+    // fails and whenever the server stops. What a creation cut short leaves is an
+    // `.incoming-` folder, which `sweep` removes at the next start.
+    const [{ id }] = await sql`select uuidv7() as id`
+    const incoming = path.join(root, `${INCOMING}${id}`)
+    const folder = folderOf(id)
     try {
-      await fs.mkdir(folder, { recursive: true })
-      if (source) await clone(source, folder)
+      await fs.mkdir(incoming, { recursive: true })
+      if (source) await clone(source, incoming)
+      await fs.rename(incoming, folder)
     } catch (error) {
-      // Nothing half made: a workspace with no folder, or a folder with no workspace, would
-      // each be found later by somebody with no idea how it got there.
-      await sql`delete from workspaces where id = ${row.id}`
-      await fs.rm(folder, { recursive: true, force: true })
+      await fs.rm(incoming, { recursive: true, force: true })
       if (source) throw new CrewError('clone_failed', `Could not clone that source: ${error.message}`, 422)
       throw error
     }
-    return present(row)
+
+    try {
+      const [row] = await sql`
+        insert into workspaces (id, world_id, name, description, git_url)
+        values (${id}, ${worldId}, ${chosen}, ${about}, ${source})
+        returning id, name, description, git_url, created_at`
+      return present(row)
+    } catch (error) {
+      await fs.rm(folder, { recursive: true, force: true })
+      throw taken(error)
+    }
+  }
+
+  /** Remove what a creation that never finished left on disk. Run once, at start. */
+  async function sweep() {
+    const entries = await fs.readdir(root).catch(() => [])
+    await Promise.all(
+      entries
+        .filter((entry) => entry.startsWith(INCOMING))
+        .map((entry) => fs.rm(path.join(root, entry), { recursive: true, force: true }))
+    )
   }
 
   async function update(id, { name, description } = {}) {
     const current = await get(id)
     if (name === undefined && description === undefined) return current
-    const chosen = name === undefined ? current.name : checkName(name)
-    const about = description === undefined ? current.description : checkDescription(description)
+    const chosen = name === undefined ? null : checkName(name)
+    const about = description === undefined ? null : checkDescription(description)
     try {
+      // Only what was sent is written, so a rename and a new description arriving together
+      // do not each put back the other's old value.
       const [row] = await sql`
-        update workspaces set name = ${chosen}, description = ${about}
+        update workspaces
+        set name = coalesce(${chosen}, name), description = coalesce(${about}, description)
         where id = ${id} and world_id = ${worldId} and archived_at is null
         returning id, name, description, git_url, created_at`
       if (!row) throw new CrewError('unknown_workspace', 'There is no such workspace in this world', 404)
@@ -163,5 +190,5 @@ export function createWorkspaces({ sql, worldId, dataDir, clone = gitClone }) {
     if (!rows.length) throw new CrewError('unknown_workspace', 'There is no such workspace in this world', 404)
   }
 
-  return { list, get, create, update, archive, folderOf }
+  return { list, get, create, update, archive, sweep, folderOf }
 }

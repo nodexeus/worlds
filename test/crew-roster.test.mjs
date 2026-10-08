@@ -212,3 +212,32 @@ test('one world never sees another world\'s agents or names', needsDb, async () 
     assert.equal((await roster.list()).length, 1)
   })
 })
+
+test('a look-alike of a specialist\'s name cannot be taken and then block the specialist', needsDb, async () => {
+  await withRoster({}, async (roster) => {
+    await assert.rejects(roster.create({ name: 'QUİLL', runtime: 'hermes' }), refused('name_reserved'))
+    await roster.create({ name: 'Zoë', runtime: 'hermes' })
+    await assert.rejects(roster.create({ name: 'Zoe', runtime: 'hermes' }), refused('name_taken'))
+    assert.equal((await roster.createCurated('quill')).name, 'Quill')
+  })
+})
+
+test('a rename and a new role arriving together are both kept', needsDb, async () => {
+  await withRoster({}, async (roster, { sql }) => {
+    const ada = await roster.create({ name: 'Ada', runtime: 'hermes', role: 'Old role.' })
+    // Hold the roster's own lock so both changes are waiting on it at the same moment.
+    let release
+    const held = sql.begin(async (tx) => {
+      await tx`select pg_advisory_xact_lock(hashtext(${'crew-roster:w'}))`
+      await new Promise((resolve) => { release = resolve })
+    })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const both = Promise.all([roster.update(ada.id, { name: 'Grace' }), roster.update(ada.id, { role: 'New role.' })])
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    release()
+    await held
+    await both
+    const now = await roster.get(ada.id)
+    assert.deepEqual([now.name, now.role], ['Grace', 'New role.'])
+  })
+})
