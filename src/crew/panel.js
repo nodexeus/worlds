@@ -67,8 +67,21 @@ export function createPanel({ store, api, onOpen, isOpen, refresh, toast }) {
       }
     },
   }, ...AUTONOMY.map(([value, label]) => h('option', { value }, label)))
+  const limitOf = (value) => (value === '' ? null : Number(value))
+  const limit = h('select.cp-select', {
+    'aria-label': 'How many agents answer a post to the crew channel that names nobody',
+    onChange: async () => {
+      try {
+        store.setChannelLimit((await api.setChannelLimit(limitOf(limit.value))).settings.channelLimit)
+      } catch (error) {
+        drawSettings()
+        toast(error.message, 'err')
+      }
+    },
+  })
   const body = h('div.cp-body', null, linkEl, agentsEl, specialistsHead, specialistsEl, workspacesHead, workspacesEl, addRow, formEl,
-    h('label.cp-autonomy', null, h('span', null, 'Agents are'), autonomy))
+    h('label.cp-autonomy', null, h('span', null, 'Agents are'), autonomy),
+    h('label.cp-autonomy.cp-limit', null, h('span', null, 'A post reaches'), limit))
 
   const el = h('section.crew-panel.panel', { 'aria-label': 'Crew' }, h('header', null, toggle), body)
   el.addEventListener('keydown', (event) => {
@@ -143,6 +156,13 @@ export function createPanel({ store, api, onOpen, isOpen, refresh, toast }) {
   function drawSettings() {
     demoEl.hidden = !store.state.demo
     autonomy.value = store.state.autonomy
+    // The usual choices, and whatever the world has if it is none of them.
+    const { channelLimit } = store.state
+    const choices = [...new Set([1, 2, 3, 5, ...(channelLimit ? [channelLimit] : [])])].sort((a, b) => a - b)
+    limit.replaceChildren(
+      h('option', { value: '' }, 'every free agent'),
+      ...choices.map((n) => h('option', { value: String(n) }, `at most ${n} free ${n === 1 ? 'agent' : 'agents'}`)))
+    limit.value = channelLimit ? String(channelLimit) : ''
     linkEl.hidden = store.state.link === 'live'
   }
 

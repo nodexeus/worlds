@@ -359,8 +359,10 @@ busy agent, or start a new task in a workspace. All of it is `src/crew/`:
 | `store.js` | What the page knows: agents, workspaces, the events of conversations on show. |
 | `transcript.js` | A conversation's events as a card shows them. |
 | `compose.js` | What the message box is for, given the agent and the workspace chosen. |
+| `channel.js` | The crew channel's posts, kept current, and what each one shows. |
 | `markdown.js` | The markdown agents write, as data. Never HTML. |
 | `panel.js`, `card.js`, `render.js` | The crew list, a card, and an item of a transcript, as elements. |
+| `dock.js` | The crew channel, docked at the bottom right: one bar until it is opened. |
 | `index.js` | Puts it together, and draws nothing on a monitor-only server. |
 
 The first six touch no DOM and are tested in Node. Nothing an agent or a person wrote is

@@ -203,12 +203,66 @@ button.cp-row:hover { background: #202024; }
 .cc-send { flex: none; width: 26px; height: 26px; border: 0; border-radius: 7px; background: var(--accent); color: #050506; display: grid; place-items: center; padding: 0; }
 .cc-send svg { width: 15px; height: 15px; stroke-width: 2.4; }
 
+/* ── the crew channel ────────────────────────────────────────────────────────────── */
+
+.cp-limit { margin-top: 6px; padding-top: 0; border-top: 0; }
+
+.crew-dock {
+  position: absolute; right: calc(var(--side, 0px) + 12px); bottom: 24px; width: 400px;
+  max-width: calc(100% - 24px); max-height: min(660px, calc(100% - 140px));
+  display: flex; flex-direction: column; overflow: hidden; pointer-events: auto;
+}
+.crew-dock.collapsed { width: 320px; }
+.crew-dock > header { flex: none; }
+.cd-toggle { width: 100%; display: flex; align-items: center; gap: 10px; padding: 11px 12px 11px 14px; border: 0; background: none; color: var(--text); text-align: left; }
+.cd-toggle b { flex: none; font-size: 14.5px; font-weight: 600; }
+.cd-sub { flex: 1; min-width: 0; font: 12px 'Geist Mono', monospace; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cd-badge { flex: none; background: var(--accent); color: #050506; font-size: 11.5px; font-weight: 650; border-radius: 10px; padding: 1px 8px; }
+.cd-toggle svg { flex: none; width: 16px; height: 16px; color: var(--muted); transition: transform 160ms ease; }
+.crew-dock.collapsed .cd-toggle svg { transform: rotate(180deg); }
+.crew-dock:not(.collapsed) > header { border-bottom: 1px solid var(--line); }
+.cd-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.cd-posts { flex: 1; min-height: 120px; overflow-y: auto; overscroll-behavior: contain; padding: 12px; display: flex; flex-direction: column; gap: 16px; }
+.cd-post { display: flex; flex-direction: column; gap: 7px; }
+.cd-post > .cc-me { max-width: 88%; }
+.cd-sent { margin: 0; text-align: right; font: 11.5px 'Geist Mono', monospace; color: var(--faint); overflow-wrap: anywhere; }
+.cd-rep { display: flex; gap: 9px; align-items: flex-start; }
+.cd-rep .crew-face { width: 26px; height: 26px; border-radius: 7px; gap: 4px; margin-top: 1px; }
+.cd-rep .crew-face i { width: 4px; height: 6px; border-radius: 2px; }
+.cd-said { flex: 1; min-width: 0; }
+.cd-who { font-size: 13px; font-weight: 600; }
+.cd-who small { margin-left: 6px; font: 400 11.5px 'Geist Mono', monospace; color: var(--faint); }
+.cd-said .cc-ag { max-width: none; }
+.cd-acts { display: flex; gap: 12px; margin-top: 3px; font-size: 12px; }
+.cd-claim { margin-left: 35px; border: 1px solid #6b5a1a; background: #1a170c; border-radius: 10px; padding: 9px 11px; display: flex; flex-direction: column; gap: 7px; }
+.cd-claim h4 { margin: 0; font: 600 11px 'Geist Mono', monospace; color: var(--accent); letter-spacing: .04em; text-transform: uppercase; }
+.cd-claim[data-state='released'] { border-color: var(--line); background: #141416; }
+.cd-claim[data-state='released'] h4 { color: var(--muted); }
+.cd-claim p { margin: 0; overflow-wrap: anywhere; }
+.cd-pick { margin-left: 35px; background: #17171a; border: 1px solid var(--line); border-radius: 10px; padding: 4px; display: flex; flex-direction: column; gap: 1px; }
+.cd-pick-title { margin: 4px 7px 2px; font-size: 12px; color: var(--muted); }
+.cd-pick .cc-chips { padding: 4px 7px 6px; }
+.cd-option { display: flex; gap: 8px; align-items: center; width: 100%; padding: 5px 7px; border: 0; border-radius: 7px; background: none; color: var(--text); text-align: left; font-size: 13px; }
+.cd-option:hover:not(:disabled), .cd-option[aria-selected='true'] { background: #2b2819; }
+.cd-option .crew-face { width: 22px; height: 22px; border-radius: 6px; gap: 3px; }
+.cd-option .crew-face i { width: 3px; height: 5px; border-radius: 1.5px; }
+.cd-option em { margin-left: auto; font: normal 11.5px 'Geist Mono', monospace; color: var(--muted); }
+.cd-post > .cc-problem { margin-left: 35px; }
+.cd-note { margin: 0; padding-left: 35px; font: 11.5px 'Geist Mono', monospace; color: var(--faint); overflow-wrap: anywhere; }
+.cd-note[data-tone='pend'] { color: var(--working); }
+.cd-note[data-tone='wait'] { color: var(--waiting); }
+.cd-note[data-tone='fail'] { color: var(--failed); }
+.cd-foot { position: relative; }
+.cd-menu { position: absolute; left: 12px; bottom: calc(100% - 4px); width: 240px; background: #17171a; border: 1px solid var(--line); border-radius: 10px; padding: 4px; box-shadow: 0 8px 24px rgb(0 0 0 / 50%); }
+.cd-hint[data-ok='false'] { color: var(--waiting); }
+
 /* Narrow windows: the list and a card fit the width. The docked layout is still to come. */
 @media (max-width: 720px) {
   .crew-panel { left: 12px; right: 12px; top: 132px; width: auto; max-height: 45%; }
   .crew-card { left: 8px !important; right: 8px; top: auto !important; bottom: 8px; width: auto !important; height: 70% !important; resize: none; }
   .cc-head { cursor: default; }
+  .crew-dock, .crew-dock.collapsed { right: 12px; left: 12px; bottom: 12px; width: auto; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .cp-heading svg, .cc-tool-caret { transition: none; }
+  .cp-heading svg, .cc-tool-caret, .cd-toggle svg { transition: none; }
 }

@@ -44,7 +44,9 @@ function tool(item) {
 }
 
 function message(item, agentName) {
-  const note = item.state === 'queued' ? `queued · sent when ${agentName} finishes` : item.state === 'cancelled' ? 'not sent' : null
+  const note = item.state === 'queued' ? `queued · sent when ${agentName} finishes`
+    : item.state === 'cancelled' ? 'not sent'
+      : item.fromChannel ? 'from the crew channel' : null
   return h('div.cc-me', { data: { state: item.state } }, item.text, note ? h('small', null, note) : null)
 }
 

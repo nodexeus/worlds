@@ -28,6 +28,7 @@ export function createCrewStore({ log = console.error } = {}) {
     workspaces: [],
     specialists: [],
     autonomy: 'autonomous',
+    channelLimit: null,
     link: 'live',
   }
 
@@ -187,6 +188,7 @@ export function createCrewStore({ log = console.error } = {}) {
     setWorkspaces: (workspaces) => put('workspaces', workspaces, 'workspaces'),
     setSpecialists: (specialists) => put('specialists', specialists, 'specialists'),
     setAutonomy: (autonomy) => put('autonomy', autonomy, 'settings'),
+    setChannelLimit: (limit) => put('channelLimit', limit ?? null, 'settings'),
     setLink: (link) => put('link', link, 'link'),
     applyEvent,
     applyDelta,

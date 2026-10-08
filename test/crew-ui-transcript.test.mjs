@@ -185,3 +185,11 @@ test('events out of order, or given twice, come out the same', () => {
 test('an event of a kind this page does not know is passed over', () => {
   assert.deepEqual(transcript([ev('message', { text: 'x' }), ev('hologram', { text: '?' }), { nonsense: true }, null]).length, 1)
 })
+
+test('a task taken from the crew channel says so on the message that began it', () => {
+  const items = transcript([ev('message', { text: 'Fix the footer', postId: 'p1' }), ev('message', { text: 'and the header' })])
+  assert.deepEqual(plain(items), [
+    { kind: 'message', text: 'Fix the footer', state: 'sent', fromChannel: true },
+    { kind: 'message', text: 'and the header', state: 'sent' },
+  ])
+})

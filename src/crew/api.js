@@ -59,6 +59,15 @@ export function createCrewApi({ fetch: ask = (...args) => globalThis.fetch(...ar
     addSpecialist: (templateId) => call('POST', '/agents', { templateId }),
     createWorkspace: ({ name, description, gitUrl }) => call('POST', '/workspaces', filled({ name, description, gitUrl })),
     setAutonomy: (autonomy) => call('PATCH', '/settings', { autonomy }),
+    /** How many agents answer a post that names nobody. Null is all of them. */
+    setChannelLimit: (channelLimit) => call('PATCH', '/settings', { channelLimit }),
+    channel({ before, limit } = {}) {
+      const query = new URLSearchParams(filled({ before, limit })).toString()
+      return call('GET', `/channel${query ? `?${query}` : ''}`)
+    },
+    post: (text) => call('POST', '/channel', { text }),
+    release: (postId) => call('POST', `/channel/${id(postId)}/release`, {}),
+    hand: (postId, { agentId, workspaceId }) => call('POST', `/channel/${id(postId)}/hand`, filled({ agentId, workspaceId })),
     send: (agentId, { text, workspaceId }) => call('POST', `/agents/${id(agentId)}/messages`, filled({ text, workspaceId })),
     stop: (agentId) => call('POST', `/agents/${id(agentId)}/stop`, {}),
     answer: (conversationId, answer) => call('POST', `/conversations/${id(conversationId)}/answers`, answer),

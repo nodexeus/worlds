@@ -75,6 +75,8 @@ export function transcript(events, { draft = '' } = {}) {
 
     if (type === 'message') {
       const item = { kind: 'message', seq, text: String(data.text ?? ''), state: data.queued ? 'queued' : 'sent' }
+      // A task the agent took from the crew channel begins with the post.
+      if (data.postId) item.fromChannel = true
       messages.set(seq, item)
       items.push(item)
       said.push(item.text)
