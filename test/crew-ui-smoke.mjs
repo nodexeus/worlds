@@ -1,0 +1,362 @@
+// Run with Electron, not node:test: drives the real page against a real server whose agents
+// play a script. `npm run test:crew:ui` builds the page first.
+import { app, BrowserWindow } from 'electron'
+import assert from 'node:assert/strict'
+import { spawn } from 'node:child_process'
+import fs from 'node:fs/promises'
+import { mkdtempSync } from 'node:fs'
+import net from 'node:net'
+import os from 'node:os'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { setTimeout as delay } from 'node:timers/promises'
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const database = process.env.WORLDS_TEST_DATABASE_URL
+const temp = mkdtempSync(path.join(os.tmpdir(), 'crew-ui-'))
+const shots = process.env.CREW_UI_SHOTS || path.join(temp, 'shots')
+const schema = `ui_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+
+app.setPath('userData', path.join(temp, 'electron'))
+// The window is never shown, and a page that is not shown is not painted unless told to be.
+app.commandLine.appendSwitch('disable-renderer-backgrounding')
+app.commandLine.appendSwitch('disable-background-timer-throttling')
+
+let server
+let win
+const steps = []
+
+const freePort = () =>
+  new Promise((resolve, reject) => {
+    const probe = net.createServer()
+    probe.once('error', reject)
+    probe.listen(0, '127.0.0.1', () => {
+      const { port } = probe.address()
+      probe.close(() => resolve(port))
+    })
+  })
+
+/** Start the server as a deployment would: its own process, told everything by its environment. */
+function startServer(port) {
+  const child = spawn('node', ['server/serve.mjs'], {
+    cwd: root,
+    env: {
+      PATH: process.env.PATH,
+      // No sessions of the person running this are read: the campus is empty but for the crew.
+      HOME: temp,
+      CLAUDE_CONFIG_DIR: path.join(temp, 'claude'),
+      CODEX_HOME: path.join(temp, 'codex'),
+      BOT_CROSSING_CLAUDE_DESKTOP: path.join(temp, 'no-desktop'),
+      PORT: String(port),
+      WORLDS_DATABASE_URL: database,
+      WORLDS_DATABASE_SCHEMA: schema,
+      WORLDS_DATA_DIR: path.join(temp, 'data'),
+      WORLDS_DEMO_RUNTIME: '1',
+      WORLDS_CURATED_AGENTS: 'quill',
+      WORLDS_AGENT_LIMIT: '3',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  let said = ''
+  const ready = new Promise((resolve, reject) => {
+    child.stdout.on('data', (chunk) => {
+      said += chunk
+      if (said.includes('Crew backend ready')) resolve()
+    })
+    child.stderr.on('data', (chunk) => { said += chunk })
+    child.once('exit', (code) => reject(new Error(`the server stopped (${code}): ${said}`)))
+  })
+  return { child, ready, stop: () => new Promise((resolve) => (child.exitCode === null ? (child.once('exit', resolve), child.kill('SIGTERM')) : resolve())) }
+}
+
+/** Run an expression in the page and give back what it evaluates to. */
+const page = (expression) => win.webContents.executeJavaScript(`(async () => (${expression}))()`, true)
+
+/** Wait until an expression in the page is truthy, and give back its value. */
+async function until(expression, what, ms = 20_000) {
+  const deadline = Date.now() + ms
+  for (;;) {
+    const value = await page(expression).catch(() => null)
+    if (value) return value
+    if (Date.now() > deadline) throw new Error(`never happened: ${what}\n  ${expression}`)
+    await delay(40)
+  }
+}
+
+/**
+ * Save what the page looks like now. The window is drawn off screen, at its own pace, so the
+ * picture is taken from frames painted after this was asked for and not from the last one
+ * there happened to be.
+ */
+async function shot(name) {
+  await delay(400)
+  const image = await new Promise((resolve) => {
+    let frames = 0
+    let latest = null
+    const done = () => {
+      clearTimeout(timer)
+      win.webContents.off('paint', onPaint)
+      resolve(latest)
+    }
+    const onPaint = (_event, _dirty, frame) => {
+      latest = frame
+      if (++frames >= 5) done()
+    }
+    const timer = setTimeout(done, 4000)
+    win.webContents.on('paint', onPaint)
+    win.webContents.invalidate()
+  })
+  await fs.mkdir(shots, { recursive: true })
+  await fs.writeFile(path.join(shots, `${name}.png`), (image ?? await win.webContents.capturePage()).toPNG())
+}
+
+const step = (name) => {
+  steps.push(name)
+  process.stdout.write(`  ${name}\n`)
+}
+
+/** Helpers the page is given, so each step reads as what a person does. */
+const HELPERS = `
+  window.t = {
+    q: (sel, root = document) => root.querySelector(sel),
+    all: (sel, root = document) => [...root.querySelectorAll(sel)],
+    text: (sel, root = document) => root.querySelector(sel)?.textContent ?? '',
+    card: (name) => [...document.querySelectorAll('.crew-card')].find((card) => card.querySelector('.cc-who b').textContent === name),
+    row: (name) => [...document.querySelectorAll('.cp-row')].find((row) => row.querySelector('.cp-name').firstChild.textContent === name),
+    type(el, value) {
+      el.focus()
+      el.value = value
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+    },
+    /** Type into a card's box and send, once the last message has gone. */
+    async say(name, value) {
+      const card = this.card(name)
+      this.type(card.querySelector('.cc-input'), value)
+      const send = card.querySelector('.cc-send')
+      for (let n = 0; send.disabled && n < 200; n += 1) await new Promise((resolve) => setTimeout(resolve, 25))
+      send.click()
+    },
+    notes: (name) => [...window.t.card(name).querySelectorAll('.cc-note')].map((note) => note.textContent),
+    line: (name) => window.t.card(name).querySelector('.cc-line').textContent,
+    chip(name, workspace) {
+      [...this.card(name).querySelectorAll('.cc-chip')].find((chip) => chip.textContent === workspace).click()
+    },
+  }, true`
+
+async function load(url) {
+  await win.loadURL(url)
+  await page(HELPERS)
+  await until(`window.botCrossing?.crew && t.q('.crew-panel')`, 'the crew is installed and its list drawn', 60_000)
+}
+
+async function run() {
+  if (!database) throw new Error('set WORLDS_TEST_DATABASE_URL: the interface is checked against a real crew backend')
+  const port = await freePort()
+  const url = `http://127.0.0.1:${port}/`
+  server = startServer(port)
+  await server.ready
+
+  win = new BrowserWindow({ show: false, width: 1600, height: 1000, webPreferences: { backgroundThrottling: false, offscreen: true } })
+  const errors = []
+  win.webContents.on('console-message', ({ level, message }) => {
+    if (level === 'error' && !/favicon|megakit|Failed to load resource/.test(message)) errors.push(message)
+  })
+  await load(url)
+  // The first visit opens the help sheet over everything. This is not a first visit.
+  await page(`(localStorage.setItem('botcrossing.seen-help', '1'), document.querySelector('#btn-help-close').click())`)
+
+  step('a new world: nobody in the crew, a specialist on offer, and it says it is a demonstration')
+  assert.equal(await page(`t.text('.cp-count')`), '0 of 3 agents')
+  assert.match(await page(`t.text('.cp-empty')`), /No agents yet/)
+  assert.equal(await page(`t.q('.cp-tag').hidden`), false)
+  assert.equal(await page(`t.text('.cp-offer .cp-name')`), 'QuillResearch and briefings')
+  await shot('01-empty-world')
+
+  step('a workspace is made from the list, and a mistake is explained in the form')
+  await page(`t.all('.cp-add .cc-b')[1].click()`)
+  await page(`t.q('.cp-form form').requestSubmit()`)
+  assert.match(await until(`t.text('.cp-form .cc-problem')`, 'the refusal is shown'), /workspace name/i)
+  await page(`t.type(t.q('.cp-form input'), 'Site'), t.q('.cp-form form').requestSubmit()`)
+  await until(`t.text('.cp-places') === 'Site'`, 'the workspace is listed')
+  await page(`t.all('.cp-add .cc-b')[1].click(), t.type(t.q('.cp-form input'), 'Api'), t.q('.cp-form form').requestSubmit()`)
+  await until(`t.text('.cp-places') === 'SiteApi'`, 'the second workspace is listed')
+
+  step('an agent is added, and its card opens')
+  await page(`t.all('.cp-add .cc-b')[0].click(), t.type(t.q('.cp-form input'), 'Ada'), t.q('.cp-form form').requestSubmit()`)
+  await until(`t.card('Ada')`, 'the card is open')
+  assert.equal(await page(`t.text('.cp-count')`), '1 of 3 agents')
+  assert.equal(await page(`t.line('Ada')`), 'idle')
+  assert.equal(await page(`t.row('Ada').getAttribute('aria-pressed')`), 'true')
+
+  step('with two workspaces and nothing to continue, it must be told where')
+  await page(`t.type(t.card('Ada').querySelector('.cc-input'), 'Tidy the README')`)
+  assert.equal(await page(`t.card('Ada').querySelector('.cc-send').disabled`), true)
+  assert.match(await page(`t.text('.cc-hint', t.card('Ada'))`), /Choose a workspace/)
+  await page(`t.chip('Ada', 'Site')`)
+  assert.match(await page(`t.text('.cc-hint', t.card('Ada'))`), /New task in Site/)
+
+  step('a task is given: the agent works, its words arrive as it writes them, and it finishes')
+  await page(`t.card('Ada').querySelector('.cc-send').click()`)
+  await until(`t.line('Ada') === 'working · Site'`, 'the card says it is working')
+  assert.equal(await page(`t.row('Ada').dataset.status`), 'working')
+  await until(`t.card('Ada').querySelector('.cc-draft')?.textContent.length > 20`, 'text is streaming')
+  await shot('02-working')
+  await until(`t.notes('Ada').some((note) => note.startsWith('finished'))`, 'the turn finished')
+  assert.equal(await page(`t.card('Ada').querySelector('.cc-draft')`), null, 'the draft gave way to the stored text')
+  assert.deepEqual(await page(`t.all('.cc-tool', t.card('Ada')).map((tool) => [tool.dataset.state, tool.querySelector('.cc-tool-line').textContent])`), [['done', '✓Read: README.md▸'], ['done', '✓Edit: README.md']])
+  assert.equal(await page(`t.text('.cc-ag strong', t.card('Ada'))`), 'Install')
+  assert.equal(await page(`t.text('.cc-me', t.card('Ada'))`), 'Tidy the README')
+  assert.equal(await page(`t.line('Ada')`), 'idle · last in Site')
+  assert.equal(await page(`t.card('Ada').querySelector('.cc-input').value`), '')
+
+  step('a tool line opens to show what it gave back')
+  await page(`t.q('.cc-tool-line', t.card('Ada')).click()`)
+  assert.equal(await page(`t.q('.cc-tool-out', t.card('Ada')).hidden`), false)
+  assert.match(await page(`t.text('.cc-tool-out', t.card('Ada'))`), /A short description/)
+
+  step('markup an agent writes is shown, never run')
+  await page(`t.say('Ada', '<img src=x onerror="window.pwned=1"> [x](javascript:window.pwned=2) <script>window.pwned=3</script>')`)
+  await until(`t.notes('Ada').filter((note) => note.startsWith('finished')).length === 2`, 'the second turn finished')
+  assert.equal(await page(`window.pwned`), undefined)
+  assert.equal(await page(`t.all('.crew-card img, .crew-card script, .crew-card a[href^="javascript"]').length`), 0)
+  assert.match(await page(`t.all('.cc-ag', t.card('Ada')).at(-1).textContent`), /<img src=x onerror=/)
+
+  step('a message to a busy agent waits, and stopping the agent cancels it')
+  await page(`t.say('Ada', 'a long one please')`)
+  await until(`t.line('Ada') === 'working · Site'`, 'it is working again')
+  assert.equal(await page(`t.card('Ada').querySelector('.cc-chips').hidden`), true, 'a busy agent is not offered a workspace')
+  await page(`t.say('Ada', 'and also this')`)
+  await until(`t.q('.cc-me[data-state="queued"]', t.card('Ada'))`, 'the message is shown as queued')
+  await shot('03-queued')
+  await page(`t.card('Ada').querySelector('.cc-stop').click(), t.card('Ada').querySelector('.cc-stop').click()`)
+  await until(`t.notes('Ada').includes('stopped')`, 'the turn was stopped')
+  await until(`t.q('.cc-me[data-state="cancelled"]', t.card('Ada'))`, 'the queued message was cancelled')
+  assert.equal(await page(`t.card('Ada').querySelector('.cc-stop').hidden`), true)
+  assert.equal(await page(`t.all('.cc-tool[data-state="stopped"]', t.card('Ada')).length`), 1)
+
+  step('a question is answered in place')
+  await page(`t.say('Ada', 'I have a question for you')`)
+  await until(`t.q('.cc-ask', t.card('Ada'))`, 'the question is on the card')
+  assert.equal(await page(`t.line('Ada')`), 'needs you · Site')
+  assert.equal(await page(`t.row('Ada').dataset.status`), 'waiting')
+  await shot('04-question')
+  await page(`t.all('.cc-ask .cc-b', t.card('Ada'))[0].click()`)
+  await until(`t.notes('Ada').some((note) => note === 'Which should I begin with? answered: The README')`, 'the answer is shown')
+  await until(`t.all('.cc-ag', t.card('Ada')).at(-1).textContent.includes('begin with: The README')`, 'the agent went on with it')
+  assert.equal(await page(`t.q('.cc-ask', t.card('Ada'))`), null)
+
+  step('told to ask first, the agent asks, and two clicks are one answer')
+  await page(`(t.q('.cp-autonomy select').value = 'ask', t.q('.cp-autonomy select').dispatchEvent(new Event('change')))`)
+  await until(`botCrossing.crew.store.state.autonomy === 'ask'`, 'the world is set to ask')
+  await page(`t.say('Ada', 'approve the cleanup')`)
+  await until(`t.q('.cc-ask[data-type="approval"]', t.card('Ada'))`, 'the approval is on the card')
+  assert.match(await page(`t.text('.cc-ask-what', t.card('Ada'))`), /rm -rf build/)
+  await shot('05-approval')
+  await page(`(t.all('.cc-ask .cc-b', t.card('Ada'))[0].click(), t.all('.cc-ask .cc-b', t.card('Ada'))[0].click())`)
+  await until(`t.notes('Ada').includes('answered: allowed')`, 'the approval is shown as answered')
+  await until(`t.all('.cc-ag', t.card('Ada')).at(-1).textContent.includes('build output is gone')`, 'the agent went on')
+  assert.equal(await page(`t.notes('Ada').filter((note) => note === 'answered: allowed').length`), 1)
+  assert.equal(await page(`t.q('.cc-ask-problem:not([hidden])', t.card('Ada'))`), null)
+  await page(`(t.q('.cp-autonomy select').value = 'autonomous', t.q('.cp-autonomy select').dispatchEvent(new Event('change')))`)
+  await until(`botCrossing.crew.store.state.autonomy === 'autonomous'`, 'the world is autonomous again')
+
+  step('a failure is said plainly, and can be tried again')
+  await page(`t.say('Ada', 'please fail')`)
+  await until(`t.notes('Ada').some((note) => note.startsWith('failed: The demonstration runtime was asked to fail'))`, 'the failure is shown')
+  assert.equal(await page(`t.line('Ada')`), 'failed · last in Site')
+  assert.equal(await page(`t.all('.cc-note .cc-link', t.card('Ada')).length`), 1)
+  await shot('06-failed')
+  await page(`t.q('.cc-note .cc-link', t.card('Ada')).click()`)
+  await until(`t.notes('Ada').filter((note) => note.startsWith('failed')).length === 2`, 'it was tried again, and failed again')
+  assert.equal(await page(`t.all('.cc-note .cc-link', t.card('Ada')).length`), 1, 'only the last failure offers it')
+
+  step('what is typed while a message is on its way is kept')
+  await page(`(t.type(t.card('Ada').querySelector('.cc-input'), 'first thought'), t.card('Ada').querySelector('.cc-send').click(), t.type(t.card('Ada').querySelector('.cc-input'), 'second thought'))`)
+  await until(`t.all('.cc-me', t.card('Ada')).some((me) => me.firstChild.textContent === 'first thought')`, 'the first message went')
+  await until(`!t.card('Ada').querySelector('.cc-send').disabled`, 'the box is free again')
+  assert.equal(await page(`t.card('Ada').querySelector('.cc-input').value`), 'second thought')
+  await page(`t.type(t.card('Ada').querySelector('.cc-input'), '')`)
+  await until(`t.notes('Ada').filter((note) => note.startsWith('finished')).length === 5`, 'that turn finished')
+
+  step('sending twice in a hurry sends once')
+  await page(`(t.type(t.card('Ada').querySelector('.cc-input'), 'just once'), t.card('Ada').querySelector('.cc-send').click(), t.card('Ada').querySelector('.cc-send').click())`)
+  await until(`t.notes('Ada').filter((note) => note.startsWith('finished')).length === 6`, 'the turn finished')
+  assert.equal(await page(`t.all('.cc-me', t.card('Ada')).filter((me) => me.textContent === 'just once').length`), 1)
+
+  step('choosing a workspace starts a new task, and the old conversation is in the history')
+  await page(`t.chip('Ada', 'Api')`)
+  await page(`t.say('Ada', 'hello from the other workspace')`)
+  await until(`t.line('Ada') === 'working · Api'`, 'it moved to the other workspace')
+  await until(`t.notes('Ada').some((note) => note.startsWith('finished'))`, 'the new task finished')
+  assert.equal(await page(`t.all('.cc-me', t.card('Ada')).length`), 1, 'the card shows the new conversation only')
+  await page(`t.q('.cc-ib[aria-label="Earlier conversations"]', t.card('Ada')).click()`)
+  await until(`t.all('.cc-talk', t.card('Ada')).length === 2`, 'both conversations are listed')
+  assert.deepEqual(await page(`t.all('.cc-talk-title', t.card('Ada')).map((title) => title.textContent)`), ['hello from the other workspace', 'Tidy the README'])
+  await shot('07-history')
+  await page(`t.all('.cc-talk', t.card('Ada'))[1].click()`)
+  await until(`t.all('.cc-me', t.card('Ada')).length > 6`, 'the earlier conversation is shown')
+  assert.equal(await page(`t.q('.cc-banner', t.card('Ada')).hidden`), false)
+  assert.equal(await page(`t.q('.cc-foot', t.card('Ada')).hidden`), true, 'an earlier conversation is only read')
+  await page(`t.q('.cc-banner .cc-link', t.card('Ada')).click()`)
+  await until(`t.all('.cc-me', t.card('Ada')).length === 1`, 'back to the current one')
+  assert.equal(await page(`t.q('.cc-foot', t.card('Ada')).hidden`), false)
+
+  step('a specialist is added, in its own section, and counted apart')
+  await page(`t.q('.cp-offer .cc-b').click()`)
+  await until(`t.card('Quill')`, 'its card opened')
+  assert.equal(await page(`t.text('.cp-count')`), '1 of 3 agents, 1 specialist')
+  assert.equal(await page(`t.q('.cp-offer')`), null)
+  assert.match(await page(`t.line('Quill')`), /Research and briefings/)
+  assert.match(await page(`t.text('.cc-empty', t.card('Quill'))`), /Say something to Quill/)
+  const [ada, quill] = await page(`[t.card('Ada'), t.card('Quill')].map((card) => card.getBoundingClientRect().toJSON())`)
+  assert.ok(quill.left >= ada.right, 'a second card is put beside the first while there is room')
+  await shot('08-two-cards')
+
+  step('a pinned card comes back after a reload, and an unpinned one does not')
+  await page(`t.q('.cc-ib[aria-label^="Pin"]', t.card('Ada')).click()`)
+  await load(url)
+  await until(`t.card('Ada')`, 'the pinned card is back')
+  assert.equal(await page(`Boolean(t.card('Quill'))`), false)
+  await until(`t.all('.cc-me', t.card('Ada')).length === 1`, 'with its conversation')
+
+  step('the server going away is said, and coming back is caught up with')
+  await server.stop()
+  await until(`!t.q('.cp-link').hidden`, 'the list says it is reconnecting', 30_000)
+  server = startServer(port)
+  await server.ready
+  await until(`t.q('.cp-link').hidden`, 'the list is live again', 60_000)
+  await page(`t.say('Ada', 'are you still there')`)
+  await until(`t.notes('Ada').filter((note) => note.startsWith('finished')).length === 2`, 'a message after the restart is answered', 30_000)
+  assert.equal(await page(`t.all('.cc-me', t.card('Ada')).length`), 2, 'and nothing is shown twice')
+
+  step('an agent retired from somewhere else closes its card')
+  const retired = await page(`fetch('/api/crew/agents/' + t.card('Ada').dataset.agent, { method: 'DELETE' }).then((res) => res.status)`)
+  assert.equal(retired, 200)
+  await page(`window.dispatchEvent(new Event('focus'))`)
+  await until(`!t.card('Ada')`, 'the card closed')
+  assert.equal(await page(`t.text('.cp-count')`), '0 of 3 agents, 1 specialist')
+
+  assert.deepEqual(errors, [], 'nothing was logged as an error by the page')
+}
+
+app.whenReady().then(async () => {
+  let failed = null
+  try {
+    await run()
+    console.log(`Crew interface: ${steps.length} steps PASS. Screenshots in ${shots}`)
+  } catch (error) {
+    failed = error
+    console.error(`\nFAILED at: ${steps.at(-1) ?? 'start'}\n`, error)
+    if (win) await shot('failure').catch(() => {})
+  }
+  await server?.stop().catch(() => {})
+  if (database) {
+    // The schema this run made is its own: take it away again.
+    const { connect } = await import('../server/crew/store/db.mjs')
+    const sql = connect(database, { max: 1 })
+    await sql.unsafe(`drop schema if exists "${schema}" cascade`).catch(() => {})
+    await sql.end({ timeout: 2 })
+  }
+  if (!process.env.CREW_UI_SHOTS && !failed) await fs.rm(temp, { recursive: true, force: true })
+  app.exit(failed ? 1 : 0)
+})

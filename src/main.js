@@ -6,6 +6,7 @@ import { Engine } from './core/engine.js'
 import { CameraRig } from './core/camera.js'
 import { Colony, STATUS_LABEL, STATUS_ORDER, statusFor, transcriptProgress } from './game/colony.js'
 import { Hud } from './ui/hud.js'
+import { installCrew } from './crew/index.js'
 import { PLANETS } from './world/planet.js'
 import { DECK_TOP, PLOT_CELL, hexToWorld, worldToHex } from './world/plots.js'
 import { planMove } from './world/plot-move.js'
@@ -318,6 +319,13 @@ ambience.setPlanet(colony.planet)
 colony.onSound = (name, x, y, z) => ambience.play(name, { x, y, z, kind: colony.fauna.flock?.kind })
 
 const hud = new Hud(app, settings, actions)
+// The crew a hosted world has: a list of agents and the cards that talk to them. A server
+// that only monitors local sessions has none, and then this draws nothing.
+let crew = null
+installCrew(hud.el, { toast: (message, kind) => hud.toast(message, kind) }).then(
+  (installed) => { crew = installed },
+  (error) => console.error('crew:', error)
+)
 
 // ── selection ─────────────────────────────────────────────────────────────────────────
 
@@ -1255,7 +1263,7 @@ connectDesktopLifecycle({
 })
 
 // Handy for poking at the running colony from the console.
-window.botCrossing = { engine, rig, colony, settings, hud, ambience, audition, poll, get threads() { return threads } }
+window.botCrossing = { engine, rig, colony, settings, hud, ambience, audition, poll, get threads() { return threads }, get crew() { return crew } }
 
 /** `execCommand('copy')` over a throwaway textarea — the copy that predates permissions. */
 function copyFallback(text) {
