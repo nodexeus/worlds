@@ -127,3 +127,26 @@ test('a refusal with no wording still says something', async () => {
   const { fetch } = fake({ status: 500, body: {} })
   await assert.rejects(createCrewApi({ fetch }).agents(), (error) => error.code === 'fault' && error.status === 500 && error.message.length > 0)
 })
+
+test('the crew channel is read, posted to and corrected at its own addresses', async () => {
+  const { fetch, calls } = fake()
+  const api = createCrewApi({ fetch })
+  await api.channel()
+  await api.channel({ before: 'p 1', limit: 30 })
+  await api.post('Who can fix the footer?')
+  await api.release('p/1')
+  await api.hand('p1', { agentId: AGENT })
+  await api.hand('p1', { agentId: AGENT, workspaceId: 'w1' })
+  await api.setChannelLimit(2)
+  await api.setChannelLimit(null)
+  assert.deepEqual(calls.map((call) => [call.method, call.url, call.body]), [
+    ['GET', '/api/crew/channel', undefined],
+    ['GET', '/api/crew/channel?before=p+1&limit=30', undefined],
+    ['POST', '/api/crew/channel', { text: 'Who can fix the footer?' }],
+    ['POST', '/api/crew/channel/p%2F1/release', {}],
+    ['POST', '/api/crew/channel/p1/hand', { agentId: AGENT }],
+    ['POST', '/api/crew/channel/p1/hand', { agentId: AGENT, workspaceId: 'w1' }],
+    ['PATCH', '/api/crew/settings', { channelLimit: 2 }],
+    ['PATCH', '/api/crew/settings', { channelLimit: null }],
+  ])
+})

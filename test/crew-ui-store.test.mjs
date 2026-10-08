@@ -219,3 +219,13 @@ test('a listener that throws does not stop the others, and one that left hears n
   store.setLink('live')
   assert.deepEqual(heard, ['link'])
 })
+
+test('the limit on who answers a post is kept, and no limit is null', () => {
+  const { store, told } = made()
+  assert.equal(store.state.channelLimit, null)
+  store.setChannelLimit(2)
+  store.setChannelLimit(2)
+  store.setChannelLimit(undefined)
+  assert.equal(store.state.channelLimit, null)
+  assert.deepEqual(told.map((what) => what.kind), ['settings', 'settings'])
+})

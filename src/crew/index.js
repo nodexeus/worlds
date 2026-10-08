@@ -1,6 +1,8 @@
 import './crew.css'
 import { createCrewApi } from './api.js'
 import { createCard } from './card.js'
+import { createChannelState } from './channel.js'
+import { createDock } from './dock.js'
 import { h } from './dom.js'
 import { createPanel } from './panel.js'
 import { createRefresher } from './refresher.js'
@@ -33,6 +35,7 @@ export async function installCrew(hud, { toast }) {
 
   const store = createCrewStore()
   store.setStatus(status)
+  const channel = createChannelState()
 
   const layer = h('div.crew-layer')
   // Under the toasts and the help sheet, which are for the whole page.
@@ -43,14 +46,16 @@ export async function installCrew(hud, { toast }) {
   let rosterSeq = 0
   /** Everything a snapshot can say, read one at a time however many things ask for it. */
   const refresh = createRefresher(async () => {
-    const [roster, workspaces, specialists, settings] = await Promise.all([
-      api.agents(), api.workspaces(), api.specialists(), api.settings(),
+    const [roster, workspaces, specialists, settings, posts] = await Promise.all([
+      api.agents(), api.workspaces(), api.specialists(), api.settings(), api.channel(),
     ])
     rosterSeq = roster.seq ?? 0
     store.setWorkspaces(workspaces.workspaces)
     store.setSpecialists(specialists.specialists)
     store.setAutonomy(settings.settings.autonomy)
+    store.setChannelLimit(settings.settings.channelLimit)
     store.setRoster(roster)
+    channel.setPosts(posts)
   })
   const quietly = () => refresh().catch(() => {})
 
@@ -133,7 +138,9 @@ export async function installCrew(hud, { toast }) {
   }
 
   const panel = createPanel({ store, api, onOpen: (agentId) => open(agentId), isOpen: (agentId) => cards.has(agentId), refresh, toast })
-  layer.append(panel.el)
+  // The channel is ordered among the cards: whichever was last touched is on top.
+  const dock = createDock({ store, channel, api, onOpen: (agentId) => open(agentId), onFront: () => front(dock), toast })
+  layer.append(panel.el, dock.el)
 
   try {
     await refresh()
@@ -160,6 +167,7 @@ export async function installCrew(hud, { toast }) {
     onHello({ reset }) {
       if (reset) {
         store.reset()
+        channel.reset()
         for (const card of cards.values()) card.reload()
       }
       // A reconnect may have skipped what the stream does not carry: who is in the crew.
@@ -167,6 +175,8 @@ export async function installCrew(hud, { toast }) {
       greeted = true
     },
     onEvent(event) {
+      const changed = channel.apply(event)
+      if (changed) dock.noticed(changed)
       store.applyEvent(event)
       if (store.needsRoster()) refreshSoon()
     },
@@ -186,6 +196,7 @@ export async function installCrew(hud, { toast }) {
 
   return {
     store,
+    channel,
     open,
     close() {
       stream.close()
@@ -195,6 +206,7 @@ export async function installCrew(hud, { toast }) {
       window.removeEventListener('resize', onResize)
       for (const card of [...cards.values()]) card.close()
       panel.close()
+      dock.close()
       layer.remove()
     },
   }

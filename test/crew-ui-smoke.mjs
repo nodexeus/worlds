@@ -141,6 +141,25 @@ const HELPERS = `
     chip(name, workspace) {
       [...this.card(name).querySelectorAll('.cc-chip')].find((chip) => chip.textContent === workspace).click()
     },
+    dock: () => document.querySelector('.crew-dock'),
+    box: () => document.querySelector('.crew-dock .cc-input'),
+    /** The newest post in the channel, and parts of it. */
+    last: () => [...document.querySelectorAll('.cd-post')].at(-1),
+    replies: () => [...window.t.last().querySelectorAll('.cd-rep')].map((rep) => rep.querySelector('.cd-who').firstChild.textContent),
+    dnotes: () => [...window.t.last().querySelectorAll('.cd-note')].map((note) => note.textContent),
+    claim: () => window.t.last().querySelector('.cd-claim h4')?.textContent ?? '',
+    button(label, root = window.t.last()) {
+      return [...root.querySelectorAll('button')].find((button) => button.textContent === label)
+    },
+    /** Type a post and send it, once the last has gone. */
+    async post(value) {
+      const count = document.querySelectorAll('.cd-post').length
+      this.type(this.box(), value)
+      const send = document.querySelector('.crew-dock .cc-send')
+      for (let n = 0; send.disabled && n < 200; n += 1) await new Promise((resolve) => setTimeout(resolve, 25))
+      send.click()
+      for (let n = 0; document.querySelectorAll('.cd-post').length === count && n < 400; n += 1) await new Promise((resolve) => setTimeout(resolve, 25))
+    },
   }, true`
 
 async function load(url) {
@@ -358,6 +377,101 @@ async function run() {
   await page(`t.say('Ada', 'are you still there')`)
   await until(`t.notes('Ada').filter((note) => note.startsWith('finished')).length === 2`, 'a message after the restart is answered', 30_000)
   assert.equal(await page(`t.all('.cc-me', t.card('Ada')).length`), 2, 'and nothing is shown twice')
+
+  step('the crew channel is one bar until it is opened, and says who a post would go to')
+  assert.equal(await page(`t.dock().classList.contains('collapsed')`), true)
+  assert.equal(await page(`t.text('.cd-sub')`), 'nothing new')
+  await page(`t.q('.cd-toggle').click()`)
+  assert.equal(await page(`t.text('.cd-sub')`), '2 in the crew')
+  assert.equal(
+    await page(`t.all('.crew-card').every((card) => Number(card.style.zIndex) < Number(t.dock().style.zIndex))`), true,
+    'opened to be read, so it is in front of the cards')
+  assert.match(await page(`t.text('.cd-posts .cc-empty')`), /Nothing has been posted yet/)
+  await until(`t.line('Ada').startsWith('idle')`, 'Ada has finished')
+  await page(`t.type(t.box(), 'Does anyone know where the footer is?')`)
+  assert.match(await page(`t.text('.cd-hint')`), /every agent that is free: 2 of 2 now/)
+  await page(`t.type(t.box(), '@Zed are you there')`)
+  assert.equal(await page(`t.text('.cd-hint')`), 'There is no agent called Zed.')
+  assert.equal(await page(`t.q('.crew-dock .cc-send').disabled`), true)
+
+  step('a question to everyone is answered by each agent, under its name')
+  await page(`t.post('Does anyone know where the footer is?')`)
+  assert.equal(await page(`t.box().value`), '')
+  await until(`t.replies().length === 2`, 'both have answered', 30_000)
+  assert.deepEqual(await page(`t.replies()`), ['Ada', 'Quill'])
+  assert.equal(await page(`t.text('.cd-sent', t.last())`), 'sent to Ada, Quill')
+  assert.match(await page(`t.text('.cd-rep .cc-ag', t.last())`), /^Ada here\./)
+  assert.equal(await page(`t.text('.cd-rep[data-agent] .cd-who small', t.all('.cd-rep', t.last())[1])`), 'Research and briefings')
+  await shot('09-channel-replies')
+
+  step('typing @ offers the crew, and a post that names an agent goes only to it')
+  await page(`t.type(t.box(), '@qu')`)
+  assert.deepEqual(await page(`t.all('.cd-menu .cd-option').map((option) => option.firstChild.nextSibling.textContent)`), ['Quill'])
+  await page(`t.box().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))`)
+  assert.equal(await page(`t.box().value`), '@Quill ')
+  assert.equal(await page(`t.all('.cd-post').length`), 1, 'choosing a name is not sending')
+  assert.equal(await page(`t.text('.cd-hint')`), 'Goes only to Quill.')
+  await page(`t.post('@Quill you can pass on this one')`)
+  await until(`t.dnotes().includes('Quill passed')`, 'Quill passed', 30_000)
+  assert.equal(await page(`t.text('.cd-sent', t.last())`), 'sent to Quill')
+
+  step('a task posted to everyone is taken by one agent, and the other stands down')
+  await page(`t.post('Fix the footer')`)
+  const taken = await until(`t.claim().startsWith('Taken by') && t.button('Open task') && t.claim()`, 'one agent has it', 30_000)
+  const winner = taken.replace('Taken by ', '')
+  const other = winner === 'Ada' ? 'Quill' : 'Ada'
+  assert.equal(await page(`t.text('.cd-claim p', t.last())`), 'Its task is in Site.')
+  await until(`t.dnotes().includes('${other} stood down: it was taken')`, 'the other stood down')
+  assert.deepEqual(await page(`t.replies()`), [winner])
+  await shot('10-channel-claim')
+  await page(`t.button('Open task').click()`)
+  await until(`t.card('${winner}')`, 'the winner\'s card is open')
+  assert.equal(await until(`t.text('.cc-me small', t.card('${winner}'))`, 'the task says where it came from'), 'from the crew channel')
+  assert.equal(await page(`t.text('.cc-me', t.card('${winner}')).startsWith('Fix the footer')`), true)
+
+  step('the post is taken back, and handed to the other agent')
+  await page(`t.button('Release').click()`)
+  await until(`t.claim() === 'Released'`, 'it is released')
+  assert.equal(await page(`t.text('.cd-claim p', t.last())`), `${winner} was taken off it. Nobody has this now.`)
+  await until(`t.row('${winner}').dataset.status === 'idle'`, 'the winner was stopped')
+  await page(`t.button('Hand to…').click()`)
+  assert.deepEqual(await page(`t.all('.cd-pick .cd-option', t.last()).map((option) => option.firstChild.nextSibling.textContent)`), ['Ada', 'Quill'])
+  await shot('11-channel-hand')
+  await page(`t.all('.cd-pick .cd-option', t.last()).find((option) => option.textContent.startsWith('${other}')).click()`)
+  await until(`t.claim() === 'Taken by ${other}'`, 'the other agent has it')
+  await until(`t.row('${other}').dataset.status === 'working'`, 'and is working on it')
+  assert.equal(await page(`t.q('.cd-pick', t.last())`), null)
+
+  step('a world can limit how many agents answer')
+  await until(`t.row('${other}').dataset.status === 'idle'`, 'everyone is free again', 30_000)
+  await page(`(t.q('.cp-limit select').value = '1', t.q('.cp-limit select').dispatchEvent(new Event('change')))`)
+  await until(`fetch('/api/crew/settings').then((res) => res.json()).then((body) => body.settings.channelLimit === 1)`, 'the limit is kept')
+  await page(`t.post('Is anyone there?')`)
+  await until(`t.replies().length === 1`, 'one has answered', 30_000)
+  assert.match(await page(`t.text('.cd-sent', t.last())`), /^sent to (Ada|Quill) · skipped (Ada|Quill) \(over the limit\)$/)
+  await page(`(t.q('.cp-limit select').value = '', t.q('.cp-limit select').dispatchEvent(new Event('change')))`)
+  await until(`fetch('/api/crew/settings').then((res) => res.json()).then((body) => body.settings.channelLimit === null)`, 'the limit is lifted')
+
+  step('collapsed, the bar says what happened last and how many posts have news')
+  await page(`t.q('.cd-toggle').click()`)
+  assert.equal(await page(`t.q('.cd-body').hidden`), true)
+  await page(`fetch('/api/crew/channel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: '@Ada is the build green?' }) })`)
+  await until(`t.text('.cd-sub') === 'Ada replied'`, 'the bar says so', 30_000)
+  assert.equal(await page(`t.text('.cd-badge')`), '1')
+  assert.equal(await page(`t.q('.cd-badge').hidden`), false)
+  await shot('12-channel-collapsed')
+  await page(`t.q('.cd-toggle').click()`)
+  assert.equal(await page(`t.q('.cd-badge').hidden`), true)
+  assert.equal(await page(`t.all('.cd-post').length`), 5)
+
+  step('the channel is still there, in order, after a reload')
+  await load(url)
+  await page(`t.q('.cd-toggle').click()`)
+  await until(`t.all('.cd-post').length === 5`, 'the posts came back')
+  assert.equal(await page(`t.text('.cc-me', t.all('.cd-post')[2])`), 'Fix the footer')
+  assert.equal(await page(`t.text('.cd-claim h4', t.all('.cd-post')[2])`), `Taken by ${other}`)
+  if (!(await page(`Boolean(t.card('Ada'))`))) await page(`t.row('Ada').click()`)
+  await until(`t.card('Ada')`, 'Ada\'s card is open')
 
   step('an agent retired from somewhere else closes its card')
   const retired = await page(`fetch('/api/crew/agents/' + t.card('Ada').dataset.agent, { method: 'DELETE' }).then((res) => res.status)`)
