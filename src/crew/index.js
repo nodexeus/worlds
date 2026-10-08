@@ -47,7 +47,9 @@ export async function installCrew(hud, { toast }) {
   /** Everything a snapshot can say, read one at a time however many things ask for it. */
   const refresh = createRefresher(async () => {
     const [roster, workspaces, specialists, settings, posts] = await Promise.all([
-      api.agents(), api.workspaces(), api.specialists(), api.settings(), api.channel(),
+      api.agents(), api.workspaces(), api.specialists(), api.settings(),
+      // The channel failing to load is no reason for the crew not to.
+      api.channel().catch(() => null),
     ])
     rosterSeq = roster.seq ?? 0
     store.setWorkspaces(workspaces.workspaces)
@@ -55,7 +57,7 @@ export async function installCrew(hud, { toast }) {
     store.setAutonomy(settings.settings.autonomy)
     store.setChannelLimit(settings.settings.channelLimit)
     store.setRoster(roster)
-    channel.setPosts(posts)
+    if (posts) channel.setPosts(posts)
   })
   const quietly = () => refresh().catch(() => {})
 
@@ -168,6 +170,7 @@ export async function installCrew(hud, { toast }) {
       if (reset) {
         store.reset()
         channel.reset()
+        dock.reset()
         for (const card of cards.values()) card.reload()
       }
       // A reconnect may have skipped what the stream does not carry: who is in the crew.

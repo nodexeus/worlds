@@ -45,6 +45,8 @@ export function createDock({ store, channel, api, onOpen, onFront, toast }) {
   /** The name being typed after an `@`, and which of those offered is chosen. */
   let mention = null
   let chosen = 0
+  /** A name was just chosen, or the list dismissed: it stays away until something is typed. */
+  let quiet = false
 
   const subEl = h('span.cd-sub')
   const badgeEl = h('span.cd-badge', { hidden: true })
@@ -78,6 +80,8 @@ export function createDock({ store, channel, api, onOpen, onFront, toast }) {
     if (!collapsed) {
       unread.clear()
       latest = ''
+      // The box could not be measured while it was hidden.
+      drawBox()
       postsEl.scrollTop = postsEl.scrollHeight
       // Opened to be read, so not left under a card. Not at the start: nothing is ordered yet.
       if (el.isConnected) onFront()
@@ -139,7 +143,7 @@ export function createDock({ store, channel, api, onOpen, onFront, toast }) {
       ...store.state.agents.map((agent) => {
         const busy = BUSY.includes(agent.status)
         return h('button.cd-option', {
-          type: 'button', role: 'option', disabled: busy, data: { agent: agent.id },
+          type: 'button', role: 'option', disabled: busy, data: { agent: agent.id, act: `to:${agent.id}` },
           title: busy ? `${agent.name} is in the middle of something` : `Make this ${agent.name}'s task`,
           onClick: () => hand(post.id, agent.id),
         }, face(agent.status), agent.name, h('em', null, statusLabel(agent.status)))
@@ -162,7 +166,7 @@ export function createDock({ store, channel, api, onOpen, onFront, toast }) {
           h('div.cc-ag', null, renderMarkdown(reply.text)),
           // Gone from the crew: there is nobody to give the task to.
           reply.canTask && agent
-            ? h('div.cd-acts', null, h('button.cc-link', { type: 'button', disabled: busy, onClick: () => hand(post.id, reply.agentId) }, `Make this a task for ${reply.name}`))
+            ? h('div.cd-acts', null, h('button.cc-link', { type: 'button', disabled: busy, data: { act: `task:${reply.agentId}` }, onClick: () => hand(post.id, reply.agentId) }, `Make this a task for ${reply.name}`))
             : null)))
     }
 
@@ -173,11 +177,11 @@ export function createDock({ store, channel, api, onOpen, onFront, toast }) {
         h('p', null, claim.line),
         h('div.cc-opts', null,
           claim.canOpen && store.agent(claim.agentId)
-            ? h('button.cc-b.cc-primary', { type: 'button', onClick: () => onOpen(claim.agentId) }, 'Open task')
+            ? h('button.cc-b.cc-primary', { type: 'button', data: { act: 'open' }, onClick: () => onOpen(claim.agentId) }, 'Open task')
             : null,
-          claim.canRelease ? h('button.cc-b', { type: 'button', disabled: busy, onClick: () => release(post.id) }, 'Release') : null,
+          claim.canRelease ? h('button.cc-b', { type: 'button', disabled: busy, data: { act: 'release' }, onClick: () => release(post.id) }, 'Release') : null,
           h('button.cc-b', {
-            type: 'button', disabled: busy, 'aria-expanded': String(Boolean(state.pick)), class: claim.canRelease ? '' : 'cc-primary',
+            type: 'button', disabled: busy, data: { act: 'hand' }, 'aria-expanded': String(Boolean(state.pick)), class: claim.canRelease ? '' : 'cc-primary',
             onClick: () => act(post.id, state.pick ? null : { pick: true }),
           }, 'Hand to…'))))
     }
@@ -203,8 +207,21 @@ export function createDock({ store, channel, api, onOpen, onFront, toast }) {
       let entry = drawn.get(post.id)
       if (!entry || entry.from !== from) {
         const next = build(post, view, state)
-        if (entry) entry.el.replaceWith(next)
-        entry = { el: next, from }
+        if (entry) {
+          // Whoever was on a control in the post is put back on it, or on the first choice of
+          // a list they have just opened, and failing both on the post's own way in.
+          const held = entry.el.contains(document.activeElement) ? document.activeElement.dataset.act : undefined
+          entry.el.replaceWith(next)
+          if (held !== undefined) {
+            const opened = !entry.picking && (state.pick || state.place)
+            const usable = (control) => control && !control.disabled
+            const same = held ? next.querySelector(`[data-act="${CSS.escape(held)}"]`) : null
+            const target = (opened ? [...next.querySelectorAll('.cd-pick button')].find(usable) : null)
+              ?? (usable(same) ? same : null) ?? [...next.querySelectorAll('button')].find(usable) ?? postsEl
+            target.focus({ preventScroll: true })
+          }
+        }
+        entry = { el: next, from, picking: Boolean(state.pick || state.place) }
         drawn.set(post.id, entry)
       }
       if (entry.el.nextSibling !== before || entry.el.parentNode !== postsEl) postsEl.insertBefore(entry.el, before)
@@ -226,10 +243,10 @@ export function createDock({ store, channel, api, onOpen, onFront, toast }) {
     if (!first) return
     earlier.disabled = true
     try {
-      const { posts } = await api.channel({ before: first.id, limit: PAGE })
+      const { posts, seq } = await api.channel({ before: first.id, limit: PAGE })
       exhausted = posts.length < PAGE
       const height = postsEl.scrollHeight
-      channel.addEarlier(posts)
+      channel.addEarlier(posts, seq)
       // What the person was reading stays where it was.
       postsEl.scrollTop += postsEl.scrollHeight - height
     } catch (error) {
@@ -242,14 +259,17 @@ export function createDock({ store, channel, api, onOpen, onFront, toast }) {
   // ── the box ─────────────────────────────────────────────────────────────────────────
 
   function drawBox() {
-    const going = audience(input.value, store.state.agents)
+    const going = audience(input.value, store.state.agents, { limit: store.state.channelLimit })
     hintEl.textContent = going.text
     hintEl.dataset.ok = String(going.ok || !input.value.trim())
     send.disabled = sending || !going.ok
-    input.style.height = 'auto'
-    input.style.height = `${Math.min(input.scrollHeight, 160)}px`
+    // Hidden, it has no height to measure, and would be given none.
+    if (!body.hidden) {
+      input.style.height = 'auto'
+      input.style.height = `${Math.min(input.scrollHeight, 160)}px`
+    }
 
-    mention = document.activeElement === input ? mentionAt(input.value, input.selectionStart) : null
+    mention = !quiet && document.activeElement === input ? mentionAt(input.value, input.selectionStart) : null
     const offered = mention ? candidates(store.state.agents, mention.query) : []
     if (!offered.length) mention = null
     chosen = Math.min(chosen, Math.max(0, offered.length - 1))
@@ -271,6 +291,8 @@ export function createDock({ store, channel, api, onOpen, onFront, toast }) {
     input.value = written.text
     input.setSelectionRange(written.caret, written.caret)
     chosen = 0
+    // The caret is now at the end of a name, which would offer that name again.
+    quiet = true
     drawBox()
   }
 
@@ -282,7 +304,9 @@ export function createDock({ store, channel, api, onOpen, onFront, toast }) {
     input.value = ''
     drawBox()
     try {
-      await api.post(text)
+      const made = await api.post(text)
+      // Shown now, whatever the stream is doing. What the stream says of it is newer.
+      if (made?.post) channel.setPosts({ posts: [made.post], seq: 0 })
       postsEl.scrollTop = postsEl.scrollHeight
     } catch (error) {
       input.value = input.value ? `${text}\n${input.value}` : text
@@ -295,6 +319,7 @@ export function createDock({ store, channel, api, onOpen, onFront, toast }) {
 
   input.addEventListener('input', () => {
     chosen = 0
+    quiet = false
     drawBox()
   })
   input.addEventListener('click', () => drawBox())
@@ -308,15 +333,14 @@ export function createDock({ store, channel, api, onOpen, onFront, toast }) {
         chosen = (chosen + (event.key === 'ArrowDown' ? 1 : offered.length - 1)) % offered.length
         return void drawBox()
       }
-      if (event.key === 'Enter' || event.key === 'Tab') {
+      if (event.key === 'Enter' || (event.key === 'Tab' && !event.shiftKey)) {
         event.preventDefault()
         return choose(offered[chosen])
       }
       if (event.key === 'Escape') {
         event.preventDefault()
-        mention = null
-        menuEl.hidden = true
-        return
+        quiet = true
+        return void drawBox()
       }
     }
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -332,7 +356,7 @@ export function createDock({ store, channel, api, onOpen, onFront, toast }) {
   const unsubscribe = [
     channel.subscribe(() => drawPosts()),
     store.subscribe((what) => {
-      if (what.kind === 'roster' || what.kind === 'workspaces') {
+      if (what.kind === 'roster' || what.kind === 'workspaces' || what.kind === 'settings') {
         drawPosts()
         drawBox()
         drawBar()
@@ -352,6 +376,13 @@ export function createDock({ store, channel, api, onOpen, onFront, toast }) {
       if (!said || !el.classList.contains('collapsed')) return
       unread.add(now.id)
       latest = said
+      drawBar()
+    },
+    /** The record went back: what was counted and read from the old one is not to be trusted. */
+    reset() {
+      unread.clear()
+      latest = ''
+      exhausted = false
       drawBar()
     },
     close() {

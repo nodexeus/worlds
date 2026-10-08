@@ -58,10 +58,12 @@ export function createChannelState({ log = console.error } = {}) {
       }
       tell({ kind: 'posts' })
     },
-    /** Posts from further back, read when the person scrolls up. */
-    addEarlier(earlier) {
+    /** Posts from further back, current to `seq`, read when the person scrolls up. */
+    addEarlier(earlier, seq = 0) {
       for (const post of earlier) {
-        if (!posts.some((one) => one.id === post.id)) put(post)
+        if (posts.some((one) => one.id === post.id)) continue
+        heard.set(post.id, Math.max(heard.get(post.id) ?? 0, seq))
+        put(post)
       }
       tell({ kind: 'posts' })
     },
@@ -74,6 +76,10 @@ export function createChannelState({ log = console.error } = {}) {
       if (!now || typeof now.id !== 'string') return null
       if (event.seq <= (heard.get(now.id) ?? 0)) return null
       const was = posts.find((one) => one.id === now.id) ?? null
+      // From before the page that is held. Taking it would leave a gap between it and the
+      // rest that reading back could never fill: it is read, as it then stands, when the
+      // person reads back that far.
+      if (!was && posts.length && now.id < posts[0].id) return null
       heard.set(now.id, event.seq)
       put(now)
       tell({ kind: 'post', postId: now.id })
@@ -104,17 +110,21 @@ export function candidates(agents, query, limit = 6) {
 /** Write a chosen name where one was being typed. */
 export function complete(text, mention, name) {
   const before = text.slice(0, mention.start)
-  const after = text.slice(mention.start + 1 + mention.query.length)
+  // The caret may be inside a name already written: the rest of that name goes too.
+  const after = text.slice(mention.start + 1 + mention.query.length).replace(/^[\p{L}\p{N}_-]+/u, '')
   const written = `${before}@${name}${after ? '' : ' '}`
   return { text: written + after, caret: written.length }
 }
 
-/** Who a post would go to, said before it is sent. `ok` is whether it can be. */
-export function audience(text, agents) {
+/**
+ * Who a post would go to, said before it is sent. `ok` is whether it can be. `limit` is the
+ * world's limit on how many answer a post that names nobody, or null for none.
+ */
+export function audience(text, agents, { limit = null } = {}) {
   if (!agents.length) return { ok: false, text: 'There is nobody in the crew yet.' }
   const byKey = new Map(agents.map((agent) => [key(agent.name), agent]))
   const names = [...String(text).matchAll(MENTION)].map((match) => match[1])
-  const unknown = names.filter((name) => !byKey.has(key(name)))
+  const unknown = names.filter((name, at) => !byKey.has(key(name)) && names.findIndex((other) => key(other) === key(name)) === at)
   if (unknown.length) return { ok: false, text: `There is no agent called ${unknown.join(' or ')}.` }
   const ok = Boolean(String(text).trim())
 
@@ -130,6 +140,7 @@ export function audience(text, agents) {
 
   const free = agents.filter((agent) => !BUSY.includes(agent.status)).length
   if (!free) return { ok, text: 'Everyone is busy, so nobody would get this. Name an agent with @ and it gets it when it is free.' }
+  if (limit && limit < free) return { ok, text: `Goes to ${limit} of the ${free} agents that are free. Type @ to name one.` }
   return { ok, text: `Goes to every agent that is free: ${free} of ${agents.length} now. Type @ to name one.` }
 }
 

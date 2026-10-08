@@ -26,9 +26,9 @@ test('the channel keeps its posts in order, and an event replaces the post it is
   assert.deepEqual([changed.was.text, changed.now.text], ['post p1', 'now'])
   assert.equal(channel.posts[0].text, 'now')
   // A new post goes where its id puts it, which is when it was made.
-  assert.equal(channel.apply(about(12, post('p3'))).was, null)
-  channel.apply(about(13, post('p0')))
-  assert.deepEqual(channel.posts.map((one) => one.id), ['p0', 'p1', 'p2', 'p3'])
+  assert.equal(channel.apply(about(13, post('p4'))).was, null)
+  channel.apply(about(14, post('p3')))
+  assert.deepEqual(channel.posts.map((one) => one.id), ['p1', 'p2', 'p3', 'p4'])
   assert.equal(told.length, 4)
 })
 
@@ -171,4 +171,43 @@ test('what the collapsed bar says is the latest thing an agent did', () => {
   assert.equal(headline(before, before), null)
   assert.equal(headline(null, before), null, 'the person\'s own post is not news to them')
   assert.equal(headline(now({}, { agentId: 'a1', name: 'Ada', state: 'granted' }), now({}, { agentId: 'a1', name: 'Ada', state: 'released' })), 'Ada was taken off a task')
+})
+
+test('word of a post from before the page that is held is left for when the person reads back', () => {
+  const channel = createChannelState()
+  channel.setPosts({ posts: [post('p5'), post('p6')], seq: 10 })
+  assert.equal(channel.apply(about(11, post('p2', { text: 'old news' }))), null)
+  assert.deepEqual(channel.posts.map((one) => one.id), ['p5', 'p6'], 'so reading back still starts from the oldest held')
+  // Read back, it is as it now stands, and what the stream replays from before does not undo it.
+  channel.addEarlier([post('p2', { text: 'old news' }), post('p3')], 12)
+  assert.equal(channel.apply(about(11, post('p2', { text: 'older still' }))), null)
+  assert.notEqual(channel.apply(about(13, post('p2', { text: 'newer' }))), null)
+  assert.deepEqual(channel.posts.map((one) => one.text), ['newer', 'post p3', 'post p5', 'post p6'])
+  // With nothing held there is no page to be before.
+  const empty = createChannelState()
+  assert.notEqual(empty.apply(about(1, post('p2'))), null)
+})
+
+test('a name chosen with the caret inside one already written replaces the whole of it', () => {
+  assert.deepEqual(complete('@Juniper look', mentionAt('@Juniper look', 3), 'Juniper'), { text: '@Juniper look', caret: 8 })
+  assert.deepEqual(complete('ask @ju-2x, then', mentionAt('ask @ju-2x, then', 7), 'Juno'), { text: 'ask @Juno, then', caret: 9 })
+})
+
+test('who a post would go to allows for the world\'s limit, and names a missing agent once', () => {
+  assert.deepEqual(audience('Anyone?', AGENTS, { limit: 1 }), { ok: true, text: 'Goes to 1 of the 2 agents that are free. Type @ to name one.' })
+  assert.deepEqual(audience('Anyone?', AGENTS, { limit: 2 }), { ok: true, text: 'Goes to every agent that is free: 2 of 4 now. Type @ to name one.' })
+  assert.deepEqual(audience('@Ada look', AGENTS, { limit: 1 }), { ok: true, text: 'Goes only to Ada. Ada is busy and gets it when it is free.' })
+  assert.deepEqual(audience('@Zed and @zed and @Yan', AGENTS), { ok: false, text: 'There is no agent called Zed or Yan.' })
+})
+
+test('a post says something sensible whatever the server gave as a reason, or none', () => {
+  const view = postView(post('p1', {
+    to: [to('Ada', 'skipped', { reason: 'This server cannot run it' }), to('Bo', 'skipped'), to('Juniper', 'replied', { text: null }), to('Juno', 'failed')],
+    claim: { agentId: 'gone', name: 'Mabel', workspaceId: 'w1', conversationId: null, state: 'released', reason: null },
+  }), { workspaces: WORKSPACES })
+  assert.equal(view.sent, 'sent to Juniper, Juno · skipped Ada (This server cannot run it), Bo (skipped)')
+  assert.equal(view.replies[0].text, '')
+  assert.deepEqual(view.notes, [{ tone: 'fail', text: 'Juno could not answer: it failed' }])
+  assert.equal(view.claim.line, 'Mabel could not start: it is not known why. Nobody has this now.')
+  assert.doesNotMatch(JSON.stringify(view), /undefined|null \(|\(null/)
 })
