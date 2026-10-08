@@ -49,7 +49,7 @@ test('the status route gives the world and the counts', needsDb, async () => {
     assert.deepEqual(await call('GET', '/api/crew'), {
       status: 200,
       body: {
-        enabled: true, worldId: 'w', demo: false, runtimes: ['claude-code', 'hermes'],
+        enabled: true, worldId: 'w', demo: false,
         counts: { standard: { used: 0, limit: 2 }, curated: { used: 0 } },
       },
     })
@@ -72,10 +72,10 @@ test('the agent list says which event it is current to', needsDb, async () => {
 
 test('agents can be made, listed, changed and retired', needsDb, async () => {
   await withCrew(async (call) => {
-    const made = await call('POST', '/api/crew/agents', { name: 'Ada', kind: 'rock', runtime: 'hermes', role: 'Writes docs.' })
+    const made = await call('POST', '/api/crew/agents', { name: 'Ada', kind: 'rock', role: 'Writes docs.' })
     assert.equal(made.status, 201)
     const { agent } = made.body
-    assert.deepEqual([agent.name, agent.kind, agent.runtime, agent.role, agent.curated], ['Ada', 'rock', 'hermes', 'Writes docs.', false])
+    assert.deepEqual([agent.name, agent.kind, agent.role, agent.curated, agent.runs], ['Ada', 'rock', 'Writes docs.', false, true])
 
     const listed = await call('GET', '/api/crew/agents')
     assert.deepEqual(listed.body.agents.map((a) => a.id), [agent.id])
@@ -101,11 +101,10 @@ test('a specialist is made from its template id', needsDb, async () => {
 
 test('a refusal answers with its status, its code and its words', needsDb, async () => {
   await withCrew(async (call) => {
-    await call('POST', '/api/crew/agents', { name: 'Ada', runtime: 'hermes' })
-    await call('POST', '/api/crew/agents', { name: 'Bolt', runtime: 'hermes' })
+    await call('POST', '/api/crew/agents', { name: 'Ada' })
+    await call('POST', '/api/crew/agents', { name: 'Bolt' })
     const cases = [
-      [await call('POST', '/api/crew/agents', { runtime: 'hermes' }), 409, 'agent_limit'],
-      [await call('POST', '/api/crew/agents', { runtime: 'gpt' }), 400, 'bad_runtime'],
+      [await call('POST', '/api/crew/agents', {}), 409, 'agent_limit'],
       [await call('POST', '/api/crew/agents', { templateId: 'nobody' }), 404, 'unknown_template'],
       [await call('PATCH', '/api/crew/agents/not-an-id', { name: 'Zed' }), 404, 'unknown_agent'],
       [await call('DELETE', '/api/crew/agents/00000000-0000-7000-8000-000000000000'), 404, 'unknown_agent'],
@@ -247,4 +246,37 @@ test('a named host may change things only from its own page', async () => {
   } finally {
     await fs.rm(dir, { recursive: true, force: true })
   }
+})
+
+/** Every name of something an agent can run on, or reach a model through. None may reach the page. */
+const TECHNOLOGY = /claude|anthropic|codex|openai|hermes|openclaw|litellm|openrouter|gpt/i
+
+test('what an agent runs on is the server\'s business: nobody chooses it and no answer says it', needsDb, async () => {
+  await withCrew(async (call, { crew }) => {
+    // Naming one is not a way to choose one.
+    const ada = (await call('POST', '/api/crew/agents', { name: 'Ada', runtime: 'openclaw' })).body.agent
+    assert.equal((await crew.roster.get(ada.id)).runtime, 'claude-code')
+    const stuck = await crew.roster.create({ name: 'Bo', runtime: 'openclaw' })
+    const quill = (await call('POST', '/api/crew/agents', { templateId: 'quill' })).body.agent
+    await call('POST', '/api/crew/workspaces', { name: 'Site' })
+
+    const answers = [
+      await call('GET', '/api/crew'),
+      await call('GET', '/api/crew/agents'),
+      await call('GET', '/api/crew/specialists'),
+      await call('PATCH', `/api/crew/agents/${ada.id}`, { role: 'Writes.' }),
+      await call('GET', '/api/crew/settings'),
+      await call('GET', '/api/crew/workspaces'),
+      await call('POST', `/api/crew/agents/${stuck.id}/messages`, { text: 'hello' }),
+      await call('POST', '/api/crew/channel', { text: '@Bo and @Ada, anyone?' }),
+      await call('GET', '/api/crew/channel'),
+    ]
+    for (const answer of answers) assert.doesNotMatch(JSON.stringify(answer.body), TECHNOLOGY)
+
+    const listed = answers[1].body.agents
+    for (const one of [...listed, ...answers[2].body.specialists, answers[0].body]) assert.deepEqual(Object.keys(one).filter((key) => /runtime/i.test(key)), [])
+    assert.deepEqual(listed.map((agent) => [agent.name, agent.runs]), [['Ada', true], ['Bo', false], ['Quill', true]])
+    assert.equal(quill.runs, true)
+    assert.deepEqual(answers[2].body.specialists.map((one) => [one.id, one.runs]), [['quill', true]])
+  })
 })

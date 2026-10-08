@@ -60,6 +60,27 @@ export function checkTurnInput(input) {
 }
 
 /**
+ * How a failure is put to the person, by its kind. These words never say what an agent runs
+ * on or what a model is reached through: that is not theirs to know.
+ */
+const FAILED = {
+  auth: 'This agent is not signed in on this server',
+  inference: 'This agent could not get an answer: a limit was reached or the service is busy',
+  crashed: 'This agent stopped before finishing',
+  runtime: 'This agent could not finish what it was doing',
+}
+
+/**
+ * A failed ending. `detail` is what the runtime itself said, in its own words: it is for the
+ * server's log and is never kept in the record or sent to a page.
+ *
+ * @param {string} code one of the failure codes
+ * @param {string} [detail]
+ * @param {string} [reason] other neutral words, when the kind alone says too little
+ */
+export const failure = (code, detail, reason = FAILED[code]) => ({ type: 'failed', reason, code, ...(detail ? { detail: String(detail) } : {}) })
+
+/**
  * An event in its proper shape, or an error naming the field that is wrong. This is a check
  * on adapters, not on people, so it throws a plain Error: a bad event is a bug.
  */
@@ -104,6 +125,7 @@ export function checkEvent(event) {
     case 'failed':
       if (!filled(event.reason)) throw wrong('reason')
       if (!FAILURE_CODES.includes(event.code)) throw wrong('code')
+      if (event.detail !== undefined && typeof event.detail !== 'string') throw wrong('detail')
       break
     default:
       break
@@ -179,7 +201,7 @@ export function turnController(onEvent, { log = console.error } = {}) {
     }
   }
 
-  const broken = (why) => end({ type: 'failed', reason: `The runtime adapter is at fault: ${why}`, code: 'runtime' })
+  const broken = (why) => end(failure('runtime', `The runtime adapter is at fault: ${why}`))
 
   function emit(event) {
     if (ended) return
@@ -207,7 +229,7 @@ export function turnController(onEvent, { log = console.error } = {}) {
       checkEvent(event)
       if (!ENDINGS.includes(event.type)) throw new Error(`"${event.type}" is not a way for a turn to end`)
     } catch (error) {
-      ending = { type: 'failed', reason: `The runtime adapter is at fault: ${error.message}`, code: 'runtime' }
+      ending = failure('runtime', `The runtime adapter is at fault: ${error.message}`)
     }
     ended = true
     open.clear()

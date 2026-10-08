@@ -74,6 +74,7 @@ export async function createCrew(config, { runtimes = config.demoRuntime ? creat
     catalog,
     limit: config.agentLimit,
     entitled: config.entitled,
+    runtime: config.runtime,
   })
   const retired = await roster.reconcile()
   if (retired.length) console.log(`Crew: retired specialists this world no longer has: ${retired.join(', ')}`)

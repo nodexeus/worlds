@@ -29,6 +29,7 @@ const SCRIPTS = {
   long: [{ pause: 5000 }, { type: 'finished', text: 'never' }],
   talk: [{ type: 'delta', text: 'Hel' }, { type: 'delta', text: 'lo' }, { type: 'text', text: 'Hello' }, { type: 'finished', text: 'Hello' }],
   crash: [{ type: 'text', text: 'Starting.' }, { crash: 'The model is out of credit' }],
+  told: [{ type: 'failed', reason: 'This agent is not signed in on this server', code: 'auth', detail: 'Invalid API key · run claude /login' }],
   burst: [{ pause: 150 }, { type: 'delta', text: 'go' }, ...Array.from({ length: 5 }, (_, n) => ({ type: 'text', text: `t${n}` })), { pause: 100 }, { type: 'finished', text: 'done' }],
   flood: [{ pause: 40 }, ...Array.from({ length: 60 }, (_, n) => ({ type: 'text', text: `t${n}` })), { pause: 5000 }, { type: 'finished', text: '' }],
   sip: [{ type: 'text', text: 'one' }, { pause: 200 }, { type: 'text', text: 'two' }, { pause: 200 }, { type: 'finished', text: '' }],
@@ -319,7 +320,7 @@ test('a runtime that refuses the turn outright is a failed turn, not a lost one'
     const { conversation } = await crew.conversations.send(agent.id, { text: 'hello', workspaceId: site.id })
     await crew.conversations.settled(agent.id)
     crew.scripted.start = real
-    assert.deepEqual((await record(crew, conversation.id)).at(-1), ['failed', 'failed', { reason: 'The runtime could not be started', code: 'runtime' }])
+    assert.deepEqual((await record(crew, conversation.id)).at(-1), ['failed', 'failed', { reason: 'This agent could not be started on this server', code: 'runtime' }])
     await crew.conversations.send(agent.id, { text: 'again' })
     await crew.conversations.settled(agent.id)
     assert.equal(await statusOf(crew, agent.id), 'idle')
@@ -614,5 +615,14 @@ test('once the record has failed, the agent is free at once and not after every 
     crew.store.failing = false
     // Sixty events at three tries each would be several seconds.
     assert.ok(Date.now() - began < 1000, `${Date.now() - began} ms`)
+  })
+})
+
+test('what a runtime said of its own failure goes to the log, never into the record', needsDb, async () => {
+  await withOne(async (crew, { agent, site }) => {
+    const { conversation } = await crew.conversations.send(agent.id, { text: 'told', workspaceId: site.id })
+    await crew.conversations.settled(agent.id)
+    assert.deepEqual((await record(crew, conversation.id)).at(-1), ['failed', 'failed', { reason: 'This agent is not signed in on this server', code: 'auth' }])
+    assert.ok(crew.logged.some((args) => args.join(' ').includes('claude /login')))
   })
 })

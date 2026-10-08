@@ -31,6 +31,7 @@ either fails it exits with a message naming the setting, and does not open its p
 | `WORLDS_DATABASE_SCHEMA` | unset | Put the tables in this schema, created if missing. |
 | `WORLDS_WORLD_ID` | `default` | The world this server serves. Every row carries it. |
 | `WORLDS_AGENT_LIMIT` | `6` | How many standard agents the world may have. |
+| `WORLDS_CREW_RUNTIME` | `claude-code` | What a new standard agent runs on. The operator's choice: the person is never asked and never told. |
 | `WORLDS_CURATED_AGENTS` | empty | Comma-separated ids of the specialists the world may add. |
 | `WORLDS_ALLOWED_HOSTS` | empty | Comma-separated host names that may reach the API. |
 | `WORLDS_DEMO_RUNTIME` | off | `1` or `true`: a demonstration. See below. |
@@ -88,6 +89,20 @@ visible to anyone who can see it, so prefer a read-only deploy token.
 
 ## Runtimes
 
+**What an agent runs on is never shown to the person using a world.** They must not be able
+to tell one runtime, model, vendor or gateway from another. So:
+
+- Nobody chooses a runtime in the page. A new agent runs on `WORLDS_CREW_RUNTIME`, a
+  specialist on what its template says, and `POST /api/crew/agents` ignores a `runtime`.
+- No route gives a runtime. An agent and a specialist carry `runs`: whether this server can
+  run it.
+- A `failed` event's `reason` is neutral words chosen by its `code`. What the runtime itself
+  said (`detail` on the adapter's event) is written to the server log and never recorded or
+  sent. An adapter builds a failure with `failure(code, detail, reason?)` from
+  `runtimes/contract.mjs`.
+- `test/crew-ui-copy.test.mjs` and a test in `test/crew-http.test.mjs` scan the page's code
+  and the API's answers for the names.
+
 A runtime is what actually runs an agent. Each has an adapter in `server/crew/runtimes/`
 that turns its own output into one stream of events, so nothing else in the server knows a
 session id or a command-line flag.
@@ -141,7 +156,7 @@ Adapters today:
   server is given scripts.
 
 `hermes` and `openclaw` can be named on an agent but have no adapter yet, and starting a
-turn on one is refused with `runtime_unavailable`.
+turn on one is refused with `runtime_unavailable`, in words that do not name it.
 
 Every adapter must pass the shared suite in `test/support/runtime-contract.mjs`. The suite
 never calls a model. To check an adapter against the real thing, which does:
@@ -314,9 +329,9 @@ status. `GET /api/crew` answers `{ enabled: false }` on a monitor-only server.
 
 | Method and path | Purpose |
 | --- | --- |
-| `GET /api/crew` | Whether the backend is on, the world, the counts, the `runtimes` this server can run and whether it is a `demo`. |
-| `GET /api/crew/agents` | The roster and the counts. Each agent has `status`, `conversationId` and `workspaceId`. `seq` is the event the statuses are current to. |
-| `POST /api/crew/agents` | Add a standard agent, or a specialist with `{ "templateId": "..." }`. |
+| `GET /api/crew` | Whether the backend is on, the world, the counts and whether it is a `demo`. |
+| `GET /api/crew/agents` | The roster and the counts. Each agent has `status`, `conversationId`, `workspaceId` and `runs`. `seq` is the event the statuses are current to. |
+| `POST /api/crew/agents` | Add a standard agent with `{ name?, kind?, role? }`, or a specialist with `{ "templateId": "..." }`. |
 | `PATCH /api/crew/agents/:id` | Rename, or change the role. |
 | `DELETE /api/crew/agents/:id` | Retire, stopping whatever it was doing. |
 | `POST /api/crew/agents/:id/messages` | `{ text, workspaceId? }`. Answers 202 with the conversation, the stored message and `queued`. |

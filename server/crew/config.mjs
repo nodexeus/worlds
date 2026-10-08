@@ -1,5 +1,6 @@
 // server/crew/config.mjs
 import path from 'node:path'
+import { RUNTIMES } from './names.mjs'
 
 /**
  * Where the crew backend keeps things, read once from the environment.
@@ -11,8 +12,8 @@ import path from 'node:path'
  * With no database configured there is no crew at all: the server is the read-only monitor
  * it has always been, and the desktop app runs it that way.
  *
- * This module imports nothing from the rest of `server/crew/`, so reading the configuration
- * never loads the Postgres client.
+ * This module imports only the crew's lists of names, which import no store, so reading the
+ * configuration never loads the Postgres client.
  */
 
 const IDENTIFIER = /^[a-z_][a-z0-9_]{0,62}$/
@@ -21,7 +22,7 @@ const WORLD_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/
 /**
  * @param {Record<string, string | undefined>} env
  * @returns {{databaseUrl: string, schema: string, dataDir: string, worldId: string,
- *   agentLimit: number, entitled: string[], demoRuntime: boolean} | null}
+ *   agentLimit: number, entitled: string[], demoRuntime: boolean, runtime: string} | null}
  */
 export function loadCrewConfig(env) {
   const databaseUrl = (env.WORLDS_DATABASE_URL || '').trim()
@@ -55,6 +56,12 @@ export function loadCrewConfig(env) {
     .map((id) => id.trim())
     .filter(Boolean)
 
+  // What a new agent runs on. The person is never asked and never told.
+  const runtime = (env.WORLDS_CREW_RUNTIME || RUNTIMES[0]).trim()
+  if (!RUNTIMES.includes(runtime)) {
+    throw new Error(`WORLDS_CREW_RUNTIME must be one of ${RUNTIMES.join(', ')}`)
+  }
+
   return {
     databaseUrl,
     schema,
@@ -64,5 +71,6 @@ export function loadCrewConfig(env) {
     entitled,
     // Agents play a script and no model is called: for showing the interface, and testing it.
     demoRuntime: ['1', 'true'].includes((env.WORLDS_DEMO_RUNTIME || '').trim().toLowerCase()),
+    runtime,
   }
 }

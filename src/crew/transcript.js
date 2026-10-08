@@ -21,7 +21,7 @@ function duration(ms) {
 
 /** How a turn ended, in a few words. */
 export function endingNote({ type, data = {} }) {
-  if (type === 'failed') return `failed: ${data.reason || 'the runtime stopped'}`
+  if (type === 'failed') return `failed: ${data.reason || 'it stopped'}`
   if (type === 'interrupted') {
     if (data.reason === 'restart') return 'interrupted when the server restarted'
     if (data.reason === 'lost') return 'interrupted: the server lost track of this turn'

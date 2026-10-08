@@ -22,7 +22,6 @@ export function createCrewStore({ log = console.error } = {}) {
     enabled: false,
     worldId: null,
     demo: false,
-    runtimes: [],
     agents: [],
     counts: { standard: { used: 0, limit: 0 }, curated: { used: 0 } },
     workspaces: [],
@@ -177,8 +176,8 @@ export function createCrewStore({ log = console.error } = {}) {
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
-    setStatus({ enabled, worldId, demo, runtimes }) {
-      const next = { enabled: Boolean(enabled), worldId: worldId ?? null, demo: Boolean(demo), runtimes: runtimes ?? [] }
+    setStatus({ enabled, worldId, demo }) {
+      const next = { enabled: Boolean(enabled), worldId: worldId ?? null, demo: Boolean(demo) }
       if (Object.entries(next).every(([key, value]) => same(state[key], value))) return
       Object.assign(state, next)
       tell({ kind: 'settings' })

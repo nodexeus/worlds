@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { StringDecoder } from 'node:string_decoder'
 import { CrewError } from '../../errors.mjs'
-import { ENDINGS, checkTurnInput, turnController } from '../contract.mjs'
+import { ENDINGS, checkTurnInput, failure, turnController } from '../contract.mjs'
 import { createParser as realParser, failureCode, oneLine } from './parse.mjs'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -89,7 +89,7 @@ export function createClaudeCodeRuntime({
     checkTurnInput(input)
     // The handle becomes a command-line argument. Only something that is a session id may.
     if (input.handle !== null && !UUID.test(input.handle)) {
-      throw new CrewError('bad_turn', 'That is not a Claude Code conversation', 400)
+      throw new CrewError('bad_turn', 'That is not a conversation this agent can continue', 400)
     }
     const session = input.handle ?? randomUUID()
     const role = input.agent.role?.trim()
@@ -142,11 +142,8 @@ export function createClaudeCodeRuntime({
       if (turn.ended) return
       stall = setTimeout(() => {
         if (turn.waiting) return heard()
-        turn.end({
-          type: 'failed',
-          reason: `Claude Code stopped responding: nothing from it in ${Math.round(stallAfterMs / 1000)} seconds`,
-          code: 'runtime',
-        })
+        const waited = `nothing from it in ${Math.round(stallAfterMs / 1000)} seconds`
+        turn.end(failure('runtime', `Claude Code stopped responding: ${waited}`, `This agent stopped responding: ${waited}`))
       }, stallAfterMs)
       stall.unref()
     }
@@ -169,17 +166,19 @@ export function createClaudeCodeRuntime({
       }
     }
 
-    const failedToStart = (error) =>
+    const failedToStart = (error) => failure(
+      'runtime',
       error.code === 'ENOENT'
         ? `Claude Code could not be started: ${command} was not found, or the workspace folder is missing`
-        : `Claude Code could not be started (${command}): ${error.message}`
+        : `Claude Code could not be started (${command}): ${error.message}`,
+      'This agent could not be started on this server')
 
     try {
       // `detached` makes it the leader of its own process group. It is still this server's
       // child: nothing is unref'd, and the group is what gets signalled.
       child = spawn(command, args, { cwd: input.folder, env: agentEnv, stdio: ['pipe', 'pipe', 'pipe'], detached: true })
     } catch (error) {
-      queueMicrotask(() => turn.end({ type: 'failed', reason: failedToStart(error), code: 'runtime' }))
+      queueMicrotask(() => turn.end(failedToStart(error)))
       return { answer: (requestId, answer) => void turn.settle(requestId, answer), interrupt() {}, done: turn.done }
     }
     running.add(child)
@@ -195,9 +194,9 @@ export function createClaudeCodeRuntime({
       if (turn.ended) return
       const said = lastWords.trim().split('\n').filter(Boolean).pop()
       const how = sig ? `signal ${sig}` : `exit code ${code}`
-      const reason = said || `Claude Code stopped before finishing (${how})`
-      const kind = failureCode(reason)
-      turn.end({ type: 'failed', reason, code: kind === 'runtime' ? 'crashed' : kind })
+      const detail = said || `Claude Code stopped before finishing (${how})`
+      const kind = failureCode(detail)
+      turn.end(failure(kind === 'runtime' ? 'crashed' : kind, detail))
     }
 
     child.on('error', (error) => {
@@ -205,7 +204,7 @@ export function createClaudeCodeRuntime({
       if (child.pid !== undefined) return
       gone = true
       running.delete(child)
-      turn.end({ type: 'failed', reason: failedToStart(error), code: 'runtime' })
+      turn.end(failedToStart(error))
     })
     // A pipe to a process that has gone errors on write. The exit is what gets reported.
     child.stdin.on('error', () => {})
@@ -228,7 +227,7 @@ export function createClaudeCodeRuntime({
       }
       if (pending.length > maxLineBytes) {
         pending = ''
-        turn.end({ type: 'failed', reason: 'Claude Code sent too much output without ending a line', code: 'runtime' })
+        turn.end(failure('runtime', 'Claude Code sent too much output without ending a line', 'This agent sent more than could be read'))
       }
     }
     child.stdout.on('data', (chunk) => take(decoder.write(chunk)))

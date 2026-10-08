@@ -201,7 +201,12 @@ async function run() {
   await until(`t.text('.cp-places') === 'SiteApi'`, 'the second workspace is listed')
 
   step('an agent is added, and its card opens')
-  await page(`t.all('.cp-add .cc-b')[0].click(), t.type(t.q('.cp-form input'), 'Ada'), t.q('.cp-form form').requestSubmit()`)
+  await page(`t.all('.cp-add .cc-b')[0].click()`)
+  // A new agent is a name and a role. What it runs on is the server's business, never asked.
+  assert.deepEqual(await page(`[t.all('.cp-form select').length, t.all('.cp-form input, .cp-form textarea').length]`), [0, 2])
+  assert.doesNotMatch(await page(`document.body.innerText`), /runs on|claude|hermes|openclaw/i)
+  await shot('01-new-agent')
+  await page(`t.type(t.q('.cp-form input'), 'Ada'), t.q('.cp-form form').requestSubmit()`)
   await until(`t.card('Ada')`, 'the card is open')
   assert.equal(await page(`t.text('.cp-count')`), '1 of 3 agents')
   assert.equal(await page(`t.line('Ada')`), 'idle')
@@ -291,7 +296,7 @@ async function run() {
 
   step('a failure is said plainly, and can be tried again')
   await page(`t.say('Ada', 'please fail')`)
-  await until(`t.notes('Ada').some((note) => note.startsWith('failed: The demonstration runtime was asked to fail'))`, 'the failure is shown')
+  await until(`t.notes('Ada').some((note) => note.startsWith('failed: The demonstration was asked to fail'))`, 'the failure is shown')
   assert.equal(await page(`t.line('Ada')`), 'failed · last in Site')
   assert.equal(await page(`t.all('.cc-note .cc-link', t.card('Ada')).length`), 1)
   await shot('06-failed')

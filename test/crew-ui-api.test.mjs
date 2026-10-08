@@ -33,7 +33,7 @@ test('each call asks the right address in the right way', async () => {
   await api.workspaces()
   await api.specialists()
   await api.settings()
-  await api.createAgent({ name: 'Ada', runtime: 'claude-code', role: 'Writes.' })
+  await api.createAgent({ name: 'Ada', role: 'Writes.' })
   await api.addSpecialist('quill')
   await api.createWorkspace({ name: 'Site', description: 'The site', gitUrl: 'https://example.com/a.git' })
   await api.setAutonomy('ask')
@@ -49,7 +49,7 @@ test('each call asks the right address in the right way', async () => {
     ['GET', '/api/crew/workspaces', undefined],
     ['GET', '/api/crew/specialists', undefined],
     ['GET', '/api/crew/settings', undefined],
-    ['POST', '/api/crew/agents', { name: 'Ada', runtime: 'claude-code', role: 'Writes.' }],
+    ['POST', '/api/crew/agents', { name: 'Ada', role: 'Writes.' }],
     ['POST', '/api/crew/agents', { templateId: 'quill' }],
     ['POST', '/api/crew/workspaces', { name: 'Site', description: 'The site', gitUrl: 'https://example.com/a.git' }],
     ['PATCH', '/api/crew/settings', { autonomy: 'ask' }],
@@ -71,10 +71,10 @@ test('a reply is handed back as it came', async () => {
 test('what is left blank is left out, so the server chooses', async () => {
   const { fetch, calls } = fake()
   const api = createCrewApi({ fetch })
-  await api.createAgent({ name: '  ', runtime: 'claude-code', role: '' })
+  await api.createAgent({ name: '  ', role: '', runtime: 'claude-code' })
   await api.createWorkspace({ name: 'Site', description: '', gitUrl: ' ' })
   await api.send(AGENT, { text: 'hi', workspaceId: undefined })
-  assert.deepEqual(calls.map((call) => call.body), [{ runtime: 'claude-code' }, { name: 'Site' }, { text: 'hi' }])
+  assert.deepEqual(calls.map((call) => call.body), [{}, { name: 'Site' }, { text: 'hi' }])
 })
 
 test('a refusal is thrown with the code, the wording and the status the server gave', async () => {

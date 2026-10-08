@@ -7,7 +7,7 @@ import { createScriptedRuntime } from './scripted.mjs'
  *
  * An agent may be bound to a runtime that has no adapter here yet (the roster knows the
  * names Hermes and OpenClaw). Asking for one is refused in words, so the page can say
- * "not available on this server" and not just fail.
+ * "not available on this server" and not just fail. The words never name the runtime.
  *
  * @param {{claudeCode?: object, scripted?: Record<string, object[]>}} [options]
  *   `claudeCode` is passed to the Claude Code adapter. `scripted`, when given, adds the
@@ -22,7 +22,8 @@ export function createRuntimes({ claudeCode = {}, scripted } = {}) {
     get(id) {
       const runtime = adapters.get(id)
       if (!runtime) {
-        throw new CrewError('runtime_unavailable', `This server cannot run agents on "${String(id)}" yet`, 501)
+        // In words that do not say what it runs on: the person is never told that.
+        throw new CrewError('runtime_unavailable', 'This agent cannot be run on this server yet', 501)
       }
       return runtime
     },

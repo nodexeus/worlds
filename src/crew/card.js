@@ -242,7 +242,7 @@ export function createCard({ agentId, store, api, place, pinned = false, onClose
     const one = agent()
     if (!one) return
     foot.hidden = Boolean(reading) || historyOpen
-    const view = composer({ agent: one, workspaces: store.state.workspaces, picked, runtimes: store.state.runtimes })
+    const view = composer({ agent: one, workspaces: store.state.workspaces, picked })
     chipsEl.hidden = view.chips.length === 0
     const wanted = view.chips.map((chip) => `${chip.id}:${chip.name}:${chip.on}:${chip.current}`).join('|')
     if (chipsEl.dataset.drawn !== wanted) {

@@ -55,7 +55,7 @@ export function demoScript({ text, agent, channel }, { pace = 1 } = {}) {
   }
 
   if (/\bfail/.test(lower)) {
-    return [{ type: 'text', text: 'Starting on that.' }, { pause: work }, { crash: 'The demonstration runtime was asked to fail' }]
+    return [{ type: 'text', text: 'Starting on that.' }, { pause: work }, { crash: 'The demonstration was asked to fail' }]
   }
 
   if (/\blong\b/.test(lower)) {

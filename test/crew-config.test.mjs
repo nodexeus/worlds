@@ -21,6 +21,7 @@ test('the defaults are one world of six agents with no specialists', () => {
     agentLimit: 6,
     entitled: [],
     demoRuntime: false,
+    runtime: 'claude-code',
   })
 })
 
@@ -66,4 +67,9 @@ test('a refusal carries a code and a status', () => {
   assert.equal(error.status, 409)
   assert.equal(error.message, 'This world has 6 of 6 agents')
   assert.ok(error instanceof Error)
+})
+
+test('what a new agent runs on is the operator\'s to set, and must be something there is', () => {
+  assert.equal(loadCrewConfig({ ...base, WORLDS_CREW_RUNTIME: ' hermes ' }).runtime, 'hermes')
+  assert.throws(() => loadCrewConfig({ ...base, WORLDS_CREW_RUNTIME: 'gpt' }), /WORLDS_CREW_RUNTIME/)
 })
