@@ -35,9 +35,13 @@ test('a zone never collides with itself — the identity move is valid', () => {
   assert.equal(moveIsValid(zones, 'a', 0, 0), true)
 })
 
-test('the ship\'s cell is refused even when nothing else claims it', () => {
-  const zones = layout({ a: [{ q: 0, r: 0 }, { q: 0, r: 1 }] })
-  assert.equal(moveIsValid(zones, 'a', SHIP_CELL.q, SHIP_CELL.r - 1), false)
+test('ground on the square\'s side of a district is refused even when nothing else claims it', () => {
+  const zones = layout({ a: [{ q: 0, r: 0 }], b: [{ q: 1, r: 0 }] })
+  // One step from its neighbour, so nothing but the ground itself is against it.
+  assert.equal(moveIsValid(zones, 'a', 0, 1), true)
+  const far = layout({ a: [{ q: -3, r: 0 }], b: [{ q: -2, r: 0 }] })
+  assert.equal(moveIsValid(far, 'a', -1, 1), false)
+  assert.equal(moveIsValid(far, 'a', 0, 1), true)
 })
 
 test('a move that splits the colony into islands is refused', () => {
@@ -59,10 +63,9 @@ test('a move past the allocator\'s pool is refused — it would lose its ground 
 
 // ── connectivity ──────────────────────────────────────────────────────────────
 
-test('the ship bridges two zones without counting as one', () => {
-  // Both cells neighbour the ship and nothing else: whole through it, split without it.
-  const bridged = layout({ a: [{ q: -2, r: 0 }], b: [{ q: -2, r: 2 }] })
-  assert.equal(isConnected(bridged), true)
+test('two zones with open ground between them are not one colony: nothing in a district bridges them', () => {
+  const apart = layout({ a: [{ q: -2, r: 0 }], b: [{ q: -2, r: 2 }] })
+  assert.equal(isConnected(apart), false)
 })
 
 // ── carrying a zone out from between its neighbours ───────────────────────────
