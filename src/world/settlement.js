@@ -321,3 +321,45 @@ export class DeckNumbers {
     this.material.dispose()
   }
 }
+
+/**
+ * The walkways from the square, drawn: the kit's ground pieces where `walkwayRoute` says, and
+ * the stairs up at the far end. There are two of these at most and a few dozen pieces, and a
+ * corner that bends the other way is the same piece seen in a mirror, so each is a mesh of
+ * its own.
+ */
+export class Walkways {
+  constructor(scene) {
+    this.group = new THREE.Group()
+    this.group.name = 'settlement-walkways'
+    scene.add(this.group)
+    this.materials = new Map()
+  }
+
+  /** @param {Array<{part: string, x: number, y: number, z: number, turn: number, mirror?: boolean, stretch?: number}>} pieces */
+  set(pieces) {
+    this.group.clear()
+    for (const piece of pieces) {
+      const model = models.get(piece.part)
+      if (!model) continue
+      let material = this.materials.get(piece.part)
+      if (!material) {
+        material = surface(model.material)
+        this.materials.set(piece.part, material)
+      }
+      const mesh = new THREE.Mesh(model.geometry, material)
+      mesh.position.set(piece.x, piece.y, piece.z)
+      mesh.rotation.y = piece.turn
+      mesh.scale.set(piece.mirror ? -1 : 1, 1, piece.stretch || 1)
+      mesh.castShadow = true
+      mesh.receiveShadow = true
+      this.group.add(mesh)
+    }
+  }
+
+  dispose() {
+    this.group.clear()
+    for (const material of this.materials.values()) material.dispose()
+    this.group.removeFromParent()
+  }
+}

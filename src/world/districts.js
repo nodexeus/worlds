@@ -12,8 +12,8 @@ import { LIBRARY_CELL, SHIP_CELL, hexDistance } from './plot-move.js'
  * one colony growing out from an origin. So each district is laid out by those rules exactly
  * as they are, in its own terms, and only then put on the campus: the local one slid along
  * the line the square lies on, the crew's turned to face the other way and slid along it the
- * other way. A district's origin, where its first workspace settles, is on that line, five
- * cells out from the square.
+ * other way. A district's origin, where its first workspace settles, is on that line, eight
+ * cells out from the square: far enough that the walkway to it has room to wind.
  *
  * What keeps the districts apart is one more rule in those terms: nothing is given, and
  * nothing may be carried to, a cell more than three platforms back toward the square from the
@@ -29,14 +29,14 @@ const CREW = 'crew:'
 
 const PLACE = {
   // Out along the square's own line, past the Library.
-  local: (cell) => ({ q: cell.q + 4, r: cell.r + 1 }),
+  local: (cell) => ({ q: cell.q + 7, r: cell.r + 1 }),
   // Turned about and sent the other way, past the gate. Doing it twice comes back to where
   // it began, which makes it its own way home.
-  crew: (cell) => ({ q: -7 - cell.q, r: 1 - cell.r }),
+  crew: (cell) => ({ q: -10 - cell.q, r: 1 - cell.r }),
 }
 
 const HOME = {
-  local: (cell) => ({ q: cell.q - 4, r: cell.r - 1 }),
+  local: (cell) => ({ q: cell.q - 7, r: cell.r - 1 }),
   crew: PLACE.crew,
 }
 

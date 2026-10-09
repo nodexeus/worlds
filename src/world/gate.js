@@ -1,3 +1,4 @@
+import { tameSheen } from '../core/sheen.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 
 /**
@@ -29,6 +30,7 @@ export function loadGate() {
         o.castShadow = true
         o.receiveShadow = true
         o.material.emissiveIntensity = GLOW
+        o.material.onBeforeCompile = (shader) => tameSheen(shader)
       })
       return gate
     })

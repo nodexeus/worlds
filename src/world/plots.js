@@ -1,3 +1,4 @@
+import { tameSheen } from '../core/sheen.js'
 import * as THREE from 'three'
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js'
 import { DECK_TEXTURE_SCALE, KERB_UV, deckSurface, kerbSurface, steelDeckSurface } from './surfaces.js'
@@ -557,6 +558,8 @@ export class Plot {
         envMapIntensity: this.style?.deck?.reflect ?? 1,
       })
     )
+    // Steel in the sun must not go white: see `sheen.js`.
+    this.deck.material.onBeforeCompile = (shader) => tameSheen(shader)
     this.deck.receiveShadow = true
     this.group.add(this.deck)
     this._buildBlock()

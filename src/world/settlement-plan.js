@@ -37,9 +37,12 @@ const LIT = /lit$/
 /** What is stacked, and how far up one storey is: the height of the kit's frame. */
 const MODULES = ['mod-cabin', 'mod-drum', 'mod-shed', 'mod-tank']
 const FRAME = 2.3
-/** How high the flat roof of a module is above its base, for those that have one. */
-const ROOF = { 'mod-cabin': 1.89, 'mod-drum': 1.93 }
-const FLAT = Object.keys(ROOF)
+/**
+ * Where on a cabin's roof something can stand: how high the roof itself is above the cabin's
+ * base (1.60, measured off the model; the 1.89 in the kit's notes is the top of what is on
+ * the roof), and a clear spot on it, to one side.
+ */
+const ROOF = { x: -0.95, y: 1.6, z: 0.45 }
 /** The neon signs: the first two are cyan, the last two magenta. */
 const SIGNS = ['sign-a', 'sign-b', 'sign-c', 'sign-d']
 /** One workspace in this many has one. */
@@ -81,7 +84,7 @@ export function settlementParts(plots, crossings, { deckTop, levelStep, apothem 
   // Which workspaces have a neon sign: about one in `SIGN_EVERY` of those with a stack, and
   // at least one, taken in an order their names decide, each with a different sign from the
   // last. Counted across the campus so that there is always a handful and never a dozen.
-  const stacked = plots.filter((plot) => plot.stackAt && plot.busy > 0)
+  const stacked = plots.filter((plot) => plot.stacks?.length && plot.busy > 0)
     .sort((a, b) => hash(`${a.id}/sign`) - hash(`${b.id}/sign`) || (a.id < b.id ? -1 : 1))
   const signOf = new Map()
   const wanted = stacked.length ? Math.max(1, Math.round(stacked.length / SIGN_EVERY)) : 0
@@ -139,53 +142,57 @@ export function settlementParts(plots, crossings, { deckTop, levelStep, apothem 
       })
     }
 
-    // A stack: a module on the deck, and for a busier workspace one or two more above it, each
-    // on a frame standing over the one below. No storey sits straight on the last: it is
-    // shifted or turned, as things are when they are added one at a time by whoever needed
-    // the room.
-    if (plot.stackAt && plot.busy > 0) {
-      const seed = hash(`${plot.id}/stack`)
-      // How high: one, two or three storeys, by the workspace's own name, so that a campus of
-      // quiet workspaces still has height to it; and never fewer than two where three or more
-      // are at work, nor fewer than three where five are.
-      const own = [1, 2, 2, 3, 2, 3, 1, 2, 3, 2][(seed >>> 9) % 10]
-      const storeys = Math.max(own, plot.busy >= 5 ? 3 : plot.busy >= 3 ? 2 : 1)
-      // Its frame lies along the edge of the platform it stands by, where the workspace says
-      // which way that is, so that no corner of it reaches past the deck.
-      const start = plot.stackTurn ?? (seed % 6) * SIXTH
-      let px = plot.stackAt.x
-      let pz = plot.stackAt.z
-      let turn = start
-      let last = null
-      const sign = signOf.get(plot.id)
+    // Stacks: one to a platform, where the workspace says there is room. A module on the deck,
+    // and one or two more above it for a workspace with more going on, each on the floor of
+    // a frame that stands over the one below.
+    //
+    // What stands inside a frame is squared up with it, or its corners would come through
+    // the frame's braces. The top storey has nothing over it and is the one that is turned
+    // and shifted, as things are when they are added by whoever needed the room. No two
+    // storeys of a stack are the same kind of module.
+    const stacks = plot.busy > 0 ? plot.stacks || [] : []
+    stacks.forEach((stack, at) => {
+      const seed = hash(`${plot.id}/stack/${at}`)
+      const pick = (seed >>> 9) % 6
+      const storeys = plot.busy >= 4 ? [3, 3, 2, 3, 2, 3][pick] : plot.busy >= 2 ? [2, 2, 3, 2, 1, 2][pick] : [1, 2, 1, 2, 2, 1][pick]
+      const sign = at === 0 ? signOf.get(plot.id) : null
+      const step = 1 + (seed % 3)
+      const cos = Math.cos(stack.turn)
+      const sin = Math.sin(stack.turn)
+      // Along the frame's own length (its x) and across it (its z), on the ground.
+      const place = (along, across) => ({ x: stack.x + along * cos + across * sin, z: stack.z - along * sin + across * cos })
+      let top = null
       for (let k = 0; k < storeys; k++) {
-        const roll = hash(`${plot.id}/stack/${k}`)
-        if (k > 0) {
-          put('frame', plot.stackAt.x, plot.stackAt.z, start, y + (k - 1) * FRAME)
-          // Somewhere between a hand's width and most of a pace off the storey below, and
-          // usually turned a quarter or so as well.
-          const way = ((roll >>> 3) % 360) * (Math.PI / 180)
-          const far = 0.25 + ((roll >>> 12) % 40) / 100
-          px = plot.stackAt.x + Math.cos(way) * far
-          pz = plot.stackAt.z + Math.sin(way) * far
-          turn += [Math.PI / 2, Math.PI / 6, -Math.PI / 3, Math.PI / 4][(roll >>> 20) % 4]
+        const roll = hash(`${plot.id}/stack/${at}/${k}`)
+        let kind = MODULES[(seed + k * step) % MODULES.length]
+        const last = k === storeys - 1
+        // A sign or a dish needs the cabin's flat roof.
+        if (last && sign) kind = 'mod-cabin'
+        let spot
+        let turn
+        if (!last) {
+          // Under a frame: squared up with it, one way round or the other, a hand's width off centre.
+          put('frame', stack.x, stack.z, stack.turn, y + k * FRAME)
+          spot = place((((roll >>> 3) % 5) - 2) * 0.04, 0)
+          turn = stack.turn + ((roll >>> 8) % 2) * Math.PI
+        } else {
+          // On top, or alone on the deck: turned off square and shifted, but not off its floor.
+          const off = [0.22, -0.3, 0.45, -0.5, 1.2, -1.0][(roll >>> 3) % 6]
+          spot = place((((roll >>> 8) % 7) - 3) * 0.1, (((roll >>> 12) % 5) - 2) * 0.08)
+          turn = stack.turn + off + ((roll >>> 16) % 2) * Math.PI
         }
-        last = MODULES[(seed + k * 3 + (roll >>> 24)) % MODULES.length]
-        // A sign needs a flat roof to stand on, so where there is to be one the top storey
-        // is one of the two that have one.
-        if (sign && k === storeys - 1 && !ROOF[last]) last = FLAT[(roll >>> 5) % FLAT.length]
-        put(last, px, pz, turn, y + k * FRAME)
+        put(kind, spot.x, spot.z, turn, y + k * FRAME)
+        if (last) top = { kind, spot, turn, y: y + k * FRAME }
       }
-      if (storeys > 1) put('ladder', plot.stackAt.x, plot.stackAt.z, start)
-      // A sign or a dish stands on the roof of the top storey, and only on a roof that is
-      // flat: on anything else it would hang in the air.
-      // On the roof of the top storey: a neon sign for the few workspaces that have one, a
-      // dish on some of the rest. Never on the deck, where there are buildings to stand in.
-      const roof = ROOF[last]
-      const top = y + (storeys - 1) * FRAME + (roof || 0)
-      if (sign) put(sign, px, pz, turn, top)
-      else if (roof && seed % 4 === 1) put('dish', px, pz, turn, top)
-    }
+      if (storeys > 1) put('ladder', stack.x, stack.z, stack.turn)
+      // On the cabin's roof, to one side of what is already up there: a neon sign for the
+      // few workspaces that have one, a dish on some of the rest.
+      if (top && top.kind === 'mod-cabin' && (sign || seed % 4 === 1)) {
+        const c = Math.cos(top.turn)
+        const n = Math.sin(top.turn)
+        put(sign || 'dish', top.spot.x + ROOF.x * c + ROOF.z * n, top.spot.z - ROOF.x * n + ROOF.z * c, top.turn, top.y + ROOF.y)
+      }
+    })
 
     // Every open edge has something along it, and one or two of them are lit: enough to say
     // somebody is home, never an outline.

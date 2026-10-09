@@ -224,11 +224,13 @@ async function run() {
   assert.deepEqual(await page(`t.world()`), { plots: [['Api', 1], ['Site', 1]], crew: [], buildings: ['Api', 'Site'] })
 
   step('the crew\'s workspaces stand in their own district, with one walkway out to it from the square')
-  const district = await page(`(() => { const colony = window.botCrossing.colony; return { furthestEast: Math.max(...colony.plotOrder.flatMap((plot) => plot.cells.map((cell) => cell.q))), square: colony.plaza.cells.map((cell) => cell.q + ',' + cell.r), walkways: colony.causeways.map((way) => way.plates.length) } })()`)
-  assert.ok(district.furthestEast <= -4, 'every platform is past the gate, on the crew\'s side')
+  const district = await page(`(() => { const colony = window.botCrossing.colony; return { furthestEast: Math.max(...colony.plotOrder.flatMap((plot) => plot.cells.map((cell) => cell.q))), square: colony.plaza.cells.map((cell) => cell.q + ',' + cell.r), walkways: colony.walks.map((walk) => walk.pieces.filter((piece) => piece.part === 'walk').length), turns: colony.walks.map((walk) => walk.pieces.filter((piece) => /turn/.test(piece.part)).length), straight: colony.causeways.length } })()`)
+  assert.ok(district.furthestEast <= -7, 'every platform is well past the gate, on the crew\'s side')
   assert.deepEqual(district.square, ['-2,1', '-1,1'], 'the square is the gate and the Library, and no more')
   assert.equal(district.walkways.length, 1)
-  assert.ok(district.walkways[0] >= 15, 'a long run of plates, not a platform')
+  assert.ok(district.walkways[0] >= 15, 'a long run of boardwalk, not a platform')
+  assert.deepEqual(district.turns, [4], 'with four bends in it')
+  assert.equal(district.straight, 0, 'and no straight one in its place')
 
   step('an agent is added, and its card opens')
   await page(`t.all('.cp-add .cc-b')[0].click()`)

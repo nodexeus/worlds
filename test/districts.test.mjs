@@ -32,8 +32,8 @@ test('each district\'s walkway leaves the square from its own side and arrives a
     const [origin, beside] = toWorld(district, [{ q: 0, r: 0 }, { q: 1, r: 0 }])
     const end = squareEnd(district)
     assert.deepEqual(landing(district, [beside, origin]), origin)
-    // Five platforms out, on the line the gate and the Library stand on.
-    assert.equal(hexDistance(origin, end), 5)
+    // Eight platforms out, on the line the gate and the Library stand on.
+    assert.equal(hexDistance(origin, end), 8)
     assert.equal(origin.r, end.r)
   }
   // With nothing on its first platform the walkway goes to whatever is nearest, and to nothing at all if nothing is there.
@@ -85,7 +85,10 @@ test('nothing either district may hold is within reach of the other, or beside t
   const crew = held('crew')
   assert.ok(local.length > 150 && crew.length === local.length)
   const nearest = Math.min(...local.map((a) => Math.min(...crew.map((b) => hexDistance(a, b)))))
-  assert.ok(nearest >= 5, `the districts come within ${nearest} platforms of each other`)
+  assert.ok(nearest >= 11, `the districts come within ${nearest} platforms of each other`)
+  // And each is at least five platforms from the square, which is the room its walkway winds in.
+  const toSquare = Math.min(...[...local, ...crew].map((cell) => Math.min(hexDistance(cell, SHIP), hexDistance(cell, LIBRARY))))
+  assert.ok(toSquare >= 5, `a district comes within ${toSquare} platforms of the square`)
   for (const cell of [...local, ...crew]) {
     assert.ok(!touches(cell, SHIP) && !touches(cell, LIBRARY), `${key(cell)} is beside the square`)
     assert.ok(key(cell) !== key(SHIP) && key(cell) !== key(LIBRARY))

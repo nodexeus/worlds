@@ -96,64 +96,71 @@ test('a workspace with traffic over it stands on a used deck', () => {
 
 import { settlementPools } from '../src/world/settlement-plan.js'
 
-const stackOf = (busy, id = 'stacked') =>
-  settlementParts([{ id, cells: [{ q: 0, r: 0 }], level: 2, busy, stackAt: { x: 3, z: 2 } }], [], WORLD)
+const AT = { x: 3, z: 2, turn: 0.7 }
+const stackOf = (busy, id = 'stacked', stacks = [AT]) =>
+  settlementParts([{ id, cells: [{ q: 0, r: 0 }], level: 2, busy, stacks }], [], WORLD)
+const DECK = 0.45 + 2 * 1.35
 
-test('every workspace with somebody at it has a stack of one to three storeys, and a busy one is never low', () => {
-  const storeys = (busy, id) => named(stackOf(busy, id), /^mod-/).length
-  const quiet = Array.from({ length: 60 }, (_, n) => storeys(1, `quiet-${n}`))
-  assert.ok(quiet.every((n) => n >= 1 && n <= 3))
-  // A campus of single sessions still has height: all three heights turn up, and most are over one.
-  assert.deepEqual([...new Set(quiet)].sort(), [1, 2, 3])
-  assert.ok(quiet.filter((n) => n > 1).length > quiet.length / 2, quiet.join(''))
-  for (let n = 0; n < 40; n++) {
-    assert.ok(storeys(3, `busy-${n}`) >= 2)
-    assert.equal(storeys(5, `full-${n}`), 3)
-    assert.equal(storeys(20, `full-${n}`), 3)
-  }
-  assert.equal(named(stackOf(0), /^mod-/).length, 0, 'nobody there, nothing stacked')
-  assert.equal(named(settlementParts([{ id: 'full', cells: [{ q: 0, r: 0 }], level: 1, busy: 5, stackAt: null }], [], WORLD), /^mod-/).length, 0)
+test('a workspace has a stack where it has room for one, taller the more that is going on, and none with nobody there', () => {
+  const heights = (busy) => Array.from({ length: 80 }, (_, n) => named(stackOf(busy, `ws-${busy}-${n}`), /^mod-/).length)
+  const mean = (list) => list.reduce((sum, n) => sum + n, 0) / list.length
+  const [quiet, some, busy] = [heights(1), heights(2), heights(6)]
+  for (const list of [quiet, some, busy]) assert.ok(list.every((n) => n >= 1 && n <= 3))
+  assert.ok(mean(quiet) < mean(some) && mean(some) < mean(busy), `${mean(quiet)}, ${mean(some)}, ${mean(busy)}`)
+  assert.ok(Math.max(...quiet) <= 2, 'a single session never raises three storeys')
+  assert.ok(Math.min(...busy) >= 2, 'and a busy workspace is never one')
+  assert.equal(named(stackOf(0), /^mod-/).length, 0)
+  assert.equal(named(stackOf(5, 'no-room', []), /^mod-/).length, 0)
 })
 
-test('each storey stands on a frame over the one below, a frame\'s height up, and none is straight above the last', () => {
-  for (const id of ['a', 'b', 'c', 'd', 'e', 'f']) {
-    const parts = stackOf(6, id)
+test('a workspace of several platforms has a stack on each that has room', () => {
+  const stacks = [AT, { x: 16, z: 2, turn: 2.1 }, { x: 9, z: 12, turn: 4.0 }]
+  const parts = stackOf(9, 'wide', stacks)
+  const ground = named(parts, /^mod-/).filter((m) => Math.abs(m.y - DECK) < 1e-6)
+  assert.equal(ground.length, 3, 'one module on the deck for each')
+})
+
+test('what stands under a frame is squared up with it, so nothing comes through the braces', () => {
+  for (let n = 0; n < 120; n++) {
+    const parts = stackOf(6, `square-${n}`)
     const modules = named(parts, /^mod-/)
     const frames = named(parts, 'frame')
-    const deck = 0.45 + 2 * 1.35
-    assert.deepEqual(modules.map((m) => +(m.y - deck).toFixed(2)), [0, 2.3, 4.6])
-    assert.deepEqual(frames.map((f) => +(f.y - deck).toFixed(2)), [0, 2.3])
-    for (let k = 1; k < modules.length; k++) {
-      const shift = Math.hypot(modules[k].x - modules[k - 1].x, modules[k].z - modules[k - 1].z)
-      const turned = Math.abs(modules[k].turn - modules[k - 1].turn) > 0.2
-      assert.ok(shift > 0.15 || turned, `${id}: storey ${k} sits straight on the one below`)
-      // Each frame stands where the stack does, and what is on it is within a pace of its middle.
-      assert.ok(Math.hypot(modules[k].x - 3, modules[k].z - 2) < 0.7, 'and still stands on its frame')
-    }
-    assert.equal(named(parts, 'ladder').length, 1)
+    assert.equal(frames.length, modules.length - 1, 'a frame over every storey but the top')
+    frames.forEach((frame, k) => {
+      const under = modules[k]
+      assert.ok(Math.abs(frame.y - under.y) < 1e-6 && Math.abs(frame.turn - AT.turn) < 1e-9)
+      // One way round or the other, and within a hand's width of the middle.
+      const off = ((under.turn - frame.turn) % Math.PI + Math.PI) % Math.PI
+      assert.ok(Math.min(off, Math.PI - off) < 1e-6, `storey ${k} is turned ${off} inside its frame`)
+      assert.ok(Math.hypot(under.x - frame.x, under.z - frame.z) <= 0.081)
+    })
+    // Each a frame's height above the last.
+    assert.deepEqual(modules.map((m) => +(m.y - DECK).toFixed(2)), modules.map((m, k) => +(k * 2.3).toFixed(2)))
   }
 })
 
-test('light falls on the deck beside a lit edge and round every module, and a sign throws its own colour', () => {
-  const parts = [
-    ...stackOf(6),
-    { part: 'sign-a', plot: 'stacked', x: 1, y: 3.15, z: 1, turn: 0 },
-    { part: 'sign-c', plot: 'stacked', x: -1, y: 3.15, z: 1, turn: 0 },
-  ]
-  const pools = settlementPools(parts)
-  const lit = named(parts, /lit$/).length
-  assert.equal(pools.filter((pool) => pool.kind === 'band').length, lit)
-  // Only what stands on a deck lights it: the storeys above light nothing below.
-  assert.equal(pools.filter((pool) => pool.kind === 'round' && pool.color === 'amber').length, 1)
-  // The first two signs are cyan and the last two magenta, and each throws its own.
-  const thrown = named(parts, /^sign-[a-d]$/).map((sign) => (/[ab]$/.test(sign.part) ? 'cyan' : 'magenta')).sort()
-  assert.ok(thrown.includes('cyan') && thrown.includes('magenta'))
-  assert.deepEqual(pools.filter((pool) => pool.color !== 'amber').map((pool) => pool.color).sort(), thrown)
-  for (const pool of pools) assert.ok(pool.y > 3.15 && pool.y < 3.25, 'just proud of the deck')
+test('the top storey is turned off square and shifted, and no two storeys running are the same kind', () => {
+  let turned = 0
+  for (let n = 0; n < 120; n++) {
+    const modules = named(stackOf(6, `top-${n}`), /^mod-/)
+    const top = modules.at(-1)
+    const off = ((top.turn - AT.turn) % Math.PI + Math.PI) % Math.PI
+    if (Math.min(off, Math.PI - off) > 0.2) turned++
+    assert.ok(Math.hypot(top.x - AT.x, top.z - AT.z) < 0.5, 'and still on its floor')
+    for (let k = 1; k < modules.length; k++) {
+      // A sign's cabin is the one exception that may repeat what is under it.
+      if (k === modules.length - 1 && named(stackOf(6, `top-${n}`), /^sign-/).length) continue
+      assert.notEqual(modules[k].part, modules[k - 1].part, `top-${n}: two ${modules[k].part} running`)
+    }
+  }
+  assert.equal(turned, 120)
 })
 
-/** A campus of `count` single-platform workspaces in a row, each with a stack. */
-const campus = (count) => Array.from({ length: count }, (_, n) => ({ id: `ws-${n}`, cells: [{ q: n * 2, r: 0 }], level: 1 + (n % 3), busy: 1 + (n % 6), stackAt: { x: hexToWorld(n * 2, 0).x + 3, z: 2 } }))
+/** A campus of `count` single-platform workspaces in a row, each with room for a stack. */
+const campus = (count) => Array.from({ length: count }, (_, n) => {
+  const at = hexToWorld(n * 2, 0)
+  return { id: `ws-${n}`, cells: [{ q: n * 2, r: 0 }], level: 1 + (n % 3), busy: 1 + (n % 6), stacks: [{ x: at.x + 3, z: at.z + 1, turn: n }] }
+})
 
 test('a campus has a handful of neon signs: about one workspace in nine, never none, and not all the same', () => {
   const signsIn = (count) => named(settlementParts(campus(count), [], WORLD), /^sign-[a-d]$/)
@@ -162,23 +169,61 @@ test('a campus has a handful of neon signs: about one workspace in nine, never n
   assert.equal(signsIn(0).length, 0)
 })
 
-test('a sign or a dish stands on the flat roof of the top storey, and nowhere else', () => {
-  const roofs = { 'mod-cabin': 1.89, 'mod-drum': 1.93 }
-  let signs = 0
-  for (let n = 0; n < 300; n++) {
-    // One workspace on its own always has the campus's one sign.
+test('a sign or a dish stands on a cabin\'s roof, at the height of the roof itself, to one side', () => {
+  let seen = 0
+  for (let n = 0; n < 200; n++) {
     const parts = stackOf(1 + (n % 6), `sign-${n}`)
     const top = named(parts, /^mod-/).at(-1)
-    const things = named(parts, /^(sign-[a-d]|dish)$/)
-    assert.equal(named(parts, /^sign-[a-d]$/).length, 1)
-    for (const thing of things) {
-      if (/^sign/.test(thing.part)) signs++
-      assert.ok(roofs[top.part], `${thing.part} on a ${top.part}, which has no flat roof`)
-      assert.ok(Math.abs(thing.y - (top.y + roofs[top.part])) < 1e-6, `${thing.part} is not on the roof`)
-      assert.ok(Math.abs(thing.x - top.x) < 1e-6 && Math.abs(thing.z - top.z) < 1e-6)
+    for (const thing of named(parts, /^(sign-[a-d]|dish)$/)) {
+      seen++
+      assert.equal(top.part, 'mod-cabin', `${thing.part} on a ${top.part}`)
+      // The roof is 1.60 above the cabin's base; 1.89 is the top of what stands on it.
+      assert.ok(Math.abs(thing.y - (top.y + 1.6)) < 1e-6, `${thing.part} is ${(thing.y - top.y).toFixed(2)} up`)
+      const out = Math.hypot(thing.x - top.x, thing.z - top.z)
+      assert.ok(out > 0.5 && out < 1.3, 'on the roof, and not in the middle of it')
     }
   }
-  assert.equal(signs, 300)
+  assert.ok(seen >= 200, 'every one of these has the campus\'s one sign')
+})
+
+test('a stack\'s frame stays on its platform: no corner of it reaches past the deck', () => {
+  // As the campus places one: 3.5 out from the middle toward a corner, its length pointing outward.
+  const FRAME_HALF = { along: 3.56 / 2, across: 2.36 / 2 }
+  const apothem = 5.146
+  for (let k = 0; k < 6; k++) {
+    const way = k * (Math.PI / 3)
+    const out = { x: Math.cos(way), z: Math.sin(way) }
+    const turn = Math.atan2(out.x, out.z) + Math.PI / 2
+    const parts = stackOf(6, `rim-${k}`, [{ x: out.x * 3.5, z: out.z * 3.5, turn }])
+    const frames = named(parts, 'frame')
+    assert.ok(frames.length > 0)
+    for (const frame of frames) {
+      for (const sx of [-1, 1]) {
+        for (const sz of [-1, 1]) {
+          // The frame's own x runs along its length: at `turn`, that is (cos, -sin) on the ground.
+          const cx = frame.x + sx * FRAME_HALF.along * Math.cos(turn) + sz * FRAME_HALF.across * Math.sin(turn)
+          const cz = frame.z - sx * FRAME_HALF.along * Math.sin(turn) + sz * FRAME_HALF.across * Math.cos(turn)
+          for (let e = 0; e < 6; e++) {
+            const normal = Math.PI / 6 + e * (Math.PI / 3)
+            const reach = cx * Math.cos(normal) + cz * Math.sin(normal)
+            assert.ok(reach <= apothem + 0.03, `a corner is ${reach.toFixed(2)} out, past the rim at ${apothem}`)
+          }
+        }
+      }
+    }
+  }
+})
+
+test('light falls on the deck beside a lit edge and round a module standing on it, and a sign throws its own colour', () => {
+  const parts = stackOf(6)
+  const pools = settlementPools(parts)
+  assert.equal(pools.filter((pool) => pool.kind === 'band').length, named(parts, /lit$/).length)
+  // Only what stands on a deck lights it: the storeys above light nothing below.
+  assert.equal(pools.filter((pool) => pool.kind === 'round' && pool.color === 'amber').length, 1)
+  const thrown = named(parts, /^sign-[a-d]$/).map((sign) => (/[ab]$/.test(sign.part) ? 'cyan' : 'magenta'))
+  assert.equal(thrown.length, 1)
+  assert.deepEqual(pools.filter((pool) => pool.color !== 'amber').map((pool) => pool.color), thrown)
+  for (const pool of pools) assert.ok(pool.y > DECK && pool.y < DECK + 0.1, 'just proud of the deck')
 })
 
 import { settlementNumbers } from '../src/world/settlement-plan.js'

@@ -41,9 +41,10 @@ export function hexDistance(a, b) {
 
 /**
  * How far back toward the square a district reaches, in its own terms and measured straight
- * across (`q + r / 2`). The square's nearer platform is at -5 on that measure and the other
- * district's edge at -8, so this leaves each district round for three platforms on every side
- * of its origin and the two of them five platforms apart at their nearest.
+ * across (`q + r / 2`). The square's nearer platform is at -8 on that measure and the other
+ * district's edge at -14, so this leaves each district round for three platforms on every side
+ * of its origin, the two of them eleven platforms apart at their nearest, and five platforms
+ * of open ground between a district and the square for its walkway to cross.
  */
 const EDGE = -3
 
