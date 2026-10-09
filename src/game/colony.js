@@ -986,7 +986,7 @@ export class Colony {
   _syncCrossings() {
     const style = this.planet.plot
     const plan = style?.crossings
-      ? planCrossings(this._decks().map((plot) => ({ id: plot.id, cells: plot.cells, level: plot.level })))
+      ? planCrossings(this._decks().map((plot) => ({ id: plot.id, cells: plot.cells, level: plot.level })), { sparing: Boolean(style.kit) })
       : []
     const elevation = (id) => (id === PLAZA ? this.plaza : this.plots.get(id))?.elev || 0
     // And the long walkways, from the square out to each district that is there.

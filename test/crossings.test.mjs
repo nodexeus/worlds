@@ -76,3 +76,46 @@ test('the same plots always give the same list, whatever order they arrive in', 
 test('a workspace nobody is joined to reaches only itself', () => {
   assert.deepEqual([...reachable([], 'alone')], ['alone'])
 })
+
+// ── a campus that is joined up without a crossing on every edge ───────────────────────
+
+/** A honeycomb of single-cell workspaces, all within a level of their neighbours. */
+function honeycomb(rings = 3) {
+  const plots = []
+  for (let q = -rings; q <= rings; q++) {
+    for (let r = -rings; r <= rings; r++) {
+      if (Math.abs(q + r) > rings) continue
+      plots.push({ id: `p${q}_${r}`, cells: [{ q, r }], level: 1 + (((q * 7 + r * 13) % 2) + 2) % 2 })
+    }
+  }
+  return plots
+}
+
+test('sparingly joined, a campus has far fewer crossings and every workspace can still be reached', async () => {
+  const { planCrossings, reachable } = await import('../src/world/crossings.js')
+  const plots = honeycomb()
+  const every = planCrossings(plots)
+  const few = planCrossings(plots, { sparing: true })
+  assert.ok(few.length < every.length * 0.55, `${few.length} of ${every.length}`)
+  assert.ok(few.length >= plots.length - 1, 'enough to join them all')
+  assert.equal(reachable(few, plots[0].id).size, plots.length)
+  // Nothing is joined that was not joined before.
+  const was = new Set(every.map((c) => JSON.stringify(c)))
+  assert.ok(few.every((c) => was.has(JSON.stringify(c))))
+})
+
+test('there is more than one way round: a few crossings are kept beyond the bare minimum', async () => {
+  const { planCrossings } = await import('../src/world/crossings.js')
+  const plots = honeycomb()
+  assert.ok(planCrossings(plots, { sparing: true }).length > plots.length - 1)
+})
+
+test('which crossings are kept is the same every time, and a level walk is kept before a climb', async () => {
+  const { planCrossings } = await import('../src/world/crossings.js')
+  const plots = honeycomb()
+  assert.deepEqual(planCrossings(plots, { sparing: true }), planCrossings([...plots].reverse(), { sparing: true }))
+  const every = planCrossings(plots)
+  const few = planCrossings(plots, { sparing: true })
+  const share = (list) => list.filter((c) => c.rise === 0).length / list.length
+  assert.ok(share(few) > share(every), 'more of what is kept is level')
+})

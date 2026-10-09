@@ -30,7 +30,59 @@ import { HEX_DIRS, cellKey } from './plot-move.js'
  * @param {Array<{id: string, cells: Array<{q: number, r: number}>, level?: number}>} plots
  * @returns {Crossing[]} ordered by workspace pair, so the same plots always give the same list
  */
-export function planCrossings(plots) {
+export function planCrossings(plots, { sparing = false } = {}) {
+  const every = everyCrossing(plots)
+  return sparing ? sparingly(every) : every
+}
+
+/** FNV-1a, the hash the rest of the world uses to turn a name into a stable number. */
+function hash(text) {
+  let h = 2166136261
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return h >>> 0
+}
+
+/** How many of the crossings a campus could do without are kept anyway: about one in this many. */
+const SPARE = 7
+
+/**
+ * The crossings a campus needs, and a few more.
+ *
+ * Joining every pair of neighbours puts a staircase on every edge of every workspace. This
+ * keeps enough that every workspace can still be reached from every other it could be reached
+ * from before, a level walk in preference to a climb, and then about one in `SPARE` of the
+ * rest, so there is usually more than one way round. Which are kept depends on the two
+ * workspaces' names and on nothing else, so it is the same every time.
+ *
+ * @param {Crossing[]} crossings
+ * @returns {Crossing[]} in the order they were given
+ */
+function sparingly(crossings) {
+  const seed = (crossing) => hash(`${crossing.low}\u0000${crossing.high}`)
+  const order = crossings.map((crossing, n) => n).sort((a, b) =>
+    crossings[a].rise - crossings[b].rise || seed(crossings[a]) - seed(crossings[b]) || a - b)
+  const group = new Map()
+  const find = (id) => {
+    while (group.has(id) && group.get(id) !== id) id = group.get(id)
+    return id
+  }
+  const kept = new Set()
+  for (const n of order) {
+    const a = find(crossings[n].low)
+    const b = find(crossings[n].high)
+    if (a === b) continue
+    group.set(a, b)
+    group.set(b, b)
+    kept.add(n)
+  }
+  for (const n of order) if (!kept.has(n) && seed(crossings[n]) % SPARE === 0) kept.add(n)
+  return crossings.filter((crossing, n) => kept.has(n))
+}
+
+function everyCrossing(plots) {
   const owner = new Map()
   for (const plot of plots) {
     plot.cells.forEach((cell, age) => owner.set(cellKey(cell.q, cell.r), { plot, cell, age }))
