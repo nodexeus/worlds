@@ -497,8 +497,12 @@ export class Plot {
     this.group.position.y = this.elev
     this.group.name = `plot:${id}`
 
-    this._buildDeck()
-    this._buildBorder()
+    // A workspace built from the settlement kit has its deck and its edges drawn from the
+    // kit's parts (`settlement.js`); what is kept here is where it is and what stands on it.
+    if (!style?.kit) {
+      this._buildDeck()
+      this._buildBorder()
+    }
     // A deck that is somebody else's stage, not a workspace, is left clear.
     if (!style?.bare) this._buildPosts()
     this.slots = this._buildSlots()

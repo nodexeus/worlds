@@ -33,6 +33,8 @@ import { Crossings } from '../world/crossing-models.js'
 import { loadModels } from '../world/kit.js'
 import { loadGate } from '../world/gate.js'
 import { campusBuilding, loadCampusBuildings } from '../world/campus-buildings.js'
+import { Settlement, loadSettlement, settlementReady } from '../world/settlement.js'
+import { settlementParts } from '../world/settlement-plan.js'
 import { createPipeline, pipelineClearance, pipelineUniforms } from '../world/pipeline.js'
 import { createBuilding, buildingUniforms } from '../world/buildings.js'
 import { Ship } from '../world/ship.js'
@@ -197,6 +199,7 @@ export class Colony {
     scene.add(this.worldGroup)
 
     this.crossings = new Crossings(scene)
+    this.settlement = new Settlement(scene)
     /** The strip of ground each crossing occupies. See `crossing-spans.js`. */
     this.crossingSpans = []
     /** The plaza deck, when this world has one. */
@@ -544,7 +547,7 @@ export class Colony {
     if (!style || !this.plotGroup) return
     this.plaza = new Plot({
       id: PLAZA, name: PLAZA, index: -1, cells,
-      accent: style.palette?.[0] ?? PLOT_PALETTE[0], style: { ...style, bare: true }, level: 0,
+      accent: style.palette?.[0] ?? PLOT_PALETTE[0], style: { ...style, bare: true, kit: false }, level: 0,
     })
     this.plaza.shape = shape
     this.plotGroup.add(this.plaza.group)
@@ -921,6 +924,7 @@ export class Colony {
     }
     this._syncLabels()
     this._syncCrossings()
+    this._syncSettlement()
   }
 
   /**
@@ -1016,7 +1020,9 @@ export class Colony {
     // plan may have moved on, so what is drawn is whatever the plan is by then.
     loadModels().then(() => {
       if (this._crossingSignature !== signature) return
-      this.crossings.build(plan, {
+      // On a world built from the settlement kit the crossings between workspaces are the
+      // kit's own, drawn with the rest of it; only the long walkways are drawn here.
+      this.crossings.build(style.kit ? [] : plan, {
         gap: style.gap,
         levelStep: style.levelStep,
         elevation,
@@ -1239,6 +1245,25 @@ export class Colony {
     this.nav.rebuild(obstacles, this.planet.plot?.crossings ? (x, z) => this._walkable(x, z) : null)
   }
 
+  /**
+   * Stand the settlement kit's parts under and around every workspace, from where the
+   * workspaces and their crossings are now. Called whenever either may have changed, and
+   * again when the kit arrives.
+   */
+  _syncSettlement() {
+    const style = this.planet.plot
+    if (!style?.kit || !settlementReady()) {
+      this.settlement.set([])
+      if (style?.kit) loadSettlement().then(() => this._syncSettlement(), () => {})
+      return
+    }
+    this.settlement.set(settlementParts(
+      this.plotOrder.map((plot) => ({ id: plot.id, cells: plot.cells, level: plot.level })),
+      this.crossingPlan || [],
+      { deckTop: DECK_TOP, levelStep: style.levelStep, apothem: PLOT_APOTHEM - style.gap }
+    ))
+  }
+
   /** Whether (x, z) is on a crossing or in the ground just inside either of its mouths. */
   _inMouth(x, z) {
     for (const span of this.crossingSpans) {
@@ -1427,6 +1452,7 @@ export class Colony {
   setPlotLift(name, dy) {
     const plot = this.plots.get(name)
     if (!plot) return
+    this.settlement.setLift(name, dy)
     // Lifted from wherever it stands: a raised workspace is carried at its own height.
     plot.group.position.y = plot.elev + dy
     if (plot.label) plot.label.position.y = 3.2 + plot.elev + dy

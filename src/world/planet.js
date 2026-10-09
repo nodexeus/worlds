@@ -122,6 +122,8 @@ export const PLANETS = {
       gap: (STAIR_RUN_PER_RISE * CAMPUS_LEVEL_STEP) / 2,
       // Neighbouring workspaces are joined by walkways and staircases.
       crossings: true,
+      // Decks, legs, edges and crossings come from the settlement kit, not from one slab.
+      kit: true,
       // A crossing meets a deck at the middle of an edge, so the ring of buildings is turned
       // to stand at the corners instead, where a deck also has the most room. Each mouth then
       // opens onto the clear ground between two of them, not onto the back of one.
