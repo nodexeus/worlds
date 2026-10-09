@@ -669,7 +669,7 @@ export class Colony {
       }
       // Never fold away everything: a colony that answers a poll with an empty planet reads as
       // broken rather than tidy, and there is nothing on screen to tell you which it was.
-      if (dormant.size === byProject.size) dormant.clear()
+      if (dormant.size === byProject.size - placeOf.size) dormant.clear()
       for (const name of dormant) byProject.delete(name)
     }
     this.dormantProjects = dormant
@@ -747,8 +747,11 @@ export class Colony {
         const at = slotOf.get(thread.id)
         // On a place a building belongs to the spot, two to a platform, and whoever stands
         // there works at it. Anywhere else a session raises its own.
-        const i = place ? placeSlot(at) : at
-        const home = place ? placeBuilding(name, at) : thread.id
+        // A place hemmed in by its neighbours can be short of the platforms it asked for.
+        // Whoever there is no room for shares a building rather than raising one on top of it.
+        const spot = place ? at % (plot.cells.length * PLACE_SLOTS.length) : at
+        const i = place ? placeSlot(spot) : at
+        const home = place ? placeBuilding(name, spot) : thread.id
         const status = statusFor(thread, now)
         if (stats[status] !== undefined) stats[status]++
         if (status === 'waiting' || status === 'blocked') urgent.add(plot.id)
@@ -984,8 +987,21 @@ export class Colony {
    * @returns {THREE.Vector3 | null}
    */
   roamSpot(rand = Math.random) {
-    const decks = [...this.plotOrder.filter((plot) => plot.crew), ...(this.plaza ? [this.plaza] : [])]
-    if (!decks.length || !this.nav) return null
+    if (!this.nav) return null
+    let decks = [...this.plotOrder.filter((plot) => plot.crew), ...(this.plaza ? [this.plaza] : [])]
+    // A world with no plaza and a crew with no workspace: anybody's ground will do.
+    if (!decks.length) decks = this.plotOrder
+    if (!decks.length) {
+      // And with no ground at all, somewhere out in front of the door, never in it.
+      const door = this.ship.shipDoor()
+      for (let tries = 0; tries < 8; tries++) {
+        const a = rand() * Math.PI * 2
+        const r = 6 + rand() * 5
+        const free = this.nav.nearestClear(door.x + Math.cos(a) * r, door.z + Math.sin(a) * r, 2)
+        if (free) return new THREE.Vector3(free.x, 0, free.z)
+      }
+      return null
+    }
     for (let tries = 0; tries < 8; tries++) {
       const deck = decks[Math.floor(rand() * decks.length)]
       const tile = deck.localCenters[Math.floor(rand() * deck.localCenters.length)]

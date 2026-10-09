@@ -552,7 +552,7 @@ export class Hud {
       b.type = 'button'
       b.className = 'repo'
       const called = p.title ?? p.name
-      b.title = `${p.count} in ${called}`
+      b.title = p.title ? `${p.count} in ${called}` : `${p.count} thread${p.count === 1 ? '' : 's'} in ${p.name}`
       b.setAttribute('aria-pressed', String(p.name === activeName))
       b.innerHTML =
         `<i class="swatch" style="background:${hex(p.accent)};color:${hex(p.accent)}"></i>` +

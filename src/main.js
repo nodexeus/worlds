@@ -215,7 +215,7 @@ const actions = {
    * behaviour you actually want and the reason this is a timestamp rather than a flag.
    */
   markViewed: () => {
-    const thread = threads.find((t) => t.id === selectedId)
+    const thread = session(selectedId)
     if (!thread) return
     state.viewedAt = { ...(state.viewedAt || {}), [thread.id]: Date.now() }
     queueSave()
@@ -261,7 +261,9 @@ const actions = {
   },
 
   openThread: async () => {
-    const thread = threads.find((t) => t.id === selectedId)
+    // One of the crew is opened by its card, not on this computer.
+    if (isCrew(selectedId)) return void crew?.open(agentIdOf(selectedId))
+    const thread = session(selectedId)
     if (!thread) return
     try {
       const shown = await openThread(thread, ...openChoice())
@@ -279,7 +281,7 @@ const actions = {
   // the astronaut walks back to the ship. The harness's own records are never touched — see
   // `reconcileArchived` in server/api.mjs for why that stopped being worth doing.
   archiveThread: () => {
-    const thread = threads.find((t) => t.id === selectedId)
+    const thread = session(selectedId)
     if (!thread) return
     const foldedBefore = new Set(colony.dormantProjects || [])
     state.archived = [...new Set([...state.archived, thread.id])]
@@ -971,6 +973,12 @@ window.addEventListener('keydown', (e) => {
 
 // ── data ──────────────────────────────────────────────────────────────────────────────
 
+/**
+ * The session with this id, for whatever is done to a session and to nothing else: marking it
+ * viewed, filing it away. One of the crew is not one, whoever happens to be selected.
+ */
+const session = (id) => (isCrew(id) ? undefined : threads.find((t) => t.id === id))
+
 /** What the last scan found, kept so the campus can be drawn again when only the crew changed. */
 let scanned = []
 /** Draw the campus again from what is already known. Waits for the first scan to have happened. */
@@ -987,6 +995,10 @@ function applyThreads(list) {
     drag.pendingThreads = list
     return
   }
+  // Only what was scanned. Much of this file hands back the list it was last given, crew and
+  // all, and the crew are read afresh below every time: kept, they would be drawn twice, and
+  // as they were rather than as they are.
+  list = list.filter((t) => !t.crew)
   scanned = list
   // The crew stand on the same campus as the sessions scanned from this computer.
   const drawn = crew ? crewWorld(crew.store.state) : { members: [], places: [] }

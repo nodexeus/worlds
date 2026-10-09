@@ -48,6 +48,8 @@ function startServer(port) {
       CODEX_HOME: path.join(temp, 'codex'),
       BOT_CROSSING_CLAUDE_DESKTOP: path.join(temp, 'no-desktop'),
       PORT: String(port),
+      // Its own saved campus, never the one in this checkout that a person's own server uses.
+      BOT_CROSSING_DATA: path.join(temp, 'campus'),
       WORLDS_DATABASE_URL: database,
       WORLDS_DATABASE_SCHEMA: schema,
       WORLDS_DATA_DIR: path.join(temp, 'data'),
@@ -300,6 +302,14 @@ async function run() {
   await until(`t.q('.cc-ask', t.card('Ada'))`, 'the card is open at the question')
   assert.equal(await page(`document.querySelector('.thread-pop')?.classList.contains('on') ?? false`), false, 'the card for a local session stays shut')
   assert.doesNotMatch(await page(`document.body.innerText`), /crew:/, 'nothing on the page shows an id of the crew\'s')
+
+  step('what is done to a session from the keyboard is not done to one of the crew')
+  // The robot is still selected. On a session, A files it away and V marks it viewed.
+  await page(`(document.activeElement?.blur(), ['a', 'v'].forEach((key) => window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))))`)
+  await page(`window.botCrossing.poll()`)
+  await delay(600)
+  assert.deepEqual(await page(`t.world().crew`), [['Ada', 'Site', 'waiting']], 'the robot is still there')
+  assert.deepEqual(await page(`fetch('/api/state').then((res) => res.json()).then((state) => [(state.archived || []).length, Object.keys(state.viewedAt || {}).length])`), [0, 0])
   await page(`t.all('.cc-ask .cc-b', t.card('Ada'))[0].click()`)
   await until(`t.notes('Ada').some((note) => note === 'Which should I begin with? answered: The README')`, 'the answer is shown')
   await until(`t.all('.cc-ag', t.card('Ada')).at(-1).textContent.includes('begin with: The README')`, 'the agent went on with it')

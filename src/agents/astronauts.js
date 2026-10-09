@@ -1308,14 +1308,20 @@ export class Astronauts {
       this._settle(agent, dt)
       return
     }
+    if (agent.greet > 0) agent.greet -= dt
     const friend = agent.friend
-    if (friend && friend.state !== 'gone') {
+    // Somebody who has gone, or has walked off, is nobody to stand talking to.
+    const there = friend && friend.state === 'at-site' && Math.hypot(friend.pos.x - agent.pos.x, friend.pos.z - agent.pos.z) < 3.5
+    if (friend && !there) {
+      agent.friend = null
+      agent.greet = 0
+    }
+    if (there) {
       // Stopped by somebody: stand and face them, and say hello first. They look round too,
       // if they have nothing better to do.
       agent.vel.set(0, 0, 0)
       this._faceToward(agent, friend.pos, dt)
       if (friend.status === 'idle' && !friend.resting && friend.groundSpeed < 0.1) this._faceToward(friend, agent.pos, dt)
-      if (agent.greet > 0) agent.greet -= dt
       this._settle(agent, dt)
       return
     }

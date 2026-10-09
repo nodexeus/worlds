@@ -67,3 +67,13 @@ test('agents keep the order the roster gave them, oldest first', () => {
   const { members } = crewWorld({ agents: [agent('a1'), agent('a2'), agent('a3')], workspaces: [] }, 1000)
   assert.ok(members[0].createdAt < members[1].createdAt && members[1].createdAt < members[2].createdAt)
 })
+
+test('the crew cannot be filed away or hidden as a session can: they are always drawn', async () => {
+  const { hiddenCatalog, liveThreadsForColony } = await import('../src/game/hidden-projects.js')
+  const { members } = crewWorld({ agents: [agent('a1', { workspaceId: 'w1' }), agent('a2')], workspaces: [SITE] }, 1000)
+  const session = { id: 's1', project: 'unknown' }
+  // Whatever an older page saved, and with the project a session of no project is filed under hidden.
+  const live = liveThreadsForColony([...members, session], new Set(['crew:a1', 'crew:a2']), new Set(['unknown', 'crew:w1']))
+  assert.deepEqual(live.map((one) => one.id), ['crew:a1', 'crew:a2'])
+  assert.deepEqual(hiddenCatalog(['unknown'], [...members, session]), [{ name: 'unknown', count: 1 }])
+})
