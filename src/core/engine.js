@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
+import { capBloom } from './bloom-cap.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
@@ -214,6 +215,8 @@ export class Engine {
     // A high threshold is what keeps this an accent rather than a haze: only the eyes,
     // lamps, sparks and the sun's disc clear it, so lit surfaces stay crisp.
     this.bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), this.settings.get('bloomStrength'), 0.55, 0.92)
+    // And a glint off a plate must not be taken for a lamp: see `bloom-cap.js`.
+    capBloom(this.bloomPass)
     composer.addPass(this.bloomPass)
 
     // After bloom, so an out-of-focus lamp keeps its glow and the glow goes soft with it
