@@ -832,6 +832,8 @@ def finishes(kind):
         M['rustpart'] = wear3('Rust', (0.1, 0.04, 0.02), 0.25, 0.7, edge=0.25, rust_all=True)
         M['light'] = wear3('Light', (0.0, 0.0, 0.0), 0.0, 0.5, edge=0.0, emit=((0.982, 0.571, 0.0), 1.15), grime=0.0)
         M['cyan'] = wear3('Cyan', (0.0, 0.0, 0.0), 0.0, 0.5, edge=0.0, emit=((0.05, 0.9, 1.0), 3.0), grime=0.0)
+        # a tube or mark that has gone out: dark glass, no glow
+        M['dim'] = wear3('Dim', (0.045, 0.05, 0.058), 0.0, 0.6, edge=0.0, grime=0.4)
         M['magenta'] = wear3('Magenta', (0.0, 0.0, 0.0), 0.0, 0.5, edge=0.0, emit=((1.0, 0.08, 0.65), 3.0), grime=0.0)
         g['WP'] = dict(base, drip_k=0.0)
         M['beam'] = wear3('Beam', (0.17, 0.173, 0.182), 1.0, 0.6)
@@ -1516,9 +1518,146 @@ def part_gantry_lamp(b):
     box(b, 'steel', (0.06, 0.06, 0.12), T(0, 0, 0.06))
     box(b, 'light', (0.11, 0.11, 0.08), T(0, 0, 0.16), bevel=False)
 
-def part_sign(color, seed, w, h):
+# ---------------------------------------------------------------------- signs
+def glyph(b, mat, kind, M, s, t=0.13):
+    """One abstract mark in M's XZ plane, s across, as bars that show on both faces of a board t thick or less."""
+    k = s * 0.16
+    def bar(x, z, w, h, turn=0.0):
+        box(b, mat, (w, t, h), M @ T(x, 0, z) @ RY(turn), bevel=False)
+    if kind == 'square':
+        for e in (-1, 1):
+            bar(0, e * (s - k) / 2, s, k); bar(e * (s - k) / 2, 0, k, s)
+    elif kind == 'bars':
+        for z, w in ((s * 0.34, s), (0, s * 0.6), (-s * 0.34, s * 0.8)):
+            bar((w - s) / 2, z, w, k)
+    elif kind == 'chev':
+        for e in (-1, 1):
+            bar(0, e * s * 0.2, s * 0.75, k, e * 0.6)
+    elif kind == 'dot':
+        bar(0, 0, s * 0.42, s * 0.42)
+    elif kind == 'cross':
+        bar(0, 0, s, k); bar(0, 0, k, s)
+    elif kind == 'tee':
+        bar(0, (s - k) / 2, s, k); bar(0, -k / 2, k, s - k)
+    elif kind == 'ell':
+        bar(-(s - k) / 2, 0, k, s); bar(0, -(s - k) / 2, s, k)
+    elif kind == 'arrow':
+        bar(-s * 0.1, 0, s * 0.8, k)
+        for e in (-1, 1):
+            bar(s * 0.28, e * s * 0.16, s * 0.5, k, e * 0.75)
+    elif kind == 'slash':
+        bar(0, 0, s * 1.1, k, 0.9)
+
+def _base(b, w=0.42, d=0.34):
+    """A base plate with four bolts, to stand on a roof."""
+    box(b, 'steel', (w, d, 0.04), T(0, 0, 0.02))
+    for x in (-1, 1):
+        for y in (-1, 1):
+            cyl(b, 'fixing', 0.025, 0.03, T(x * (w / 2 - 0.06), y * (d / 2 - 0.06), 0.04), 5, bevel=False)
+
+def part_sign_strip(color):
+    """A tall narrow strip of stacked marks hung off one side of a mast. One mark is out."""
     def build(b):
-        neon_sign(b, I4, random.Random(seed), color, w=w, h=h)
+        _base(b)
+        tube(b, 'tube', (0, 0, 0.04), (0, 0, 2.55), 0.04, 6)
+        box(b, 'black', (0.2, 0.14, 0.26), T(0, 0.09, 0.42))                       # junction box
+        tube(b, 'black', (0.05, 0.07, 0.55), (0.05, 0.07, 2.2), 0.014, 5)          # its cable up the mast
+        bx, bw, z0, z1 = 0.34, 0.4, 0.78, 2.5
+        box(b, 'black', (bw, 0.07, z1 - z0), T(bx, 0, (z0 + z1) / 2))
+        for e in (-1, 1):
+            box(b, 'steel', (0.035, 0.1, z1 - z0 + 0.06), T(bx + e * (bw / 2 + 0.01), 0, (z0 + z1) / 2))
+        for z in (z0 + 0.12, (z0 + z1) / 2, z1 - 0.12):
+            beam(b, 'steel', (0.0, 0, z), (bx - bw / 2, 0, z), 0.05, 0.04)
+        marks = ['square', 'chev', 'bars', 'dot', 'tee']
+        n = len(marks)
+        for i, kind in enumerate(marks):
+            z = z1 - (i + 0.5) * (z1 - z0) / n
+            glyph(b, 'dim' if i == 3 else color, kind, T(bx, 0, z), 0.24)
+        box(b, 'steel', (0.5, 0.12, 0.035), T(bx, 0, z1 + 0.03))
+    return build
+
+def part_sign_ring(color):
+    """A broken ring of tube on a bracket arm from a short post, with a mark inside it. The lowest stretch is out."""
+    def build(b):
+        _base(b, 0.38, 0.38)
+        box(b, 'steel', (0.09, 0.09, 1.0), T(0, 0, 0.54))
+        cx, cz, R = 0.42, 1.5, 0.56
+        beam(b, 'steel', (0, 0, 1.0), (cx, 0, cz - R - 0.03), 0.06, 0.06)
+        beam(b, 'steel', (0, 0, 0.55), (cx + 0.3, 0, cz - R * 0.85), 0.035, 0.035)
+        box(b, 'black', (0.16, 0.12, 0.2), T(-0.02, 0.1, 0.8))
+        # a hoop of flat bar behind the tube carries it
+        seg = 18
+        for i in range(seg):
+            a0, a1 = TAU * i / seg, TAU * (i + 1) / seg
+            p0 = Vector((cx + math.cos(a0) * R, 0.0, cz + math.sin(a0) * R))
+            p1 = Vector((cx + math.cos(a1) * R, 0.0, cz + math.sin(a1) * R))
+            beam(b, 'black', p0, p1, 0.05, 0.03, bevel=False)
+            deg = math.degrees((a0 + a1) / 2)
+            if 20 < deg < 62:
+                continue                                                           # the gap in the ring
+            mat = 'dim' if 235 < deg < 305 else color
+            for y in (-0.045, 0.045):
+                tube(b, mat, p0 + Vector((0, y, 0)), p1 + Vector((0, y, 0)), 0.03, 6)
+        glyph(b, color, 'arrow', T(cx - 0.02, 0, cz), 0.5, t=0.06)
+        for e in (-1, 1):
+            beam(b, 'steel', (cx + e * 0.3, 0, cz), (cx + e * (R - 0.03), 0, cz), 0.03, 0.03, bevel=False)
+    return build
+
+def part_sign_marquee(color):
+    """A wide low board on two posts with a row of marks. One mark is out and one cell is bare, its cable hanging."""
+    def build(b):
+        w, z0, z1 = 2.0, 0.72, 1.24
+        for x in (-0.72, 0.72):
+            box(b, 'steel', (0.3, 0.26, 0.035), T(x, 0, 0.018))
+            box(b, 'steel', (0.07, 0.07, z1 + 0.1), T(x, 0.07, (z1 + 0.1) / 2 + 0.03))
+            beam(b, 'steel', (x, 0.07, 0.12), (x, 0.3, 0.035), 0.03, 0.03, bevel=False)
+        box(b, 'black', (w, 0.07, z1 - z0), T(0, 0, (z0 + z1) / 2))
+        for z in (z0 - 0.02, z1 + 0.02):
+            box(b, 'steel', (w + 0.06, 0.11, 0.04), T(0, 0, z))
+        for e in (-1, 1):
+            box(b, 'steel', (0.04, 0.11, z1 - z0 + 0.08), T(e * (w / 2 + 0.01), 0, (z0 + z1) / 2))
+        marks = ['chev', 'dot', None, 'cross', 'slash', 'square', 'arrow']
+        n = len(marks)
+        for i, kind in enumerate(marks):
+            x = -w / 2 + (i + 0.5) * w / n
+            if kind is None:
+                # the cell whose mark has gone: four studs and a cable left hanging
+                for dx in (-0.08, 0.08):
+                    for dz in (-0.1, 0.1):
+                        cyl(b, 'fixing', 0.014, 0.1, T(x + dx, 0.05, (z0 + z1) / 2 + dz) @ RX(math.pi / 2), 5, bevel=False)
+                tube(b, 'black', (x, -0.05, (z0 + z1) / 2), (x + 0.05, -0.06, z0 - 0.3), 0.012, 5)
+                continue
+            glyph(b, 'dim' if i == 4 else color, kind, T(x, 0, (z0 + z1) / 2), 0.2)
+        # a lit rail along the top, in two lengths with a dead stretch between
+        for x0, x1, mat in ((-w / 2 + 0.05, -0.25, color), (-0.2, 0.3, 'dim'), (0.35, w / 2 - 0.05, color)):
+            tube(b, mat, (x0, 0, z1 + 0.075), (x1, 0, z1 + 0.075), 0.025, 6)
+        box(b, 'black', (0.24, 0.12, 0.16), T(-0.72, 0.16, 0.5))
+    return build
+
+def part_sign_cluster(color):
+    """A mast with odd panels bolted on at their own angles: two lit, one only its border, one dark."""
+    def build(b):
+        _base(b, 0.44, 0.44)
+        tube(b, 'tube', (0, 0, 0.04), (0, 0, 2.1), 0.045, 6)
+        tube(b, 'tube', (0, 0, 0.9), (0.4, 0, 0.04), 0.022, 5)                      # a stay to the roof
+        box(b, 'black', (0.18, 0.13, 0.22), T(0, -0.1, 0.5))
+        tube(b, 'black', (-0.04, -0.07, 0.6), (-0.04, -0.07, 1.8), 0.013, 5)
+        # panel: centre x, z, width, height, yaw, roll, what is on it
+        panels = [(0.36, 1.72, 0.78, 0.44, 0.3, 0.05, 'chev', color),
+                  (-0.4, 1.36, 0.46, 0.62, -0.42, -0.07, 'tee', color),
+                  (0.34, 1.02, 0.52, 0.34, -0.16, 0.12, 'border', color),
+                  (-0.3, 0.72, 0.36, 0.36, 0.5, 0.0, 'bars', 'dim')]
+        for x, z, w, h, yaw, roll, kind, mat in panels:
+            beam(b, 'steel', (0, 0, z), (x * 0.5, 0, z), 0.04, 0.04, bevel=False)
+            M = T(x, 0, z) @ RZ(yaw) @ RY(roll)
+            box(b, 'black', (w, 0.05, h), M)
+            box(b, 'steel', (w + 0.04, 0.03, 0.03), M @ T(0, 0.03, h / 2 - 0.05), bevel=False)
+            if kind == 'border':
+                for e in (-1, 1):
+                    box(b, mat, (w - 0.08, 0.1, 0.03), M @ T(0, 0, e * (h / 2 - 0.05)), bevel=False)
+                    box(b, mat, (0.03, 0.1, h - 0.08), M @ T(e * (w / 2 - 0.05), 0, 0), bevel=False)
+            else:
+                glyph(b, mat, kind, M, min(w, h) * 0.62, t=0.1)
     return build
 
 def part_dish(b):
@@ -1596,10 +1735,10 @@ PARTS = {
     'ladder': (part_ladder, 'plain', 512, 0.0),
     'gantry': (part_gantry, 'plain', 512, 0.0),
     'gantry-lamp': (part_gantry_lamp, 'plain', 512, 0.0),
-    'sign-a': (part_sign('cyan', 1, 1.6, 0.75), 'plain', 512, 0.0),
-    'sign-b': (part_sign('magenta', 2, 1.3, 0.6), 'plain', 512, 0.0),
-    'sign-c': (part_sign('cyan', 3, 1.1, 0.9), 'plain', 512, 0.0),
-    'sign-d': (part_sign('magenta', 4, 1.7, 0.55), 'plain', 512, 0.0),
+    'sign-a': (part_sign_strip('cyan'), 'plain', 512, 0.0),
+    'sign-b': (part_sign_ring('cyan'), 'plain', 512, 0.0),
+    'sign-c': (part_sign_marquee('magenta'), 'plain', 512, 0.0),
+    'sign-d': (part_sign_cluster('magenta'), 'plain', 512, 0.0),
     'dish': (part_dish, 'plain', 512, 0.0),
     'walk': (part_walk, 'used', 512, 0.0),
     'walk-turn-30': (part_walk_turn(30), 'plain', 512, 0.0),

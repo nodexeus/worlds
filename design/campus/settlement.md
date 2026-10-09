@@ -220,15 +220,23 @@ centres, lower deck on the minus z side, upper deck on the plus z side.
 
 ## Signs and the dish
 
-Origin: centre of the base, on the deck. Signs are thin along z: the face is in the x, y plane.
+Origin: centre of the base plate (for `sign-c`, midway between its two posts), on the roof or deck it
+stands on (y = 0). The face is in the x, y plane and the marks show on both sides. Marks are
+abstract: no words. Only the tubes and marks are lit, and each sign has a part that is out.
 
-| Part | Colour | Size (x, y, z) | Triangles | Bytes | Maps |
-|---|---|---|---|---|---|
-| sign-a | cyan | 1.60 x 2.25 x 0.14 | 132 | 395352 | 512 |
-| sign-b | magenta | 1.30 x 2.10 x 0.14 | 132 | 395340 | 512 |
-| sign-c | cyan | 1.10 x 2.40 x 0.14 | 132 | 375696 | 512 |
-| sign-d | magenta | 1.70 x 2.05 x 0.14 | 132 | 383884 | 512 |
-| dish | none | 0.86 x 1.75 x 1.48 | 564 | 516208 | 512 |
+| Part | Colour | What it is | Size (x, y, z) | x from origin | Triangles | Bytes | Maps |
+|---|---|---|---|---|---|---|---|
+| sign-a | cyan | a tall strip of five stacked marks hung off one side of a mast; the fourth mark is out | 0.80 x 2.55 x 0.34 | -0.21 to 0.59 | 640 | 586540 | 512 |
+| sign-b | cyan | a broken ring of tube on a bracket arm from a short post, an arrow inside; the lowest stretch is out | 1.20 x 2.08 x 0.38 | -0.19 to 1.01 | 1200 | 612756 | 512 |
+| sign-c | magenta | a wide low board on two posts with a row of marks and a lit top rail; one mark is out, one cell is bare with its cable hanging | 2.06 x 1.37 x 0.44 | -1.03 to 1.03 | 760 | 621528 | 512 |
+| sign-d | magenta | a mast with four odd panels at their own angles: two lit, one only its border, one dark | 1.39 x 2.10 x 0.44 | -0.64 to 0.76 | 608 | 645076 | 512 |
+
+`sign-a` and `sign-c` were cyan and `sign-b` and `sign-d` magenta before this change: now a and b
+are cyan, c and d magenta.
+
+| Part | Size (x, y, z) | Triangles | Bytes | Maps |
+|---|---|---|---|---|
+| dish | 0.86 x 1.75 x 1.48 | 564 | 516208 | 512 |
 
 ## Boardwalk on the ground
 
