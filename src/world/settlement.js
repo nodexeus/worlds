@@ -232,3 +232,92 @@ export class LightPools {
     this.group.removeFromParent()
   }
 }
+
+/**
+ * The numbers painted on the decks: the kit's sheet of ten stencilled digits, one flat quad a
+ * digit, one instanced mesh for the whole campus. Each instance says which digit it is, and
+ * the shader takes that tenth of the sheet. See `settlementNumbers`.
+ */
+export class DeckNumbers {
+  constructor(scene) {
+    this.digits = []
+    this.lifts = new Map()
+    this.capacity = 0
+    this.mesh = null
+    this.scene = scene
+    const map = new THREE.TextureLoader().load(assetUrl('campus/stencil-digits.png'))
+    map.colorSpace = THREE.SRGBColorSpace
+    map.anisotropy = 4
+    // Old paint: pale, dull, and lit like the plate it is on, so it does not glow at night.
+    this.material = new THREE.MeshStandardMaterial({
+      map, color: 0xb9b6ab, transparent: true, depthWrite: false, roughness: 0.85, metalness: 0,
+      polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3,
+    })
+    this.material.onBeforeCompile = (shader) => {
+      withCurve(shader)
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute float aDigit;')
+        .replace('#include <uv_vertex>', '#include <uv_vertex>\n\tvMapUv = vec2( ( uv.x + aDigit ) / 10.0, uv.y );')
+    }
+    // A unit square lying flat: the sheet's left to right along +x, its bottom to top along -z.
+    this.geometry = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2)
+    this._m = new THREE.Matrix4()
+    this._q = new THREE.Quaternion()
+    this._p = new THREE.Vector3()
+    this._s = new THREE.Vector3()
+    this._up = new THREE.Vector3(0, 1, 0)
+  }
+
+  /** @param {ReturnType<typeof import('./settlement-plan.js').settlementNumbers>} digits */
+  set(digits) {
+    this.digits = digits
+    this._write()
+  }
+
+  setLift(plot, dy) {
+    if (dy) this.lifts.set(plot, dy)
+    else this.lifts.delete(plot)
+    this._write()
+  }
+
+  _write() {
+    const count = this.digits.length
+    if (count > this.capacity) {
+      if (this.mesh) {
+        this.scene.remove(this.mesh)
+        this.mesh.dispose()
+      }
+      this.capacity = Math.max(32, Math.ceil(count * 1.5))
+      const geometry = this.geometry.clone()
+      this.which = new THREE.InstancedBufferAttribute(new Float32Array(this.capacity), 1)
+      geometry.setAttribute('aDigit', this.which)
+      this.mesh = new THREE.InstancedMesh(geometry, this.material, this.capacity)
+      this.mesh.name = 'settlement-numbers'
+      this.mesh.frustumCulled = false
+      this.mesh.receiveShadow = true
+      this.mesh.renderOrder = 1
+      this.scene.add(this.mesh)
+    }
+    if (!this.mesh) return
+    this.digits.forEach((digit, n) => {
+      this._p.set(digit.x, digit.y + (this.lifts.get(digit.plot) || 0), digit.z)
+      this._q.setFromAxisAngle(this._up, digit.turn)
+      this._s.set(digit.width, 1, digit.height)
+      this.mesh.setMatrixAt(n, this._m.compose(this._p, this._q, this._s))
+      this.which.array[n] = digit.digit
+    })
+    this.mesh.count = count
+    this.mesh.instanceMatrix.needsUpdate = true
+    this.which.needsUpdate = true
+  }
+
+  dispose() {
+    if (this.mesh) {
+      this.scene.remove(this.mesh)
+      this.mesh.dispose()
+    }
+    this.geometry.dispose()
+    this.material.map?.dispose()
+    this.material.dispose()
+  }
+}

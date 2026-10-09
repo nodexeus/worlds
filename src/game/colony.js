@@ -33,8 +33,8 @@ import { Crossings } from '../world/crossing-models.js'
 import { loadModels } from '../world/kit.js'
 import { loadGate } from '../world/gate.js'
 import { campusBuilding, loadCampusBuildings } from '../world/campus-buildings.js'
-import { LightPools, Settlement, loadSettlement, settlementReady } from '../world/settlement.js'
-import { settlementParts, settlementPools } from '../world/settlement-plan.js'
+import { DeckNumbers, LightPools, Settlement, loadSettlement, settlementReady } from '../world/settlement.js'
+import { settlementNumbers, settlementParts, settlementPools } from '../world/settlement-plan.js'
 import { createPipeline, pipelineClearance, pipelineUniforms } from '../world/pipeline.js'
 import { createBuilding, buildingUniforms } from '../world/buildings.js'
 import { Ship } from '../world/ship.js'
@@ -206,6 +206,7 @@ export class Colony {
     this.crossings = new Crossings(scene)
     this.settlement = new Settlement(scene)
     this.lightPools = new LightPools(scene)
+    this.deckNumbers = new DeckNumbers(scene)
     /** The strip of ground each crossing occupies. See `crossing-spans.js`. */
     this.crossingSpans = []
     /** The plaza deck, when this world has one. */
@@ -1270,6 +1271,7 @@ export class Colony {
     if (!style?.kit || !settlementReady()) {
       this.settlement.set([])
       this.lightPools.set([])
+      this.deckNumbers.set([])
       this.stacks = []
       if (style?.kit) loadSettlement().then(() => this._syncSettlement(), () => {})
       return
@@ -1308,6 +1310,7 @@ export class Colony {
     )
     this.settlement.set(parts)
     this.lightPools.set(settlementPools(parts))
+    this.deckNumbers.set(settlementNumbers(parts))
   }
 
   /** Whether (x, z) is on a crossing or in the ground just inside either of its mouths. */
@@ -1500,6 +1503,7 @@ export class Colony {
     if (!plot) return
     this.settlement.setLift(name, dy)
     this.lightPools.setLift(name, dy)
+    this.deckNumbers.setLift(name, dy)
     // Lifted from wherever it stands: a raised workspace is carried at its own height.
     plot.group.position.y = plot.elev + dy
     if (plot.label) plot.label.position.y = 3.2 + plot.elev + dy

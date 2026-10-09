@@ -180,3 +180,35 @@ test('a sign or a dish stands on the flat roof of the top storey, and nowhere el
   }
   assert.equal(signs, 300)
 })
+
+import { settlementNumbers } from '../src/world/settlement-plan.js'
+
+test('every deck carries a two-digit number of its own, painted where its kind of deck has a plate for one', () => {
+  const plots = campus(30)
+  const parts = settlementParts(plots, [], WORLD)
+  const digits = settlementNumbers(parts)
+  const decks = named(parts, /^deck-[a-d]$/)
+  assert.equal(digits.length, decks.length * 2, 'two digits a deck')
+  for (const digit of digits) assert.ok(Number.isInteger(digit.digit) && digit.digit >= 0 && digit.digit <= 9)
+  // Far more than the four numbers there used to be.
+  const numbers = new Set()
+  for (let n = 0; n < digits.length; n += 2) numbers.add(`${digits[n].digit}${digits[n + 1].digit}`)
+  assert.ok(numbers.size >= 20, `${numbers.size} different numbers on 30 decks`)
+  // And the same number on the same deck every time.
+  assert.deepEqual(settlementNumbers(settlementParts(plots, [], WORLD)), digits)
+})
+
+test('a number lies on its deck, its two digits side by side along the way it reads', () => {
+  const deck = { part: 'deck-a', plot: 'one', x: 10, y: 1.8, z: -4, turn: 0 }
+  const [tens, units] = settlementNumbers([deck])
+  // deck-a's plate is at (2.542, -1.468) and reads at 30 degrees: along (cos 30, -sin 30).
+  const mid = { x: (tens.x + units.x) / 2, z: (tens.z + units.z) / 2 }
+  assert.ok(Math.abs(mid.x - (10 + 2.542)) < 1e-6 && Math.abs(mid.z - (-4 - 1.468)) < 1e-6)
+  assert.ok(Math.abs(Math.hypot(units.x - tens.x, units.z - tens.z) - 0.678) < 1e-6)
+  assert.ok(Math.abs((units.x - tens.x) / 0.678 - Math.cos(Math.PI / 6)) < 1e-6)
+  assert.ok(Math.abs((units.z - tens.z) / 0.678 + Math.sin(Math.PI / 6)) < 1e-6)
+  assert.ok(tens.y > 1.8 && tens.y < 1.85)
+  // Turned with its deck, a sixth of a turn at a time.
+  const [turned] = settlementNumbers([{ ...deck, turn: Math.PI / 3 }])
+  assert.ok(Math.abs(turned.turn - (Math.PI / 6 + Math.PI / 3)) < 1e-9)
+})

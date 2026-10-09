@@ -261,3 +261,54 @@ export function settlementPools(parts) {
   }
   return pools
 }
+
+/**
+ * Where each kind of deck has a plate for a number: its middle in the deck's own space, and
+ * the turn it reads at. From the kit's notes (`design/campus/settlement.md`, "Deck numbers").
+ * At a turn t a number reads along (cos t, -sin t) on the ground.
+ */
+const NUMBER_PLATE = {
+  'deck-a': { x: 2.542, z: -1.468, turn: Math.PI / 6 },
+  'deck-b': { x: -2.3, z: 0.363, turn: Math.PI / 2 },
+  'deck-c': { x: -3.775, z: -0.101, turn: (Math.PI * 5) / 6 },
+  'deck-d': { x: 2.0, z: -2.792, turn: Math.PI / 2 },
+}
+/** One painted digit, how far apart two are, and how far above the plate they are laid. */
+const DIGIT = { width: 0.885, height: 1.327, pitch: 0.678, proud: 0.02 }
+
+/**
+ * The number painted on each deck.
+ *
+ * Two digits from the workspace's name and the deck's place in it, so a campus carries dozens
+ * of different numbers, each deck keeps its own, and nothing about them is baked into a deck.
+ *
+ * @param {Placed[]} parts
+ * @returns {Array<{plot: string, digit: number, x: number, y: number, z: number, turn: number, width: number, height: number}>}
+ *   two for each deck, tens then units
+ */
+export function settlementNumbers(parts) {
+  const digits = []
+  const nth = new Map()
+  for (const part of parts) {
+    const plate = NUMBER_PLATE[part.part]
+    if (!plate) continue
+    const n = nth.get(part.plot) || 0
+    nth.set(part.plot, n + 1)
+    const number = hash(`${part.plot}/number/${n}`) % 100
+    // The plate's place, turned with the deck; and the way the number reads, turned with it too.
+    const cos = Math.cos(part.turn)
+    const sin = Math.sin(part.turn)
+    const cx = part.x + plate.x * cos + plate.z * sin
+    const cz = part.z - plate.x * sin + plate.z * cos
+    const turn = part.turn + plate.turn
+    const along = { x: Math.cos(turn), z: -Math.sin(turn) }
+    ;[Math.floor(number / 10), number % 10].forEach((digit, place) => {
+      const off = (place - 0.5) * DIGIT.pitch
+      digits.push({
+        plot: part.plot, digit, x: cx + along.x * off, y: part.y + DIGIT.proud, z: cz + along.z * off,
+        turn, width: DIGIT.width, height: DIGIT.height,
+      })
+    })
+  }
+  return digits
+}

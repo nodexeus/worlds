@@ -39,14 +39,15 @@ edge parts.
 Corner k is at (5.942 cos 60k, 0, -5.942 sin 60k). Edge k runs from corner k to corner k + 1.
 
 Each deck has a dark tread field, a pale brushed way across it, a few plates of another tone, one
-rusted plate at most, grilles, a hatch or two, one amber mark and one stencilled number.
+rusted plate at most, grilles, a hatch or two and one amber mark. No number is painted on a deck:
+the app lays it on (see Deck numbers).
 
-| Part | Finish | Number | Way | Triangles | Bytes | Maps |
-|---|---|---|---|---|---|---|
-| deck-a | used | 04 | through the centre, edge 0 to edge 3 | 6420 | 3295088 | 1024 |
-| deck-b | nearly clean | 17 | through the centre, edge 1 to edge 4, with a cross strip | 6295 | 3146156 | 1024 |
-| deck-c | used | 23 | off centre, parallel to the line from edge 2 to edge 5 | 6548 | 3300136 | 1024 |
-| deck-d | nearly clean | 31 | off centre, parallel to the line from edge 1 to edge 4, with a cross strip | 7000 | 3180072 | 1024 |
+| Part | Finish | Way | Triangles | Bytes | Maps |
+|---|---|---|---|---|---|
+| deck-a | used | through the centre, edge 0 to edge 3 | 6300 | 3201672 | 1024 |
+| deck-b | nearly clean | through the centre, edge 1 to edge 4, with a cross strip | 6295 | 3085428 | 1024 |
+| deck-c | used | off centre, parallel to the line from edge 2 to edge 5 | 6428 | 3229356 | 1024 |
+| deck-d | nearly clean | off centre, parallel to the line from edge 1 to edge 4, with a cross strip | 6916 | 3133600 | 1024 |
 
 ### Corners
 
@@ -100,6 +101,32 @@ A `deck-join` covers them from above; their lower parts still show under it.
 Attach points (deck space): edge k mid point at angle 30 + 60k degrees, distance 5.146; legs and
 under-lamp at the origin; modules, frames, signs and dishes stand anywhere on y = 0 inside the
 hexagon, clear of a notch.
+
+## Deck numbers
+
+`stencil-digits.png` (made by `make_stencil_digits.py`): the digits 0 to 9 in one row, left to right,
+each in a cell 128 wide by 192 tall (the sheet is 1280 by 192). White, with the paint in the alpha
+channel, transparent elsewhere. Seven-segment stencil strokes, each digit chipped its own way. In a
+cell the digit is centred and measures 140 pixels from the middle of its top stroke to the middle of
+its bottom one (160 over the paint), and 70 between the middles of its side strokes (90 over the paint).
+
+Where a two-digit number goes on each deck, in deck space, lying flat on a plate of the brushed way:
+
+| Part | Centre (x, z) | Turn about Y | Plate (along the number by across it) |
+|---|---|---|---|
+| deck-a | (2.542, -1.468) | 30 degrees | 2.36 x 1.76 |
+| deck-b | (-2.300, 0.363) | 90 degrees | 2.76 x 2.36 |
+| deck-c | (-3.775, -0.101) | 150 degrees | 2.36 x 1.76 |
+| deck-d | (2.000, -2.792) | 90 degrees | 2.76 x 1.76 |
+
+- Turn: at a turn of t the number reads along (cos t, 0, -sin t) and the tops of its digits point
+  along (-sin t, 0, -cos t). That is a quad lying flat with its image's left to right along +x and
+  bottom to top along -z, then turned t about +y. Turn the deck and the number turns with it.
+- Lay it at y = 0.02, just clear of the plate.
+- Size, the same on all four: digit height 0.97 (middle of top stroke to middle of bottom stroke),
+  so one cell of the sheet is drawn 0.885 wide by 1.327 tall. The middles of two digits are 0.678
+  apart, 0.339 either side of the centre along the reading direction. Cells overlap at that pitch:
+  only their empty margins do. Two digits then cover 1.30 by 1.10 of paint.
 
 ## Joining decks into one floor
 

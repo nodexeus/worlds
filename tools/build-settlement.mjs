@@ -20,8 +20,8 @@ import sharp from 'sharp'
 const PREFIX = 'nodexeus-set-'
 /** Parts that are stood on or looked at closely keep bigger maps; the rest are small or thin. */
 const LARGE = /^(deck-[a-z]|mod-|stair-2$)/
-/** The pools of light are pictures, laid on a deck by the game, and ride along as they are. */
-const POOLS = ['pool-round.png', 'pool-band.png']
+/** The pools of light and the sheet of deck digits are pictures, laid on a deck by the game, and ride along as they are. */
+const POOLS = ['pool-round.png', 'pool-band.png', 'stencil-digits.png']
 
 const [DIR, OUT] = process.argv.slice(2)
 if (!DIR || !OUT) {

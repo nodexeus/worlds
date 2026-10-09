@@ -948,6 +948,9 @@ def chevrons(b, M, n, size, z, mat='hazard'):
             pts = [(M @ Vector((p.x, p.y, 0))) for p in poly]
             prism(b, mat, [Vector((p.x, p.y)) for p in pts], z, z + 0.006, bevel=False)
 
+# Where each deck's number goes (by the number it used to carry), filled in as the decks are built.
+NUMBER_AT = {}
+
 def plating_k(b, poly, z, rng, a, lane, cross=None, grille=0.07, hatch=0.04, old=0.14, marks=('chevron', 'number'), number='07'):
     """
     A deck's plates: a dark tread field laid to one grid, a pale brushed way across it (`lane`: the
@@ -970,6 +973,7 @@ def plating_k(b, poly, z, rng, a, lane, cross=None, grille=0.07, hatch=0.04, old
         ys.append(ys[-1] + rng.choice([1.4, 1.8, 2.0, 2.4]))
     marks = list(marks)
     rusted = False
+    free = []                                      # whole plates of the way with nothing painted on them
     cells = []
     for j in range(len(ys) - 1):
         on_lane = abs(ys[j] - lane[0]) < 1e-6
@@ -1019,6 +1023,8 @@ def plating_k(b, poly, z, rng, a, lane, cross=None, grille=0.07, hatch=0.04, old
         lift = rng.choice([0, 0, 0.007]) + (0.004 if mat == 'deckwalk' else 0)
         plate_uv(b, mat, cut, uvs, z - 0.05, z + lift)
         top = lift + 0.001
+        if whole and mat == 'deckwalk' and not (on_lane and marks and mid > 2.2):
+            free.append((mid, M @ Vector((0, 0, 0)), sx, sy))
         if whole and on_lane and marks and mid > 2.2:
             kind = marks.pop(0)
             if kind == 'chevron':
@@ -1026,7 +1032,10 @@ def plating_k(b, poly, z, rng, a, lane, cross=None, grille=0.07, hatch=0.04, old
             elif kind == 'band':
                 hazard_band(b, M, sx - 0.2, 0.36, z + top)
             elif kind == 'number':
-                stencil(b, number, M @ T(0, 0, top), h=min(sx, sy) * 0.55)
+                # The number is not painted here: the app lays it on, so every deck can carry its own.
+                # What is kept is where it goes: the plate's middle, the way it reads, a digit's height.
+                at = M @ Vector((0, 0, 0))
+                NUMBER_AT[number] = dict(x=at.x, y=at.y, turn=a, h=min(sx, sy) * 0.55, plate=(sx, sy))
             elif kind == 'lines':
                 for e in (-1, 1):
                     box(b, 'hazard', (sx - 0.16, 0.09, 0.006), M @ T(0, e * (sy / 2 - 0.16), top + 0.003), bevel=False)
@@ -1044,6 +1053,13 @@ def plating_k(b, poly, z, rng, a, lane, cross=None, grille=0.07, hatch=0.04, old
             for p in cut:
                 q = p + (c - p).normalized() * 0.13
                 cyl(b, 'fixing', 0.04, 0.02, T(q.x, q.y, z + lift), 5, bevel=False, cap=True)
+    _number_fallback(number, free, a)
+
+def _number_fallback(number, free, a):
+    """A deck whose way had no second plate far enough out still needs a place for its number: the farthest free one."""
+    if number not in NUMBER_AT and free:
+        mid, at, sx, sy = max(free, key=lambda f: f[0])
+        NUMBER_AT[number] = dict(x=at.x, y=at.y, turn=a, h=min(sx, sy) * 0.55, plate=(sx, sy))
 
 def _corner_frame(i):
     u = Vector((math.cos(TAU * i / 6), math.sin(TAU * i / 6)))
