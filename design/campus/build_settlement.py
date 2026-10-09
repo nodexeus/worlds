@@ -57,6 +57,9 @@ def _ramp(nt, stops):
     return n
 
 # ---------------------------------------------------------------- geometry bins
+# Finishes whose faces are single open sheets, wound by hand: recalculating would guess their facing.
+NO_RECALC = ('deckunder', 'slabtop')
+
 class Bins:
     """Geometry gathered by material, turned into one object a material at the end."""
     def __init__(self):
@@ -70,7 +73,8 @@ class Bins:
         made = []
         for (mat, bevel), bm in self.b.items():
             me = bpy.data.meshes.new(f'{name}_{mat}')
-            bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+            if mat not in NO_RECALC:
+                bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
             bm.to_mesh(me)
             bm.free()
             ob = bpy.data.objects.new(me.name, me)
@@ -441,7 +445,8 @@ def _img(path, name, colorspace):
     im.colorspace_settings.name = colorspace
     return im
 
-def wear3(key, base, metal, rough, edge=1.0, emit=None, deck=False, rust_all=False, tube=False, grime=1.0):
+def wear3(key, base, metal, rough, edge=1.0, emit=None, deck=False, rust_all=False, tube=False, grime=1.0,
+          mul=None, tone=(0.36, 0.82), rusty=0.0, chip=None, bloom=False, streaks=0.0):
     """
     One of the campus's finishes, worn by its own shape: bright on the edges that stick out,
     dirty in the corners that do not, streaked below whatever hangs over it, and each panel a
@@ -517,7 +522,7 @@ def wear3(key, base, metal, rough, edge=1.0, emit=None, deck=False, rust_all=Fal
         use = nt.nodes.new('ShaderNodeSeparateColor'); L.new(ui.outputs['Color'], use.inputs[0])
         walked, stain, low = use.outputs[0], use.outputs[1], use.outputs[2]
         # the app's own plate, held down to blackened steel; where it is walked it is rubbed back up
-        dark = g.mix(col.outputs['Color'], P['deck_mul'], 1.0, 'MULTIPLY')
+        dark = g.mix(col.outputs['Color'], mul or P['deck_mul'], 1.0, 'MULTIPLY')
         if not P['walk_mix']:
             c0 = dark
         elif P['lift'] is None:
@@ -536,6 +541,12 @@ def wear3(key, base, metal, rough, edge=1.0, emit=None, deck=False, rust_all=Fal
         c0 = g.mix(c0, (0.006, 0.006, 0.005), g.m('MULTIPLY', stain, P['stain_k']))
         if P['low']:
             c0 = g.mix(c0, (0.012, 0.012, 0.013), g.m('MULTIPLY', low, 0.6))
+        if rusty:
+            # a plate that has stood in the wet: rust in blotches and along one side, never all over
+            blot = g.rng(g.noise(tc.outputs['Object'], 1.7, 4, 0.6), 0.44, 0.62)
+            rt = _ramp(nt, [(0.3, (0.03, 0.013, 0.007)), (0.7, (0.12, 0.045, 0.018))])
+            L.new(g.noise(tc.outputs['Object'], 11, 5), rt.inputs['Fac'])
+            c0 = g.mix(c0, rt.outputs['Color'], g.m('MULTIPLY', blot, rusty))
         c0 = g.mix((base[0], base[1], base[2]), c0, upf)
         r0 = g.m('MAXIMUM', sepo.outputs[1], P['deck_rmin'])
         if P['walk_mix']:
@@ -549,7 +560,7 @@ def wear3(key, base, metal, rough, edge=1.0, emit=None, deck=False, rust_all=Fal
         r0 = rough
     hsv = nt.nodes.new('ShaderNodeHueSaturation')
     L.new(c0, hsv.inputs['Color'])
-    L.new(g.m('MULTIPLY_ADD', panel, 0.36, 0.82), hsv.inputs['Value'])
+    L.new(g.m('MULTIPLY_ADD', panel, tone[0], tone[1]), hsv.inputs['Value'])
     c = hsv.outputs['Color']
     if rust_all:
         tone = _ramp(nt, [(0.3, (0.016, 0.008, 0.005)), (0.7, (0.07, 0.028, 0.012))])
@@ -564,7 +575,25 @@ def wear3(key, base, metal, rough, edge=1.0, emit=None, deck=False, rust_all=Fal
         # only where water runs: in the streaks below an overhang, never in the middle of a plate
         wet = g.m('MULTIPLY', g.m('MULTIPLY', drip, rare), g.rng(g.noise(tc.outputs['Object'], 14, 4), 0.35, 0.6), clamp=True)
         c = g.mix(c, rtone.outputs['Color'], g.m('MULTIPLY', wet, 0.9))
+    if streaks:
+        # grime that has run down the faces of a standing part, whatever is above it
+        run = g.m('MULTIPLY', g.m('MULTIPLY', streak, side), streaks)
+        c = g.mix(c, P['grime_col'], g.m('MULTIPLY', run, 0.85))
+        pale = g.rng(g.noise(mp.outputs['Vector'], 5.0, 3, 0.6), 0.6, 0.78)
+        c = g.mix(c, (0.3, 0.3, 0.31), g.m('MULTIPLY', g.m('MULTIPLY', pale, side), 0.22 * streaks))
+    if bloom:
+        # rust that has come up through the finish in blooms
+        where = g.rng(g.noise(tc.outputs['Object'], 1.3, 3, 0.6), 0.46, 0.6)
+        btone = _ramp(nt, [(0.3, (0.035, 0.014, 0.007)), (0.7, (0.16, 0.06, 0.02))])
+        L.new(g.noise(tc.outputs['Object'], 12, 5), btone.inputs['Fac'])
+        c = g.mix(c, btone.outputs['Color'], g.m('MULTIPLY', where, g.rng(g.noise(tc.outputs['Object'], 16, 4), 0.3, 0.55)))
     c = g.mix(c, P['edge_col'], convex)
+    worn_off = None
+    if chip is not None:
+        # paint that has been walked and scraped off in places, down to the dark steel under it
+        wn = g.m('ADD', g.m('MULTIPLY', g.noise(tc.outputs['Object'], 8, 5, 0.7), 0.6), g.m('MULTIPLY', g.noise(tc.outputs['Object'], 1.6, 2), 0.4))
+        worn_off = g.rng(wn, chip, chip + 0.035)
+        c = g.mix(c, (0.022, 0.022, 0.025), worn_off)
     r = g.m('ADD', r0, g.m('MULTIPLY', cavity, 0.3))
     r = g.m('ADD', r, g.m('MULTIPLY', drip, 0.2))
     r = g.m('SUBTRACT', r, g.m('MULTIPLY', convex, 0.24))
@@ -572,6 +601,8 @@ def wear3(key, base, metal, rough, edge=1.0, emit=None, deck=False, rust_all=Fal
     if rust_all:
         r = g.m('ADD', r, 0.25, clamp=True)
     mt = g.m('MULTIPLY', g.m('MULTIPLY_ADD', cavity, -0.7 * metal, metal), g.m('MULTIPLY_ADD', drip, -0.5, 1.0), clamp=True)
+    if worn_off is not None:
+        mt = g.m('MAXIMUM', mt, g.m('MULTIPLY', worn_off, 0.7))
     L.new(c, pbr.inputs['Base Color'])
     L.new(r, pbr.inputs['Roughness'])
     L.new(mt, pbr.inputs['Metallic'])
@@ -729,6 +760,7 @@ FINISH = {
     'clean': dict(edge_k=1.2, gate=0.97, hot_rng=(0.74, 0.8), stain_k=0.0, bevel=0.06),
     'plain': dict(edge_k=1.8, gate=0.88, hot_rng=(0.62, 0.7), stain_k=0.0, bevel=0.065),
     'used': dict(edge_k=3.0, gate=0.7, hot_rng=(0.47, 0.56), stain_k=0.9, bevel=0.1),
+    'legs': dict(edge_k=2.4, gate=0.55, hot_rng=(0.44, 0.56), stain_k=0.0, bevel=0.07),
 }
 _made = {}
 # The square of deck the stain map covers: left, bottom, width, height.
@@ -775,6 +807,21 @@ def finishes(kind):
         M['recess'] = wear3('Recess', (0.05, 0.05, 0.055), 0.8, 0.72, edge=0.5)
         M['deck'] = wear3('DeckSide', (0.035, 0.037, 0.043), 0.8, 0.7, edge=0.9)
         M['decktop'] = wear3('DeckTop', (0.035, 0.037, 0.043), 0.6, 0.7, edge=0.75, deck=True)
+        # the decks' own plates: a dark tread field, a pale brushed way across it, and plates put in later
+        M['decktread'] = wear3('DeckTread', (0.022, 0.023, 0.027), 0.6, 0.7, edge=0.8, deck=True, mul=(0.17, 0.175, 0.19), tone=(0.5, 0.74))
+        M['deckwalk'] = wear3('DeckWalk', (0.05, 0.052, 0.058), 0.75, 0.5, edge=0.5, deck=True, mul=(0.78, 0.79, 0.82), tone=(0.24, 0.88))
+        M['deckold'] = wear3('DeckOld', (0.03, 0.03, 0.033), 0.5, 0.75, edge=0.9, deck=True, mul=(0.4, 0.385, 0.37), tone=(0.4, 0.8))
+        M['deckrust'] = wear3('DeckRust', (0.03, 0.025, 0.022), 0.4, 0.8, edge=0.6, deck=True, mul=(0.3, 0.27, 0.25), tone=(0.3, 0.85), rusty=0.85)
+        M['deckhide'] = wear3('DeckHide', (0.006, 0.006, 0.007), 0.2, 0.9, edge=0.0)
+        M['slabtop'] = wear3('SlabTop', (0.006, 0.006, 0.007), 0.2, 0.9, edge=0.0)
+        M['deckunder'] = wear3('DeckUnder', (0.03, 0.032, 0.037), 0.8, 0.75, edge=0.9)
+        M['hazard'] = wear3('Hazard', (0.78, 0.4, 0.012), 0.0, 0.6, edge=0.0, chip=0.53, grime=0.3)
+        M['stencil'] = wear3('Stencil', (0.55, 0.55, 0.52), 0.0, 0.62, edge=0.0, chip=0.57, grime=0.3)
+        # the legs: blackened sections, paler braces and ties, a concrete footing
+        M['legsteel'] = wear3('LegSteel', (0.05, 0.052, 0.06), 0.9, 0.55, edge=1.25, streaks=0.9)
+        M['leggalv'] = wear3('LegGalv', (0.21, 0.215, 0.225), 1.0, 0.5, edge=0.9, streaks=0.7)
+        M['legbloom'] = wear3('LegBloom', (0.05, 0.05, 0.056), 0.85, 0.62, edge=1.1, streaks=0.9, bloom=True)
+        M['footing'] = wear3('Footing', (0.1, 0.098, 0.094), 0.0, 0.92, edge=0.5, streaks=0.8)
         M['fixing'] = wear3('Fixing', (0.3, 0.3, 0.31), 1.0, 0.5, edge=0.6)
         M['paint'] = wear3('Paint', (0.75, 0.4, 0.015), 0.0, 0.62, edge=1.0)
         M['rustpart'] = wear3('Rust', (0.1, 0.04, 0.02), 0.25, 0.7, edge=0.25, rust_all=True)
@@ -785,6 +832,9 @@ def finishes(kind):
         M['beam'] = wear3('Beam', (0.17, 0.173, 0.182), 1.0, 0.6)
     finally:
         g.pop('WP', None)
+    # How much of a part's atlas a finish is given for its size: what is looked at most gets most.
+    for key, share in (('decktread', 1.5), ('deckwalk', 1.5), ('deckold', 1.5), ('deckrust', 1.5), ('slabtop', 0.1), ('deckunder', 0.4)):
+        M[key]['nx_atlas'] = share
     _made[kind] = M
     return M
 
@@ -840,17 +890,336 @@ def rect(x0, x1, y0, y1):
     return [Vector((x0, y0)), Vector((x1, y0)), Vector((x1, y1)), Vector((x0, y1))]
 
 # ---------------------------------------------------------------------- the parts
-def part_deck(seed, grille, hatch):
+def slab3(b, poly, z0, z1, side='deck', under='deckunder', top='slabtop'):
+    """A slab whose sides, underside and (unseen) top are three finishes, so each takes the atlas room it earns."""
+    if area(poly) < 0:
+        poly = list(reversed(poly))
+    n = len(poly)
+    bm = b.bm(side, True)
+    for i in range(n):
+        p, q = poly[i], poly[(i + 1) % n]
+        bm.faces.new([bm.verts.new(c) for c in ((p[0], p[1], z0), (q[0], q[1], z0), (q[0], q[1], z1), (p[0], p[1], z1))])
+    bm = b.bm(under, False)
+    bm.faces.new([bm.verts.new((p[0], p[1], z0)) for p in reversed(poly)])
+    bm = b.bm(top, False)
+    bm.faces.new([bm.verts.new((p[0], p[1], z1)) for p in poly])
+
+# Seven-segment strokes, so a number reads as if stencilled: a, b, c, d, e, f, g.
+SEGMENTS = {'0': 'abcdef', '1': 'bc', '2': 'abged', '3': 'abgcd', '4': 'fgbc', '5': 'afgcd', '6': 'afgedc', '7': 'abc', '8': 'abcdefg', '9': 'abfgcd'}
+
+def stencil(b, text, M, h=0.7, mat='stencil', t=0.006):
+    """A number laid flat in M's XY plane, reading along +X, centred on M's origin."""
+    w, gap, k = h * 0.5, h * 0.2, h * 0.14
+    x = -(len(text) * w + (len(text) - 1) * gap) / 2
+    for ch in text:
+        strokes = {'a': (w / 2, h, w - k * 1.6, k), 'd': (w / 2, 0, w - k * 1.6, k), 'g': (w / 2, h / 2, w - k * 1.6, k),
+                   'f': (0, h * 0.75, k, h / 2 - k * 1.3), 'b': (w, h * 0.75, k, h / 2 - k * 1.3),
+                   'e': (0, h * 0.25, k, h / 2 - k * 1.3), 'c': (w, h * 0.25, k, h / 2 - k * 1.3)}
+        for seg in SEGMENTS[ch]:
+            cx, cy, sx, sy = strokes[seg]
+            box(b, mat, (sx, sy, t), M @ T(x + cx, cy - h / 2, t / 2), bevel=False)
+        x += w + gap
+
+def hazard_band(b, M, sx, sy, z, mat='hazard', pitch=0.42):
+    """Slanted stripes filling a band sx by sy, centred on M's origin."""
+    band = rect(-sx / 2, sx / 2, -sy / 2, sy / 2)
+    x = -sx / 2 - sy
+    while x < sx / 2:
+        stripe = clip_convex([Vector((x, -sy / 2)), Vector((x + pitch / 2, -sy / 2)), Vector((x + pitch / 2 + sy, sy / 2)), Vector((x + sy, sy / 2))], band)
+        if len(stripe) >= 3 and area(stripe) > 0.004:
+            pts = [(M @ Vector((p.x, p.y, 0))) for p in stripe]
+            prism(b, mat, [Vector((p.x, p.y)) for p in pts], z, z + 0.006, bevel=False)
+        x += pitch
+
+def chevrons(b, M, n, size, z, mat='hazard'):
+    """n chevrons in a row along M's X, pointing along +X."""
+    arm, wd = size, size * 0.3
+    for i in range(n):
+        x = (i - (n - 1) / 2) * size * 0.95
+        for sgn in (-1, 1):
+            poly = [Vector((x - arm / 2, sgn * arm)), Vector((x - arm / 2 + wd, sgn * arm)), Vector((x + arm / 2 + wd, 0)), Vector((x + arm / 2, 0))]
+            pts = [(M @ Vector((p.x, p.y, 0))) for p in poly]
+            prism(b, mat, [Vector((p.x, p.y)) for p in pts], z, z + 0.006, bevel=False)
+
+def plating_k(b, poly, z, rng, a, lane, cross=None, grille=0.07, hatch=0.04, old=0.14, marks=('chevron', 'number'), number='07'):
+    """
+    A deck's plates: a dark tread field laid to one grid, a pale brushed way across it (`lane`: the
+    band of the grid it takes, low and high), a few plates put in later, grilles that are holes, a
+    hatch or two, and one or two painted marks.
+    """
+    if area(poly) < 0:
+        poly = list(reversed(poly))
+    ca, sa = math.cos(a), math.sin(a)
+    def w(x, y):
+        return Vector((x * ca - y * sa, x * sa + y * ca))
+    def back(p):
+        return p.x * ca + p.y * sa, -p.x * sa + p.y * ca
+    # the rows are cut so that the way is whole rows
+    ys = [lane[0]]
+    while ys[0] > -8:
+        ys.insert(0, ys[0] - rng.choice([1.4, 1.8, 2.0, 2.4]))
+    ys.append(lane[1])
+    while ys[-1] < 8:
+        ys.append(ys[-1] + rng.choice([1.4, 1.8, 2.0, 2.4]))
+    marks = list(marks)
+    rusted = False
+    cells = []
+    for j in range(len(ys) - 1):
+        on_lane = abs(ys[j] - lane[0]) < 1e-6
+        xs = [-8.4 + rng.uniform(0, 1)]
+        while xs[-1] < 8:
+            xs.append(xs[-1] + (rng.choice([2.0, 2.4, 2.8]) if on_lane else rng.choice([1.6, 2.0, 2.0, 2.4, 2.8])))
+        for i in range(len(xs) - 1):
+            cells.append((i, j, xs[i], xs[i + 1], ys[j], ys[j + 1], on_lane))
+    for i, j, xa, xb, ya, yb, on_lane in cells:
+        g = 0.02
+        x0, x1, y0, y1 = xa + g, xb - g, ya + g, yb - g
+        cut = clip_convex([w(x0, y0), w(x1, y0), w(x1, y1), w(x0, y1)], poly)
+        if len(cut) < 3 or area(cut) < 0.05:
+            continue
+        sx, sy = x1 - x0, y1 - y0
+        whole = abs(area(cut) - sx * sy) < 0.01
+        on_cross = cross is not None and not on_lane and cross[0] < (x0 + x1) / 2 < cross[1]
+        M = T(0, 0, z) @ RZ(a) @ T((x0 + x1) / 2, (y0 + y1) / 2, 0)
+        roll = rng.random()
+        mid = math.hypot((x0 + x1) / 2, (y0 + y1) / 2)
+        if whole and not on_lane and not on_cross and roll < grille:
+            # a grille: a real hole with bars over it and a frame round it, black from any distance
+            n = max(3, int(sx / 0.2))
+            for k in range(n):
+                box(b, 'steel', (0.045, sy - 0.1, 0.03), M @ T(-sx / 2 + (k + 0.5) * sx / n, 0, -0.016), bevel=False)
+            for e in (-1, 1):
+                box(b, 'steel', (sx, 0.08, 0.06), M @ T(0, e * (sy / 2 - 0.04), -0.014))
+                box(b, 'steel', (0.08, sy, 0.06), M @ T(e * (sx / 2 - 0.04), 0, -0.014))
+            continue
+        if on_lane or on_cross:
+            mat, quads = 'deckwalk', [(0.5, 0.5), (0, 0)]       # the brushed plates of the app's map
+        elif not rusted and whole and roll > 0.9:
+            mat, quads, rusted = 'deckrust', [(0, 0.5), (0.5, 0)], True
+        elif roll > 1.0 - old:
+            mat, quads = 'deckold', [(0, 0.5), (0.5, 0), (0.5, 0.5)]
+        else:
+            mat, quads = 'decktread', [(0, 0.5), (0.5, 0)]      # the tread plates
+        qu, qv = rng.choice(quads)
+        flip = rng.random() < 0.5
+        uvs = []
+        for p in cut:
+            lx, ly = back(p)
+            u, v = (lx - x0) / sx, (ly - y0) / sy
+            if flip:
+                u, v = 1 - u, 1 - v
+            uvs.append((qu + (0.01 + 0.98 * u) * 0.5, qv + (0.01 + 0.98 * v) * 0.5))
+        lift = rng.choice([0, 0, 0.007]) + (0.004 if mat == 'deckwalk' else 0)
+        plate_uv(b, mat, cut, uvs, z - 0.05, z + lift)
+        top = lift + 0.001
+        if whole and on_lane and marks and mid > 2.2:
+            kind = marks.pop(0)
+            if kind == 'chevron':
+                chevrons(b, M, 3, min(sx, sy) * 0.3, z + top)
+            elif kind == 'band':
+                hazard_band(b, M, sx - 0.2, 0.36, z + top)
+            elif kind == 'number':
+                stencil(b, number, M @ T(0, 0, top), h=min(sx, sy) * 0.55)
+            elif kind == 'lines':
+                for e in (-1, 1):
+                    box(b, 'hazard', (sx - 0.16, 0.09, 0.006), M @ T(0, e * (sy / 2 - 0.16), top + 0.003), bevel=False)
+            continue
+        if whole and mat == 'decktread' and rng.random() < hatch:
+            hs = min(sx, sy) * 0.3
+            for e in (-1, 1):
+                box(b, 'steel', (hs * 2 + 0.14, 0.09, 0.07), M @ T(0, e * hs, 0.03))
+                box(b, 'steel', (0.09, hs * 2 + 0.14, 0.07), M @ T(e * hs, 0, 0.03))
+            box(b, 'black', (hs * 2 - 0.1, hs * 2 - 0.1, 0.034), M @ T(0, 0, 0.015))
+            box(b, 'steel', (0.3, 0.06, 0.05), M @ T(0, hs * 0.5, 0.05))
+            continue
+        if rng.random() < 0.3:
+            c = sum(cut, Vector((0, 0))) / len(cut)
+            for p in cut:
+                q = p + (c - p).normalized() * 0.13
+                cyl(b, 'fixing', 0.04, 0.02, T(q.x, q.y, z + lift), 5, bevel=False, cap=True)
+
+def _corner_frame(i):
+    u = Vector((math.cos(TAU * i / 6), math.sin(TAU * i / 6)))
+    return HEX[i], u, Vector((-u.y, u.x))
+
+def _F(c, u, t):
+    """Local X along u (outward through the corner), local Y along t, origin at c, at the deck top."""
+    return Matrix(((u.x, t.x, 0, c.x), (u.y, t.y, 0, c.y), (0, 0, 1, 0), (0, 0, 0, 1)))
+
+BALCONY, SHELF, STEP_OUT, DROP = 0.9, 0.85, 0.7, 0.8     # how far each corner piece reaches (see settlement.md)
+
+def corner_drop(b, i):
+    """The corner cut back to a step: the plates stop short and a dark grating lies a little lower."""
+    c, u, t = _corner_frame(i)
+    F = _F(c, u, t)
+    half = DROP * math.tan(math.pi / 3)
+    tri = [c, c - u * DROP + t * half, c - u * DROP - t * half]
+    n = 7
+    for k in range(n):
+        x = -DROP + 0.08 + k * (DROP - 0.16) / (n - 1)
+        hw = (-x) * math.tan(math.pi / 3) - 0.05
+        if hw > 0.05:
+            box(b, 'steel', (0.04, hw * 2, 0.03), F @ T(x, 0, -0.03), bevel=False)
+    box(b, 'steel', (0.1, half * 2 - 0.05, 0.12), F @ T(-DROP - 0.05, 0, -0.01))
+
+def corner_notch(b, i):
+    """A square grille let into the corner, with a raised frame."""
+    c, u, t = _corner_frame(i)
+    F = _F(c, u, t) @ T(-1.15, 0, 0)
+    s = 0.46
+    box(b, 'deckhide', (s * 2, s * 2, 0.012), F @ T(0, 0, 0.012), bevel=False)
+    for e in (-1, 1):
+        box(b, 'steel', (s * 2 + 0.1, 0.09, 0.07), F @ T(0, e * s, 0.035))
+        box(b, 'steel', (0.09, s * 2 + 0.1, 0.07), F @ T(e * s, 0, 0.035))
+    for k in range(5):
+        box(b, 'steel', (0.04, s * 2 - 0.08, 0.03), F @ T(-s + (k + 0.5) * s * 2 / 5, 0, 0.04), bevel=False)
+    hazard_band(b, F @ T(-s - 0.24, 0, 0) @ RZ(math.pi / 2), s * 2, 0.16, 0.014)
+
+def corner_balcony(b, i):
+    """A small platform carried out past the corner on brackets, railed on its three open sides. Nobody walks on it."""
+    c, u, t = _corner_frame(i)
+    F = _F(c, u, t)
+    x0, x1, hw, top = -0.42, BALCONY, 0.75, -0.08
+    box(b, 'deck', (x1 - x0, hw * 2, 0.12), F @ T((x0 + x1) / 2, 0, top - 0.06))
+    box(b, 'deckhide', (x1 - x0 - 0.16, hw * 2 - 0.16, 0.01), F @ T((x0 + x1) / 2, 0, top + 0.004), bevel=False)
+    n = 9
+    for k in range(n):
+        box(b, 'leggalv', (0.035, hw * 2 - 0.16, 0.03), F @ T(x0 + 0.1 + (k + 0.5) * (x1 - x0 - 0.2) / n, 0, top + 0.02), bevel=False)
+    for e in (-1, 1):
+        box(b, 'steel', (x1 - x0, 0.08, 0.1), F @ T((x0 + x1) / 2, e * (hw - 0.04), top + 0.03))
+        beam(b, 'beam', F @ Vector((x1 - 0.1, e * (hw - 0.12), top - 0.12)), F @ Vector((-0.5, e * (hw - 0.12), -0.82)), 0.07, 0.09)
+    box(b, 'steel', (0.08, hw * 2, 0.1), F @ T(x1 - 0.04, 0, top + 0.03))
+    pts = [F @ Vector((0.12, -hw + 0.05, top + 0.06)), F @ Vector((x1 - 0.05, -hw + 0.05, top + 0.06)),
+           F @ Vector((x1 - 0.05, hw - 0.05, top + 0.06)), F @ Vector((0.12, hw - 0.05, top + 0.06))]
+    for p, q in zip(pts, pts[1:]):
+        rails(b, p, q, n=1, h=0.9)
+    # something to be out there for
+    box(b, 'black', (0.34, 0.5, 0.42), F @ T(x1 - 0.32, 0.3, top + 0.22))
+    box(b, 'light', (0.02, 0.2, 0.05), F @ T(x1 - 0.5, 0.3, top + 0.32), bevel=False)
+    tube(b, 'tube', F @ Vector((x1 - 0.32, -0.35, top)), F @ Vector((x1 - 0.32, -0.35, top + 1.35)), 0.03, 6)
+
+def corner_shelf(b, i):
+    """A lower shelf of plant hung off the corner: a unit, a tank and their pipes."""
+    c, u, t = _corner_frame(i)
+    F = _F(c, u, t)
+    x0, x1, hw, top = -0.36, SHELF, 0.7, -0.3
+    box(b, 'deck', (x1 - x0, hw * 2, 0.1), F @ T((x0 + x1) / 2, 0, top - 0.05))
+    for e in (-1, 1):
+        box(b, 'steel', (x1 - x0, 0.07, 0.07), F @ T((x0 + x1) / 2, e * (hw - 0.035), top + 0.035))
+        beam(b, 'beam', F @ Vector((x1 - 0.08, e * (hw - 0.1), top - 0.1)), F @ Vector((-0.45, e * (hw - 0.1), -0.84)), 0.07, 0.08)
+    box(b, 'steel', (0.07, hw * 2, 0.07), F @ T(x1 - 0.035, 0, top + 0.035))
+    box(b, 'black', (0.62, 0.62, 0.56), F @ T(0.4, -0.3, top + 0.28))
+    for k in range(4):
+        box(b, 'recess', (0.5, 0.02, 0.05), F @ T(0.4, -0.62, top + 0.14 + k * 0.1), bevel=False)
+    box(b, 'steel', (0.7, 0.7, 0.04), F @ T(0.4, -0.3, top + 0.58))
+    cyl(b, 'leggalv', 0.2, 0.62, F @ T(0.42, 0.4, top), 10)
+    cyl(b, 'leggalv', 0.2, 0.1, F @ T(0.42, 0.4, top + 0.62), 10, r2=0.08)
+    tube(b, 'tube', F @ Vector((0.42, 0.4, top + 0.5)), F @ Vector((0.42, 0.05, top + 0.5)), 0.035, 6)
+    tube(b, 'tube', F @ Vector((0.05, 0.4, top + 0.25)), F @ Vector((-0.34, 0.4, top + 0.25)), 0.045, 6)
+    tube(b, 'tube', F @ Vector((-0.34, 0.4, top + 0.25)), F @ Vector((-0.34, 0.4, -0.8)), 0.045, 6)
+    box(b, 'light', (0.16, 0.02, 0.04), F @ T(0.4, -0.62, top + 0.5), bevel=False)
+
+def corner_step(b, i):
+    """The corner squared off: one edge's line carried on past the corner by a plate of its own."""
+    c, u, t = _corner_frame(i)
+    j = (i - 1) % 6
+    e = (c - HEX[j]).normalized()                  # along the edge that arrives at this corner
+    n = Vector((e.y, -e.x))                        # that edge's outward side
+    F = _F(c, e, -n)
+    L, D = STEP_OUT, 1.05
+    box(b, 'deck', (L, D, 0.3), F @ T(L / 2, D / 2, -0.19))
+    poly = [c, c + e * L, c + e * L - n * D, c - n * D]
+    poly = [Vector((p.x, p.y)) for p in poly]
+    plate_uv(b, 'deckold', poly, [(0.02, 0.52), (0.48, 0.52), (0.48, 0.98), (0.02, 0.98)], -0.05, 0.006)
+    box(b, 'steel', (0.1, D, 0.14), F @ T(L - 0.05, D / 2, 0.05))
+    box(b, 'steel', (L, 0.1, 0.14), F @ T(L / 2, 0.05, 0.05))
+    beam(b, 'beam', F @ Vector((L - 0.1, D / 2, -0.34)), F @ Vector((-0.5, D / 2, -0.84)), 0.07, 0.09)
+    cyl(b, 'black', 0.14, 0.5, F @ T(L - 0.3, 0.32, 0.006), 8)
+    cyl(b, 'steel', 0.16, 0.04, F @ T(L - 0.3, 0.32, 0.5), 8)
+
+CORNER = {'plain': None, 'drop': corner_drop, 'notch': corner_notch, 'balcony': corner_balcony, 'shelf': corner_shelf, 'step': corner_step}
+
+def edge_beam(b, i, extras, rng):
+    """One edge's beam: web, flange, stiffeners and a row of bolts in the slab's face, and whatever hangs off it."""
+    p, q = HEX[i], HEX[(i + 1) % 6]
+    e = (q - p).normalized()
+    n = Vector((e.y, -e.x))                        # outward
+    mid = (p + q) / 2
+    F = _F(mid, e, n)                              # X along the edge, Y outward, origin at the edge's middle, z = deck top
+    L = (q - p).length
+    box(b, 'beam', (L - 0.16, 0.07, 0.4), F @ T(0, -0.2, -SLAB - 0.2))
+    box(b, 'beam', (L - 0.1, 0.3, 0.05), F @ T(0, -0.2, -SLAB - 0.385))
+    k = -L / 2 + 0.4
+    while k < L / 2 - 0.3:
+        box(b, 'beam', (0.05, 0.12, 0.33), F @ T(k, -0.11, -SLAB - 0.19), bevel=False)
+        k += 0.86
+    k = -L / 2 + 0.3
+    while k < L / 2 - 0.2:
+        cyl(b, 'fixing', 0.035, 0.03, F @ T(k, 0, -0.26) @ RX(-math.pi / 2), 5, bevel=False)
+        k += 0.62
+    for kind, side in extras:
+        x = side * rng.uniform(1.55, 1.95)
+        if kind == 'conduit':
+            for dz in (0.0, 0.1):
+                tube(b, 'tube', F @ Vector((-L / 2 + 0.25, 0.05, -0.62 - dz)), F @ Vector((L / 2 - 0.25, 0.05, -0.62 - dz)), 0.033, 6)
+            for cx in (-2.2, -0.75, 0.75, 2.2):
+                box(b, 'steel', (0.07, 0.11, 0.22), F @ T(cx, 0.03, -0.67))
+            box(b, 'black', (0.34, 0.16, 0.3), F @ T(x, 0.08, -0.3))
+        elif kind == 'bracket':
+            box(b, 'steel', (0.4, 0.34, 0.05), F @ T(x, 0.17, -0.12))
+            beam(b, 'steel', F @ Vector((x, 0.32, -0.15)), F @ Vector((x, 0.0, -0.6)), 0.06, 0.06)
+            cyl(b, 'leggalv', 0.1, 0.3, F @ T(x, 0.2, -0.445), 8)
+        elif kind == 'catwalk':
+            w = 1.25
+            box(b, 'deckhide', (w - 0.1, 0.3, 0.01), F @ T(x, 0.15, -0.1), bevel=False)
+            for m in range(7):
+                box(b, 'leggalv', (0.035, 0.3, 0.03), F @ T(x - w / 2 + 0.09 + m * (w - 0.18) / 6, 0.15, -0.09), bevel=False)
+            box(b, 'steel', (w, 0.06, 0.08), F @ T(x, 0.3, -0.1))
+            for s in (-1, 1):
+                box(b, 'steel', (0.06, 0.3, 0.08), F @ T(x + s * (w / 2 - 0.03), 0.15, -0.1))
+                beam(b, 'beam', F @ Vector((x + s * (w / 2 - 0.1), 0.28, -0.15)), F @ Vector((x + s * (w / 2 - 0.1), 0.0, -0.55)), 0.05, 0.05)
+        elif kind == 'box':
+            box(b, 'black', (0.5, 0.2, 0.34), F @ T(x, 0.1, -0.27))
+            box(b, 'steel', (0.56, 0.24, 0.03), F @ T(x, 0.1, -0.09))
+            tube(b, 'tube', F @ Vector((x, 0.1, -0.44)), F @ Vector((x, 0.1, -0.84)), 0.03, 6)
+
+def part_deck(seed, corners, lane_k, lane, cross, extras, number, marks, grille, hatch):
+    """
+    A deck. `corners`: what each of the six corners is. `lane_k`: which way the brushed way runs
+    (30 + 60k degrees, edge to opposite edge). `extras`: for each edge, what hangs off its beam.
+    Everything on top stays inside the hexagon except the corner pieces; everything that sticks
+    out of an edge is below the deck top, clear of the middle third.
+    """
     def build(b):
         rng = random.Random(seed)
-        prism(b, 'deck', HEX, -SLAB, -0.07)
-        g = globals()
-        g['GRILLE_P'], g['HATCH_P'], g['HATCH_MARKS'], g['BOLT_P'] = grille, hatch, False, 0.12
-        plating_d3(b, inset(HEX, 0.3), 0.0, rng)
+        slab3(b, HEX, -SLAB, -0.05)
+        area_poly = inset(HEX, 0.3)
+        for i, kind in enumerate(corners):
+            if kind == 'drop':
+                c, u, t = _corner_frame(i)
+                area_poly = clip_half(area_poly, c - u * (DROP + 0.1), u)
+        plating_k(b, area_poly, 0.0, rng, math.radians(30 + 60 * lane_k), lane, cross, grille=grille, hatch=hatch, marks=marks, number=number)
+        # the border the plates stop short of: a dark margin plate round the whole deck
+        inner = inset(HEX, 0.3)
         for i in range(6):
-            a, c = HEX[i], HEX[(i + 1) % 6]
-            inw = Vector((-(c - a).y, (c - a).x)).normalized() * 0.2
-            beam(b, 'beam', v3(a + inw, -SLAB - 0.2), v3(c + inw, -SLAB - 0.2), 0.22, 0.42)
+            j = (i + 1) % 6
+            quad = [HEX[i], HEX[j], inner[j], inner[i]]
+            for k in (i, j):
+                if corners[k] == 'drop':
+                    c, u, t = _corner_frame(k)
+                    quad = clip_half(quad, c - u * DROP, u)
+            prism(b, 'deck', quad, -0.05, 0.0)
+        for i in range(6):
+            edge_beam(b, i, extras[i], rng)
+            if CORNER[corners[i]]:
+                CORNER[corners[i]](b, i)
+        # joists under the slab, clear of the middle where a lamp may hang
+        ja = math.radians(60 * rng.randrange(3))
+        JF = RZ(ja)
+        for y in (-3.5, -1.75, 1.75, 3.5):
+            half = RAD - abs(y) / math.sqrt(3) - 0.45
+            beam(b, 'beam', JF @ Vector((-half, y, -SLAB - 0.11)), JF @ Vector((half, y, -SLAB - 0.11)), 0.12, 0.22)
+        tube(b, 'tube', JF @ Vector((-3.6, 2.6, -SLAB - 0.3)), JF @ Vector((3.6, 2.6, -SLAB - 0.3)), 0.05, 6)
     return build
 
 def part_join(b):
@@ -890,19 +1259,181 @@ def part_edge(rail, lit):
             beam(b, 'steel', (-RAD / 2 + 0.45, 0.31, 0.015), (RAD / 2 - 0.45, 0.31, 0.015), 0.03, 0.03)
     return build
 
+# ---------------------------------------------------------------------- legs
+LEG_AT = [Vector((2.7, 2.6)), Vector((-2.7, 2.6)), Vector((-2.7, -2.6)), Vector((2.7, -2.6))]
+
+def h_column(b, p, z0, z1, s, turn, mat='legsteel'):
+    """An H section standing at p: two flanges and a web."""
+    M = T(p.x, p.y, (z0 + z1) / 2) @ RZ(turn)
+    tf = max(0.045, s * 0.11)
+    for e in (-1, 1):
+        box(b, mat, (s, tf, z1 - z0), M @ T(0, e * (s - tf) / 2, 0))
+    box(b, mat, (max(0.04, s * 0.09), s - tf * 2, z1 - z0), M)
+
+def box_column(b, p, z0, z1, s, turn, mat='legsteel'):
+    """A box section with a bolted splice collar part way up."""
+    M = T(p.x, p.y, (z0 + z1) / 2) @ RZ(turn)
+    box(b, mat, (s * 0.86, s * 0.86, z1 - z0), M)
+    zc = (z1 - z0) * 0.12
+    box(b, 'leggalv', (s, s, 0.26), M @ T(0, 0, zc))
+    for a in range(4):
+        R = M @ RZ(a * math.pi / 2)
+        for dx in (-0.28, 0.28):
+            for dz in (-0.07, 0.07):
+                cyl(b, 'fixing', 0.028, 0.025, R @ T(dx * s, s / 2, zc + dz) @ RX(-math.pi / 2), 5, bevel=False)
+
+def footing(b, p, foot, s, turn, bloom):
+    """A concrete pad, a base plate on it, four bolts."""
+    M = T(p.x, p.y, foot) @ RZ(turn)
+    box(b, 'footing', (s * 2, s * 2, 0.13), M @ T(0, 0, 0.065))
+    box(b, 'legbloom' if bloom else 'leggalv', (s * 1.6, s * 1.6, 0.045), M @ T(0, 0, 0.152))
+    for dx in (-1, 1):
+        for dy in (-1, 1):
+            cyl(b, 'fixing', 0.045, 0.07, M @ T(dx * s * 0.62, dy * s * 0.62, 0.17), 6, bevel=False)
+    for a in range(4):
+        # stiffeners from the plate up the column
+        R = M @ RZ(a * math.pi / 2)
+        box(b, 'legsteel', (0.035, s * 0.3, 0.26), R @ T(0, s * 0.62, 0.3), bevel=False)
+
+def gusset(b, at, d, s, mat='leggalv'):
+    """A plate in the plane of a face (d is the face's direction), where a brace meets a column or a tie."""
+    M = Matrix(((d.x, -d.y, 0, at.x), (d.y, d.x, 0, at.y), (0, 0, 1, at.z), (0, 0, 0, 1)))
+    g = 0.2 + s * 0.35
+    box(b, mat, (g, 0.03, g), M, bevel=False)
+    for dx in (-0.3, 0.3):
+        for dz in (-0.3, 0.3):
+            cyl(b, 'fixing', 0.025, 0.05, M @ T(dx * g, -0.025, dz * g) @ RX(-math.pi / 2), 5, bevel=False)
+
+def brace(b, a, c, s, mat='leggalv', flat=True):
+    """A brace from a to c with a gusset at each end."""
+    a, c = Vector(a), Vector(c)
+    d = Vector((c.x - a.x, c.y - a.y)).normalized()
+    if flat:
+        beam(b, mat, a, c, 0.035, 0.09 + s * 0.08, bevel=False)
+    else:
+        tube(b, mat, a, c, 0.035 + s * 0.02, 6)
+    gusset(b, a, d, s)
+    gusset(b, c, d, s)
+
 def part_legs(level):
+    """
+    Four legs under a deck on this level. Each of the five sets is put together differently: the
+    section, the bracing, the ties, and what runs up a leg.
+    """
     def build(b):
+        rng = random.Random(500 + level)
         h = LEVEL1 + STEP * (level - 1)
         s = 0.3 + 0.07 * h
         top, foot = -SLAB, -h
-        legs = [Vector((2.7, 2.6)), Vector((-2.7, 2.6)), Vector((-2.7, -2.6)), Vector((2.7, -2.6))]
-        for k, p in enumerate(legs):
-            q = legs[(k + 1) % 4]
-            box(b, 'beam', (s, s, top - foot), T(p.x, p.y, (top + foot) / 2))
-            box(b, 'beam', (s * 2, s * 2, 0.1), T(p.x, p.y, foot + 0.05))
-            box(b, 'beam', (s * 1.5, s * 1.5, 0.1), T(p.x, p.y, top - 0.05))
-            beam(b, 'beam', v3(p, top - 0.5), v3(q, top - 0.5), s * 0.6, s * 0.8)
-            beam(b, 'beam', v3(p, foot + 0.3), v3(q, top - 0.8), s * 0.4, s * 0.4)
+        col = box_column if level in (2, 4) else h_column
+        z0 = foot + 0.17
+        ties = {1: [], 2: [], 3: [0.5], 4: [0.42], 5: [0.34, 0.67]}[level]
+        marked = rng.randrange(4)
+        for k, p in enumerate(LEG_AT):
+            turn = 0.0                                   # flanges face out from under the deck and in
+            footing(b, p, foot, s, 0, bloom=(k == (marked + 2) % 4 or (level >= 4 and k == (marked + 1) % 4)))
+            # the lowest stretch of one leg has rusted through its finish
+            lowmat = 'legbloom' if k == (marked + 2) % 4 else 'legsteel'
+            col(b, p, z0, z0 + 0.5, s, turn, lowmat)
+            col(b, p, z0 + 0.5, top - 0.06, s, turn)
+            box(b, 'leggalv', (s * 1.5, s * 1.5, 0.06), T(p.x, p.y, top - 0.03))
+            if k == marked:
+                # a hazard band near the foot, and on the taller sets the level stencilled above it
+                bz = z0 + 0.36
+                for a in (range(4) if col is box_column else (0, 2)):
+                    R = T(p.x, p.y, bz) @ RZ(a * math.pi / 2)
+                    k_ = 0.86 if col is box_column else 1.0
+                    box(b, 'hazard', (s * k_ * 0.98, 0.012, 0.34), R @ T(0, s * k_ / 2 + 0.004, 0), bevel=False)
+                    box(b, 'black', (s * k_ * 0.98, 0.016, 0.07), R @ T(0, s * k_ / 2 + 0.004, 0), bevel=False)
+        # the face frames
+        for k in range(4):
+            p, q = LEG_AT[k], LEG_AT[(k + 1) % 4]
+            d = (q - p).normalized()
+            pa, qa = p + d * (s / 2), q - d * (s / 2)
+            zt = top - 0.34
+            # the head tie: an I beam between the legs
+            beam(b, 'legsteel', v3(pa, zt), v3(qa, zt), s * 0.5, 0.05)
+            beam(b, 'legsteel', v3(pa, zt - s * 0.55), v3(qa, zt - s * 0.55), s * 0.5, 0.05)
+            beam(b, 'legsteel', v3(pa, zt - s * 0.275), v3(qa, zt - s * 0.275), 0.05, s * 0.55)
+            zb = zt - s * 0.55
+            levels = [z0 + 0.25] + [foot + (zb - foot) * f for f in ties] + [zb]
+            for f in ties:
+                zz = foot + (zb - foot) * f
+                beam(b, 'leggalv', v3(pa, zz), v3(qa, zz), 0.09 + s * 0.1, 0.09 + s * 0.1)
+            for bay in range(len(levels) - 1):
+                lo, hi = levels[bay] + 0.08, levels[bay + 1] - 0.08
+                if level == 1:
+                    # knee braces: the bay is too low for anything else
+                    for a_, c_ in ((pa, pa + d * 1.0), (qa, qa - d * 1.0)):
+                        brace(b, v3(a_, lo + 0.1), v3(c_, hi), s)
+                elif level == 2:
+                    if k % 2 == 0:
+                        brace(b, v3(pa, lo), v3(qa, hi), s, flat=False)
+                    else:
+                        m = (pa + qa) / 2
+                        brace(b, v3(pa, lo), v3(m, hi), s)
+                        brace(b, v3(qa, lo), v3(m, hi), s)
+                elif level == 3:
+                    if k % 2 == 0:
+                        brace(b, v3(pa, lo), v3(qa, hi), s)
+                        brace(b, v3(qa, lo), v3(pa, hi), s)
+                    elif bay == 1:
+                        brace(b, v3(pa, lo), v3(qa, hi), s, flat=False)
+                elif level == 4:
+                    if bay == 0:
+                        brace(b, v3(pa if k % 2 else qa, lo), v3(qa if k % 2 else pa, hi), s, flat=False)
+                    elif k % 2 == 1:
+                        brace(b, v3(pa, lo), v3(qa, hi), s)
+                        brace(b, v3(qa, lo), v3(pa, hi), s)
+                    else:
+                        m = (pa + qa) / 2
+                        brace(b, v3(m, lo), v3(pa, hi), s)
+                        brace(b, v3(m, lo), v3(qa, hi), s)
+                else:
+                    flip = (bay + k) % 2
+                    brace(b, v3(qa if flip else pa, lo), v3(pa if flip else qa, hi), s, flat=(k % 2 == 0))
+        # what runs up a leg
+        def inward(k):
+            p = LEG_AT[k]
+            return p + Vector((-p.x, -p.y)).normalized() * (s * 0.5 + 0.16)
+        if level in (2, 4, 5):
+            k = (marked + 1) % 4
+            r = inward(k)
+            tube(b, 'leggalv', v3(r, z0 + 0.3), v3(r, top - 0.1), 0.075, 8)
+            for f in (0.15, 0.5, 0.85):
+                zz = z0 + (top - z0) * f
+                box(b, 'legsteel', (0.24, 0.24, 0.05), T(r.x, r.y, zz))
+                beam(b, 'legsteel', v3(r, zz), v3(LEG_AT[k], zz), 0.05, 0.04)
+            o = Vector((-LEG_AT[k].x, 0)).normalized()
+            tube(b, 'leggalv', v3(r, z0 + 0.3), v3(r + o * 0.9, z0 + 0.3), 0.075, 8)
+            cyl(b, 'legsteel', 0.12, 0.05, T(r.x + o.x * 0.9, r.y, z0 + 0.3) @ RY(math.pi / 2 * o.x), 8)
+        if level in (1, 4):
+            k = (marked + 3) % 4
+            p = LEG_AT[k]
+            o = Vector((0, -p.y)).normalized()
+            for i_, dx in enumerate((-0.07, 0.0, 0.07)):
+                c = p + o * (s * 0.5 + 0.03) + Vector((dx, 0))
+                tube(b, 'black', v3(c, z0 + 0.1), v3(c, top - 0.08), 0.018, 5)
+            for f in (0.2, 0.5, 0.8):
+                c = p + o * (s * 0.5 + 0.035)
+                box(b, 'leggalv', (0.24, 0.05, 0.04), T(c.x, c.y, z0 + (top - z0) * f))
+            c = p + o * (s * 0.5 + 0.07)
+            box(b, 'black', (0.3, 0.12, 0.36), T(c.x, c.y, z0 + 0.75))
+        if level in (3, 5):
+            k = (marked + 3) % 4
+            p = LEG_AT[k]
+            o = Vector((0, -p.y)).normalized()
+            c = p + o * (s * 0.5 + 0.12)
+            ladder(b, v3(c, foot + 0.1), v3(c, top - 0.7), 0.4)
+            for f in (0.3, 0.7):
+                zz = foot + (top - foot) * f
+                beam(b, 'leggalv', v3(c, zz), v3(p, zz), 0.44, 0.03)
+        if level >= 3:
+            p = LEG_AT[marked]
+            o = Vector((0, p.y)).normalized()             # the face that looks out from under the deck
+            k_ = 0.86 if col is box_column else 1.0
+            F = Matrix(((-o.y, 0, 0, p.x), (0, 0, o.y, p.y + o.y * (s * k_ / 2 + 0.004)), (0, 1, 0, z0 + 1.0), (0, 0, 0, 1)))
+            stencil(b, str(level), F, h=min(0.5, s * 0.8), t=0.008)
     return build
 
 def part_under_lamp(b):
@@ -1026,15 +1557,20 @@ def part_walk_turn(deg):
 
 # name: (builder, finish, bake size, chance of a rusted bracket)
 PARTS = {
-    'deck-a': (part_deck(101, 0.08, 0.03), 'used', 1024, 0.0),
-    'deck-b': (part_deck(102, 0.04, 0.06), 'clean', 1024, 0.0),
-    'deck-c': (part_deck(103, 0.0, 0.05), 'used', 1024, 0.0),
-    'deck-d': (part_deck(104, 0.1, 0.0), 'clean', 1024, 0.0),
-    'legs-1': (part_legs(1), 'plain', 512, 0.0),
-    'legs-2': (part_legs(2), 'plain', 512, 0.0),
-    'legs-3': (part_legs(3), 'plain', 512, 0.0),
-    'legs-4': (part_legs(4), 'plain', 512, 0.0),
-    'legs-5': (part_legs(5), 'plain', 512, 0.0),
+    # corners, which way the brushed way runs, the band of the grid it takes, a cross strip, what hangs off each edge
+    'deck-a': (part_deck(101, ('balcony', 'plain', 'drop', 'notch', 'step', 'plain'), 0, (-0.9, 0.9), None,
+                         ([('conduit', 1)], [], [('catwalk', -1)], [], [('bracket', 1)], [('box', -1)]), '04', ('chevron', 'number'), 0.07, 0.03), 'used', 1024, 0.0),
+    'deck-b': (part_deck(102, ('shelf', 'drop', 'plain', 'balcony', 'plain', 'notch'), 1, (-1.1, 1.1), (-1.0, 1.0),
+                         ([], [('box', 1)], [('conduit', -1)], [('bracket', -1)], [], [('catwalk', 1)]), '17', ('lines', 'number'), 0.05, 0.05), 'clean', 1024, 0.0),
+    'deck-c': (part_deck(103, ('step', 'notch', 'shelf', 'plain', 'drop', 'drop'), 2, (0.9, 2.7), None,
+                         ([('catwalk', 1)], [('conduit', 1)], [], [('box', 1)], [], [('bracket', -1)]), '23', ('band', 'number'), 0.09, 0.04), 'used', 1024, 0.0),
+    'deck-d': (part_deck(104, ('drop', 'balcony', 'step', 'plain', 'shelf', 'plain'), 1, (-2.9, -1.1), (-0.9, 0.9),
+                         ([('bracket', 1)], [], [('box', -1)], [('catwalk', -1)], [('conduit', 1)], []), '31', ('chevron', 'number'), 0.1, 0.02), 'clean', 1024, 0.0),
+    'legs-1': (part_legs(1), 'legs', 1024, 0.0),
+    'legs-2': (part_legs(2), 'legs', 1024, 0.0),
+    'legs-3': (part_legs(3), 'legs', 1024, 0.0),
+    'legs-4': (part_legs(4), 'legs', 1024, 0.0),
+    'legs-5': (part_legs(5), 'legs', 1024, 0.0),
     'under-lamp': (part_under_lamp, 'plain', 512, 0.0),
     'deck-join': (part_join, 'plain', 512, 0.0),
     'deck-fill': (part_fill, 'plain', 512, 0.0),

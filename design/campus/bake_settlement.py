@@ -34,6 +34,7 @@ SCENE_NAME = "NX_Settlement"
 SIZES = {
     "deck-a": 1024, "deck-b": 1024, "deck-c": 1024, "deck-d": 1024,
     "mod-cabin": 1024, "mod-drum": 1024, "mod-shed": 1024, "mod-tank": 1024, "stair-2": 1024,
+    "legs-1": 1024, "legs-2": 1024, "legs-3": 1024, "legs-4": 1024, "legs-5": 1024,
 }
 DEFAULT_SIZE = 512
 SAMPLES = (32, 16, 8)  # colour, roughness, metal: all three read the occlusion of the part's own shape
@@ -121,6 +122,21 @@ def bake_part(name):
         bpy.ops.mesh.select_all(action="SELECT")
         bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=0.004, area_weight=0.0)
         bpy.ops.object.mode_set(mode="OBJECT")
+        # A finish may ask for more or less of the atlas than its size earns it (`nx_atlas` on the
+        # material): what is looked at most gets most, and what is never seen gets next to none.
+        shares = [float(material.get("nx_atlas", 1.0)) for material in slots]
+        if any(abs(share - 1.0) > 1e-6 for share in shares):
+            uv = mesh.uv_layers["atlas"].data
+            for polygon in mesh.polygons:
+                share = shares[polygon.material_index]
+                if share != 1.0:
+                    for loop_index in polygon.loop_indices:
+                        uv[loop_index].uv = uv[loop_index].uv * share
+            bpy.ops.object.mode_set(mode="EDIT")
+            bpy.ops.mesh.select_all(action="SELECT")
+            bpy.ops.uv.select_all(action="SELECT")
+            bpy.ops.uv.pack_islands(rotate=False, margin=0.003)
+            bpy.ops.object.mode_set(mode="OBJECT")
         part.hide_render = part.hide_viewport = True
 
         # ---------- 2. bake ----------

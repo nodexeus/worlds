@@ -30,19 +30,76 @@ The gap is 2.872, not 2.76. Parts that cross a gap are cut to 2.872. `walk` is 2
 
 ## Decks
 
-Origin: centre of the platform, on the walking surface (y = 0). Corners at 0, 60, 120 ... degrees at
-radius 5.942, so the six edges face 30, 90, 150 ... degrees. Any multiple of 60 degrees of turn fits.
-Slab from y = 0 to -0.45, edge beam down to -0.86. No kerb, rail or lit strip: those are edge parts.
+Origin: centre of the platform, on the walking surface (y = 0). The walking area is the hexagon with
+corners at 0, 60, 120 ... degrees at radius 5.942, so the six edges face 30, 90, 150 ... degrees. Any
+multiple of 60 degrees of turn fits. Slab from y = 0 to -0.45, an I beam under each edge down to
+-0.88 with stiffeners and a bolt row, joists under the slab. No kerb, rail or lit strip: those are
+edge parts.
 
-| Part | Finish | Triangles | Bytes | Maps |
+Corner k is at (5.942 cos 60k, 0, -5.942 sin 60k). Edge k runs from corner k to corner k + 1.
+
+Each deck has a dark tread field, a pale brushed way across it, a few plates of another tone, one
+rusted plate at most, grilles, a hatch or two, one amber mark and one stencilled number.
+
+| Part | Finish | Number | Way | Triangles | Bytes | Maps |
+|---|---|---|---|---|---|---|
+| deck-a | used | 04 | through the centre, edge 0 to edge 3 | 6420 | 3295088 | 1024 |
+| deck-b | nearly clean | 17 | through the centre, edge 1 to edge 4, with a cross strip | 6295 | 3146156 | 1024 |
+| deck-c | used | 23 | off centre, parallel to the line from edge 2 to edge 5 | 6548 | 3300136 | 1024 |
+| deck-d | nearly clean | 31 | off centre, parallel to the line from edge 1 to edge 4, with a cross strip | 7000 | 3180072 | 1024 |
+
+### Corners
+
+| Corner | deck-a | deck-b | deck-c | deck-d |
 |---|---|---|---|---|
-| deck-a | used: worn plate edges, stains | 1564 | 1752052 | 1024 |
-| deck-b | nearly clean, grilles | 1769 | 1863992 | 1024 |
-| deck-c | used | 1339 | 1681532 | 1024 |
-| deck-d | nearly clean, more grilles and a hatch | 2561 | 1961556 | 1024 |
+| 0 | balcony | shelf | step | drop |
+| 1 | plain | drop | notch | balcony |
+| 2 | drop | plain | shelf | step |
+| 3 | notch | balcony | plain | plain |
+| 4 | step | plain | drop | shelf |
+| 5 | plain | notch | drop | plain |
+
+- `plain`: the hexagon's own corner.
+- `drop`: inside the hexagon. The plates stop 0.8 short of the corner and a dark grating lies 0.05
+  lower. The cut reaches 1.6 along each edge from the corner. Nothing sticks out.
+- `notch`: inside the hexagon. A framed grille 0.92 square, centred 1.15 in from the corner, standing
+  0.07 above the deck.
+- `balcony`: sticks out. A railed platform 1.5 wide carried 0.9 past the corner along the line from
+  the centre through the corner (farthest point 6.88 from the centre). Its floor is at y = -0.08, its
+  rail top at 0.88, a mast to 1.27.
+- `shelf`: sticks out. A shelf of plant 1.4 wide carried 0.85 past the corner the same way (farthest
+  point 6.83 from the centre). Its floor is at y = -0.30, the plant on it reaches 0.42.
+- `step`: sticks out. The line of edge k - 1 carried 0.7 past corner k, 1.05 deep, level with the
+  deck, with a kerb to 0.12 and a bollard to 0.54. It lies outside edge k: up to 0.61 out from that
+  edge's line, within 1.3 of the corner along it.
+
+Keep a `deck-join`, a `deck-fill` and a `stair-2` (whose landing lies over the point where three
+decks meet) away from a corner that carries a balcony, a shelf or a step. Two or three decks may
+each have a balcony or shelf at the same meeting point: they clear each other by 0.5 or more.
+
+### Along the edges
+
+All of these are below the deck top (highest point y = -0.06), on the outside of the edge beam, and
+centred 1.55 to 1.95 from the middle of the edge. A crossing (1.5 wide, at the middle) clears them.
+A `deck-join` covers them from above; their lower parts still show under it.
+
+| Edge | deck-a | deck-b | deck-c | deck-d |
+|---|---|---|---|---|
+| 0 | conduit | none | catwalk | bracket |
+| 1 | none | box | conduit | none |
+| 2 | catwalk | conduit | none | box |
+| 3 | none | bracket | box | catwalk |
+| 4 | bracket | none | none | conduit |
+| 5 | box | catwalk | bracket | none |
+
+- `conduit`: two pipes the length of the beam, 0.09 out, with a box 0.16 out.
+- `bracket`: a plate and a hanging drum, 0.34 out, 0.4 long.
+- `catwalk`: a strip of grating 1.25 long, 0.33 out.
+- `box`: a cabinet 0.5 long, 0.24 out.
 
 Attach points (deck space): edge k mid point at angle 30 + 60k degrees, distance 5.146; legs and
-under-lamp at the origin; modules, frames, signs and dishes stand anywhere on y = 0.
+under-lamp at the origin; modules, frames, signs and dishes stand anywhere on y = 0 inside the
+hexagon, clear of a notch.
 
 ## Joining decks into one floor
 
@@ -83,15 +140,24 @@ Origin: the deck's centre on the deck top, the same point as the deck. Tops at y
 
 | Part | Feet at y | Footprint (x by z) | Triangles | Bytes | Maps |
 |---|---|---|---|---|---|
-| legs-1 | -1.80 | 6.26 x 6.06 | 880 | 585112 | 512 |
-| legs-2 | -3.15 | 6.44 x 6.24 | 880 | 512504 | 512 |
-| legs-3 | -4.50 | 6.64 x 6.42 | 880 | 511160 | 512 |
-| legs-4 | -5.85 | 6.82 x 6.62 | 880 | 470228 | 512 |
-| legs-5 | -7.20 | 7.00 x 6.80 | 880 | 447104 | 512 |
+| legs-1 | -1.80 | 6.26 x 6.06 | 4208 | 3049492 | 1024 |
+| legs-2 | -3.15 | 6.44 x 6.24 | 5828 | 3215932 | 1024 |
+| legs-3 | -4.50 | 6.64 x 6.42 | 4852 | 3230220 | 1024 |
+| legs-4 | -5.85 | 6.82 x 6.62 | 7276 | 3266448 | 1024 |
+| legs-5 | -7.20 | 7.00 x 6.80 | 5960 | 3225664 | 1024 |
 | under-lamp | -0.59 (lowest point) | 1.70 x 1.70 | 56 | 89112 | 512 |
 
-`legs-n` is for a deck on level n. Four legs with cross bracing and foot plates. May be turned by
-any multiple of 60 degrees. `under-lamp` is a lit panel in a frame against the underside of the slab.
+`legs-n` is for a deck on level n. Four steel legs at (2.7, 2.6), (-2.7, 2.6), (-2.7, -2.6) and
+(2.7, -2.6), each on a concrete pad with a bolted base plate, joined at the head by I beams. May be
+turned by any multiple of 60 degrees. Everything is inside the footprint given. The five sets differ:
+
+- `legs-1`: H sections, knee braces, a cable run up one leg.
+- `legs-2`: box sections with bolted collars, one diagonal or a pair to the middle on each face, a pipe riser.
+- `legs-3`: H sections, a tie at half height, crossed flats on two faces, a ladder, the level stencilled on one leg.
+- `legs-4`: box sections, a tie, rods below it and crossed or forked flats above, a pipe riser and a cable run.
+- `legs-5`: H sections, two ties, diagonals that change direction bay by bay, a pipe riser and a ladder.
+
+One leg in each set has an amber band near the foot, and one has rusted at the foot. `under-lamp` is a lit panel in a frame against the underside of the slab.
 
 ## Crossings between decks
 
