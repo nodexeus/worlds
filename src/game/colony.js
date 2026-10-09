@@ -43,7 +43,7 @@ import { Astronauts } from '../agents/astronauts.js'
 import { Indicators, BADGE } from '../agents/indicators.js'
 import { MAX_AGENT_CAP } from '../core/settings.js'
 import { Particles } from '../agents/particles.js'
-import { Navigation } from '../agents/navigation.js'
+import { Navigation, extentFor } from '../agents/navigation.js'
 import { liveThreadsForColony } from './hidden-projects.js'
 
 /**
@@ -157,6 +157,8 @@ const CROSSING_OVERLAP = 0.6
 
 /** Which of a platform's seven places its stack stands on: the last of the ring. */
 const STACK_SLOT = 6
+/** How far from the middle of its platform a stack stands. A frame is 3.56 by 2.36. */
+const STACK_OUT = 3.4
 
 /** Building slots on a place: two to a platform, across its middle from each other. */
 const PLACE_SLOTS = [1, 4]
@@ -1251,6 +1253,10 @@ export class Colony {
     // Walked round by less than it is stood clear of: see `walkRadius`.
     const round = walkRadius(this.library.radius, PLOT_APOTHEM, this.planet.plot?.gap || 0)
     obstacles.push({ x: library.x, z: library.z, r: round + TRAVEL_RADIUS, keep: this.library.radius + AGENT_RADIUS })
+    // As big as the campus is now: a workspace off the map is one nobody can walk to.
+    const held = [shipPosition()]
+    for (const deck of this._decks()) for (const cell of deck.cells) held.push(hexToWorld(cell.q, cell.r))
+    this.nav.fit(extentFor(held))
     this.nav.rebuild(obstacles, this.planet.plot?.crossings ? (x, z) => this._walkable(x, z) : null)
   }
 
@@ -1281,11 +1287,21 @@ export class Colony {
         const count = busy.get(plot.id) || 0
         const taken = plot.slotOf ? Math.max(-1, ...plot.slotOf.values()) : -1
         const free = count > 0 && taken < STACK_SLOT
+        let turn = 0
         if (free) {
+          // Toward the last place on the platform, but nearer the middle than a building
+          // stands: a frame is wider than a building, and one stood at a building's place
+          // hangs over the edge. Turned to lie along the rim it is beside.
           plot.worldSlot(STACK_SLOT, spot)
+          const home = hexToWorld(plot.cells[0].q, plot.cells[0].r)
+          const dx = spot.x - home.x
+          const dz = spot.z - home.z
+          const far = Math.hypot(dx, dz) || 1
+          spot.set(home.x + (dx / far) * STACK_OUT, 0, home.z + (dz / far) * STACK_OUT)
+          turn = Math.atan2(dx, dz)
           this.stacks.push({ x: spot.x, z: spot.z })
         }
-        return { id: plot.id, cells: plot.cells, level: plot.level, busy: count, stackAt: free ? { x: spot.x, z: spot.z } : null }
+        return { id: plot.id, cells: plot.cells, level: plot.level, busy: count, stackAt: free ? { x: spot.x, z: spot.z } : null, stackTurn: turn }
       }),
       this.crossingPlan || [],
       { deckTop: DECK_TOP, levelStep: style.levelStep, apothem: PLOT_APOTHEM - style.gap }

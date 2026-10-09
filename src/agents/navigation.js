@@ -24,28 +24,39 @@ const CELL = 0.5
 /** Half-width of the navigable square. Comfortably contains the colony and the landing pad. */
 const HALF = 56
 /** Give up rather than stall the frame if a search goes pathological. */
-const MAX_EXPANSIONS = 24000
+const MAX_EXPANSIONS = 120000
 
 const SQRT2 = Math.SQRT2
 /** Scratch for the solid queries, so the frame loop allocates nothing. */
 const _near = []
 
+/** The map grows in steps of this, so a campus gaining a workspace seldom means a new map. */
+const EXTENT_STEP = 32
+/** How far past the outermost thing the map reaches, so there is room to walk round it. */
+const EXTENT_MARGIN = 20
+
+/**
+ * How big the map has to be to hold everything at `points`: half its width, never less than
+ * the size it always was, in steps.
+ *
+ * The map used to be one fixed square about the middle of the campus. A campus with a
+ * district either side of the square puts workspaces well outside that, and what is off the
+ * map cannot be walked to: the crew stood about on the ground by the gate.
+ *
+ * @param {Array<{x: number, z: number}>} points
+ * @returns {number}
+ */
+export function extentFor(points) {
+  let far = 0
+  for (const point of points) far = Math.max(far, Math.abs(point.x), Math.abs(point.z))
+  if (far + EXTENT_MARGIN <= HALF) return HALF
+  return Math.ceil((far + EXTENT_MARGIN) / EXTENT_STEP) * EXTENT_STEP
+}
+
 export class Navigation {
   constructor() {
     this.cell = CELL
-    this.half = HALF
-    this.size = Math.ceil((HALF * 2) / CELL)
-    const n = this.size * this.size
-
-    this.blocked = new Uint8Array(n)
-    this.gScore = new Float32Array(n)
-    this.parent = new Int32Array(n)
-    this.stamp = new Int32Array(n) // which search last touched this node
-    this.closed = new Uint8Array(n)
-
-    this.heap = new Int32Array(n)
-    this.heapKey = new Float32Array(n)
-    this.heapSize = 0
+    this._size(HALF)
 
     this.generation = 0
     /** Bumped on every rebuild; agents use it to notice their path is stale. */
@@ -61,6 +72,35 @@ export class Navigation {
     /** The solids bucketed on a coarse grid, so a query only looks at its neighbourhood. */
     this._solidBuckets = new Map()
     this._bucket = 4
+  }
+
+  /** Lay out the map and the search's scratch for a square `half` to a side from the middle. */
+  _size(half) {
+    this.half = half
+    this.size = Math.ceil((half * 2) / CELL)
+    const n = this.size * this.size
+
+    this.blocked = new Uint8Array(n)
+    this.gScore = new Float32Array(n)
+    this.parent = new Int32Array(n)
+    this.stamp = new Int32Array(n) // which search last touched this node
+    this.closed = new Uint8Array(n)
+
+    this.heap = new Int32Array(n)
+    this.heapKey = new Float32Array(n)
+    this.heapSize = 0
+    // Every stamp is zero again, so the count of searches starts again with them.
+    this.generation = 0
+  }
+
+  /**
+   * Make the map big enough to hold a campus `half` across from its middle: see `extentFor`.
+   * Nothing happens when it already is that size. A map that changes size is empty until the
+   * next `rebuild`, which whoever calls this does next.
+   */
+  fit(half) {
+    if (half === this.half) return
+    this._size(half)
   }
 
   _bucketKey(bx, bz) {

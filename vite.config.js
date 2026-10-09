@@ -14,4 +14,7 @@ export default defineConfig({
   // PORT lets a second copy run alongside the first without a flag on the command line.
   server: { port: Number(process.env.PORT) || 5274, strictPort: false },
   build: { target: 'esnext' },
+  // The models in `public/` keep their names when they change, so each build asks for them
+  // under a new address and a browser cannot go on using one it fetched from an older build.
+  define: { __ASSET_STAMP__: JSON.stringify(Date.now().toString(36)) },
 })

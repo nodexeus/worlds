@@ -1,3 +1,4 @@
+import { assetUrl } from '../core/asset-url.js'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { withCurve } from '../core/curve.js'
@@ -16,7 +17,7 @@ let loading = null
 
 /** Load the kit. Idempotent: the first call owns the request and the rest await it. */
 export function loadSettlement() {
-  loading ??= new GLTFLoader().loadAsync(`${import.meta.env.BASE_URL}assets/campus/settlement.glb`).then((gltf) => {
+  loading ??= new GLTFLoader().loadAsync(assetUrl(`campus/settlement.glb`)).then((gltf) => {
     gltf.scene.updateMatrixWorld(true)
     gltf.scene.traverse((o) => {
       if (!o.isMesh) return
@@ -144,7 +145,7 @@ export class LightPools {
     this.strength = 1
     const loader = new THREE.TextureLoader()
     this.kinds = new Map(['round', 'band'].map((kind) => {
-      const map = loader.load(`${import.meta.env.BASE_URL}assets/campus/pool-${kind}.png`)
+      const map = loader.load(assetUrl(`campus/pool-${kind}.png`))
       map.colorSpace = THREE.SRGBColorSpace
       const material = new THREE.MeshBasicMaterial({
         map, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,

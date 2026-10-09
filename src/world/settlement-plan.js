@@ -145,7 +145,9 @@ export function settlementParts(plots, crossings, { deckTop, levelStep, apothem 
     if (plot.stackAt && plot.busy > 0) {
       const seed = hash(`${plot.id}/stack`)
       const storeys = Math.min(3, 1 + (plot.busy >= 2 ? 1 : 0) + (plot.busy >= 4 ? 1 : 0))
-      const start = (seed % 6) * SIXTH
+      // Its frame lies along the edge of the platform it stands by, where the workspace says
+      // which way that is, so that no corner of it reaches past the deck.
+      const start = plot.stackTurn ?? (seed % 6) * SIXTH
       let px = plot.stackAt.x
       let pz = plot.stackAt.z
       let turn = start

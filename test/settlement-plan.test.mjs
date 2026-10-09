@@ -175,3 +175,29 @@ test('a sign stands on a flat roof or on the deck by the stack, a dish only on a
   }
   assert.ok(onDeck > 20 && onRoofs > 20, `${onRoofs} on roofs, ${onDeck} on decks`)
 })
+
+test('a stack\'s frame stays on its platform: no corner of it reaches past the deck', () => {
+  // As the campus places one: 3.4 out from the middle toward a corner, lying along the rim.
+  const FRAME_HALF = { along: 3.56 / 2, across: 2.36 / 2 }
+  const apothem = 5.146
+  for (let k = 0; k < 6; k++) {
+    const way = Math.PI / 6 + k * (Math.PI / 3) + Math.PI / 6
+    const out = { x: Math.sin(way), z: Math.cos(way) }
+    const parts = settlementParts([{ id: `rim-${k}`, cells: [{ q: 0, r: 0 }], level: 1, busy: 6, stackAt: { x: out.x * 3.4, z: out.z * 3.4 }, stackTurn: way }], [], WORLD)
+    for (const frame of named(parts, 'frame')) {
+      assert.ok(Math.abs(frame.turn - way) < 1e-9, 'lying along the rim')
+      for (const sx of [-1, 1]) {
+        for (const sz of [-1, 1]) {
+          // The frame's own x is along the rim and its z points outward.
+          const cx = frame.x + sx * FRAME_HALF.along * Math.cos(way) + sz * FRAME_HALF.across * Math.sin(way)
+          const cz = frame.z - sx * FRAME_HALF.along * Math.sin(way) + sz * FRAME_HALF.across * Math.cos(way)
+          for (let e = 0; e < 6; e++) {
+            const normal = Math.PI / 6 + e * (Math.PI / 3)
+            const reach = cx * Math.cos(normal) + cz * Math.sin(normal)
+            assert.ok(reach <= apothem + 1e-6, `a corner is ${reach.toFixed(2)} out, past the rim at ${apothem}`)
+          }
+        }
+      }
+    }
+  }
+})

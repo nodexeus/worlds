@@ -1,3 +1,4 @@
+import { assetUrl } from '../core/asset-url.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 
 /**
@@ -18,7 +19,7 @@ export function loadCampusBuildings() {
   if (!loading) {
     const loader = new GLTFLoader()
     // The drone is its own small file, and not having it only means the stock drone flies.
-    const droneLoaded = loader.loadAsync(`${import.meta.env.BASE_URL}assets/campus/drone.glb`).then((gltf) => {
+    const droneLoaded = loader.loadAsync(assetUrl(`campus/drone.glb`)).then((gltf) => {
       gltf.scene.updateMatrixWorld(true)
       const parts = []
       gltf.scene.traverse((o) => {
@@ -27,7 +28,7 @@ export function loadCampusBuildings() {
       drone = parts
     }, () => {})
     loading = loader
-      .loadAsync(`${import.meta.env.BASE_URL}assets/campus/buildings.glb`)
+      .loadAsync(assetUrl(`campus/buildings.glb`))
       .then(async (gltf) => {
         await droneLoaded
         gltf.scene.updateMatrixWorld(true)
