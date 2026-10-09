@@ -139,3 +139,20 @@ test('light falls on the deck beside a lit edge and round every module, and a si
   assert.deepEqual(pools.filter((pool) => pool.color !== 'amber').map((pool) => pool.color).sort(), ['cyan', 'magenta'])
   for (const pool of pools) assert.ok(pool.y > 3.15 && pool.y < 3.25, 'just proud of the deck')
 })
+
+test('a sign or a dish stands on the roof of the top storey, never in the air above it', () => {
+  const roofs = { 'mod-cabin': 1.89, 'mod-drum': 1.93 }
+  let seen = 0
+  for (let n = 0; n < 200; n++) {
+    const parts = stackOf(1 + (n % 6), `sign-${n}`)
+    const modules = named(parts, /^mod-/)
+    const top = modules.at(-1)
+    for (const thing of named(parts, /^(sign-[a-d]|dish)$/)) {
+      seen++
+      assert.ok(roofs[top.part], `${thing.part} on a ${top.part}, which has no flat roof`)
+      assert.ok(Math.abs(thing.y - (top.y + roofs[top.part])) < 1e-6, `${thing.part} is not on the roof`)
+      assert.ok(Math.abs(thing.x - top.x) < 1e-6 && Math.abs(thing.z - top.z) < 1e-6)
+    }
+  }
+  assert.ok(seen > 20, 'and there are some')
+})

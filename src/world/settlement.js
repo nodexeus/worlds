@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { withCurve } from '../core/curve.js'
+import { tameSheen } from '../core/sheen.js'
 
 /**
  * The settlement, drawn: the kit's parts (`design/campus/settlement.md`), each one mesh with one
@@ -35,7 +36,8 @@ function surface(source) {
   const material = source.clone()
   material.metalness = 0.7
   material.emissiveIntensity = 1.7
-  material.onBeforeCompile = (shader) => withCurve(shader)
+  // Steel in the sun must not go white: see `sheen.js`.
+  material.onBeforeCompile = (shader) => tameSheen(withCurve(shader))
   return material
 }
 

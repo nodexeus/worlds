@@ -1,3 +1,4 @@
+import { tameSheen } from '../core/sheen.js'
 import * as THREE from 'three'
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js'
 import { mulberry } from './planet.js'
@@ -447,6 +448,8 @@ function decorateBaked(material, uniforms) {
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms)
     withCurve(shader)
+    // Steel in the sun must not go white: see `sheen.js`.
+    tameSheen(shader)
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',

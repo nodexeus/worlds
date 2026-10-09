@@ -37,6 +37,8 @@ const LIT = /lit$/
 /** What is stacked, and how far up one storey is: the height of the kit's frame. */
 const MODULES = ['mod-cabin', 'mod-drum', 'mod-shed', 'mod-tank']
 const FRAME = 2.3
+/** How high the flat roof of a module is above its base, for those that have one. */
+const ROOF = { 'mod-cabin': 1.89, 'mod-drum': 1.93 }
 /** The neon signs: the first two are cyan, the last two magenta. */
 const SIGNS = ['sign-a', 'sign-b', 'sign-c', 'sign-d']
 
@@ -136,6 +138,7 @@ export function settlementParts(plots, crossings, { deckTop, levelStep, apothem 
       let px = plot.stackAt.x
       let pz = plot.stackAt.z
       let turn = start
+      let last = null
       for (let k = 0; k < storeys; k++) {
         const roll = hash(`${plot.id}/stack/${k}`)
         if (k > 0) {
@@ -148,12 +151,18 @@ export function settlementParts(plots, crossings, { deckTop, levelStep, apothem 
           pz = plot.stackAt.z + Math.sin(way) * far
           turn += [Math.PI / 2, Math.PI / 6, -Math.PI / 3, Math.PI / 4][(roll >>> 20) % 4]
         }
-        put(MODULES[(seed + k * 3 + (roll >>> 24)) % MODULES.length], px, pz, turn, y + k * FRAME)
+        last = MODULES[(seed + k * 3 + (roll >>> 24)) % MODULES.length]
+        put(last, px, pz, turn, y + k * FRAME)
       }
       if (storeys > 1) put('ladder', plot.stackAt.x, plot.stackAt.z, start)
-      const top = y + storeys * FRAME
-      if (seed % 4 === 0) put(SIGNS[(seed >>> 6) % SIGNS.length], px, pz, turn, top)
-      else if (seed % 4 === 1) put('dish', px, pz, turn, top)
+      // A sign or a dish stands on the roof of the top storey, and only on a roof that is
+      // flat: on anything else it would hang in the air.
+      const roof = ROOF[last]
+      if (roof) {
+        const top = y + (storeys - 1) * FRAME + roof
+        if (seed % 4 === 0) put(SIGNS[(seed >>> 6) % SIGNS.length], px, pz, turn, top)
+        else if (seed % 4 === 1) put('dish', px, pz, turn, top)
+      }
     }
 
     // Every open edge has something along it, and one or two of them are lit: enough to say
