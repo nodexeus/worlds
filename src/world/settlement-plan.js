@@ -34,6 +34,12 @@ const CLEAN = ['deck-b', 'deck-d']
 const EDGES = ['edge-rail', 'edge-rail', 'edge-rail', 'edge-kerb', 'edge-kerb', 'edge-rail-lit']
 const LIT = /lit$/
 
+/** What is stacked, and how far up one storey is: the height of the kit's frame. */
+const MODULES = ['mod-cabin', 'mod-drum', 'mod-shed', 'mod-tank']
+const FRAME = 2.3
+/** The neon signs: the first two are cyan, the last two magenta. */
+const SIGNS = ['sign-a', 'sign-b', 'sign-c', 'sign-d']
+
 /** The turn about Y that points a part's own +z along (dx, dz). */
 const facing = (dx, dz) => Math.atan2(dx, dz)
 
@@ -119,6 +125,37 @@ export function settlementParts(plots, crossings, { deckTop, levelStep, apothem 
       })
     }
 
+    // A stack: a module on the deck, and for a busier workspace one or two more above it, each
+    // on a frame standing over the one below. No storey sits straight on the last: it is
+    // shifted or turned, as things are when they are added one at a time by whoever needed
+    // the room.
+    if (plot.stackAt && plot.busy > 0) {
+      const seed = hash(`${plot.id}/stack`)
+      const storeys = Math.min(3, 1 + (plot.busy >= 2 ? 1 : 0) + (plot.busy >= 4 ? 1 : 0))
+      const start = (seed % 6) * SIXTH
+      let px = plot.stackAt.x
+      let pz = plot.stackAt.z
+      let turn = start
+      for (let k = 0; k < storeys; k++) {
+        const roll = hash(`${plot.id}/stack/${k}`)
+        if (k > 0) {
+          put('frame', plot.stackAt.x, plot.stackAt.z, start, y + (k - 1) * FRAME)
+          // Somewhere between a hand's width and most of a pace off the storey below, and
+          // usually turned a quarter or so as well.
+          const way = ((roll >>> 3) % 360) * (Math.PI / 180)
+          const far = 0.25 + ((roll >>> 12) % 40) / 100
+          px = plot.stackAt.x + Math.cos(way) * far
+          pz = plot.stackAt.z + Math.sin(way) * far
+          turn += [Math.PI / 2, Math.PI / 6, -Math.PI / 3, Math.PI / 4][(roll >>> 20) % 4]
+        }
+        put(MODULES[(seed + k * 3 + (roll >>> 24)) % MODULES.length], px, pz, turn, y + k * FRAME)
+      }
+      if (storeys > 1) put('ladder', plot.stackAt.x, plot.stackAt.z, start)
+      const top = y + storeys * FRAME
+      if (seed % 4 === 0) put(SIGNS[(seed >>> 6) % SIGNS.length], px, pz, turn, top)
+      else if (seed % 4 === 1) put('dish', px, pz, turn, top)
+    }
+
     // Every open edge has something along it, and one or two of them are lit: enough to say
     // somebody is home, never an outline.
     const chosen = edges.map((edge) => EDGES[edge.seed % EDGES.length])
@@ -153,4 +190,43 @@ export function settlementParts(plots, crossings, { deckTop, levelStep, apothem 
     })
   }
   return parts
+}
+
+/** How far above a deck a pool of light is laid, so it does not fight the deck for the same depth. */
+const PROUD = 0.03
+
+/**
+ * The light the settlement's lamps throw on its decks.
+ *
+ * A lit strip in the app glows and lights nothing. So where one is, a pool of its colour is
+ * laid on the deck beside it: a band along a lit edge, a round pool about a module standing
+ * on the deck, and a small one in a sign's own colour. They are pictures from the kit, laid
+ * flat; this says where.
+ *
+ * @param {Placed[]} parts
+ * @returns {Array<{kind: 'round' | 'band', color: 'amber' | 'cyan' | 'magenta', x: number,
+ *   y: number, z: number, turn: number, width: number, depth: number}>}
+ */
+export function settlementPools(parts) {
+  // The deck each workspace's parts stand on: the lowest thing it has is on it.
+  const deckOf = new Map()
+  for (const part of parts) {
+    if (/^deck-[a-z]$/.test(part.part)) deckOf.set(part.plot, part.y)
+  }
+  const pools = []
+  for (const part of parts) {
+    const deck = deckOf.get(part.plot) ?? part.y
+    if (/lit$/.test(part.part)) {
+      // Inboard of the edge: the strip is on the inside of the kerb and shines across the deck.
+      const inx = -Math.sin(part.turn)
+      const inz = -Math.cos(part.turn)
+      pools.push({ plot: part.plot, kind: 'band', color: 'amber', x: part.x + inx * 1.1, y: part.y + PROUD, z: part.z + inz * 1.1, turn: part.turn, width: 5.4, depth: 2.6 })
+    } else if (/^mod-/.test(part.part) && Math.abs(part.y - deck) < 0.01) {
+      pools.push({ plot: part.plot, kind: 'round', color: 'amber', x: part.x, y: deck + PROUD, z: part.z, turn: part.turn, width: 6.2, depth: 6.2 })
+    } else if (/^sign-[ab]$/.test(part.part) || /^sign-[cd]$/.test(part.part)) {
+      const color = /^sign-[ab]$/.test(part.part) ? 'cyan' : 'magenta'
+      pools.push({ plot: part.plot, kind: 'round', color, x: part.x, y: deck + PROUD, z: part.z, turn: part.turn, width: 4.2, depth: 4.2 })
+    }
+  }
+  return pools
 }

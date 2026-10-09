@@ -91,3 +91,51 @@ test('a workspace with traffic over it stands on a used deck', () => {
   const decks = named(settlementParts(plots, crossings, WORLD), /^deck-[a-d]$/)
   assert.ok(decks.every((deck) => deck.part === 'deck-a' || deck.part === 'deck-c'), decks.map((deck) => deck.part).join(' '))
 })
+
+// ── stacks, and the light everything throws ───────────────────────────────────────────
+
+import { settlementPools } from '../src/world/settlement-plan.js'
+
+const stackOf = (busy, id = 'stacked') =>
+  settlementParts([{ id, cells: [{ q: 0, r: 0 }], level: 2, busy, stackAt: { x: 3, z: 2 } }], [], WORLD)
+
+test('a workspace with room for one has a stack, taller the busier it is, and never more than three high', () => {
+  const storeys = (busy) => named(stackOf(busy), /^mod-/).length
+  assert.deepEqual([1, 2, 3, 4, 6, 20].map(storeys), [1, 2, 2, 3, 3, 3])
+  assert.equal(named(stackOf(0), /^mod-/).length, 0, 'nobody there, nothing stacked')
+  assert.equal(named(settlementParts([{ id: 'full', cells: [{ q: 0, r: 0 }], level: 1, busy: 5, stackAt: null }], [], WORLD), /^mod-/).length, 0)
+})
+
+test('each storey stands on a frame over the one below, a frame\'s height up, and none is straight above the last', () => {
+  for (const id of ['a', 'b', 'c', 'd', 'e', 'f']) {
+    const parts = stackOf(6, id)
+    const modules = named(parts, /^mod-/)
+    const frames = named(parts, 'frame')
+    const deck = 0.45 + 2 * 1.35
+    assert.deepEqual(modules.map((m) => +(m.y - deck).toFixed(2)), [0, 2.3, 4.6])
+    assert.deepEqual(frames.map((f) => +(f.y - deck).toFixed(2)), [0, 2.3])
+    for (let k = 1; k < modules.length; k++) {
+      const shift = Math.hypot(modules[k].x - modules[k - 1].x, modules[k].z - modules[k - 1].z)
+      const turned = Math.abs(modules[k].turn - modules[k - 1].turn) > 0.2
+      assert.ok(shift > 0.15 || turned, `${id}: storey ${k} sits straight on the one below`)
+      // Each frame stands where the stack does, and what is on it is within a pace of its middle.
+      assert.ok(Math.hypot(modules[k].x - 3, modules[k].z - 2) < 0.7, 'and still stands on its frame')
+    }
+    assert.equal(named(parts, 'ladder').length, 1)
+  }
+})
+
+test('light falls on the deck beside a lit edge and round every module, and a sign throws its own colour', () => {
+  const parts = [
+    ...stackOf(6),
+    { part: 'sign-a', plot: 'stacked', x: 1, y: 3.15, z: 1, turn: 0 },
+    { part: 'sign-c', plot: 'stacked', x: -1, y: 3.15, z: 1, turn: 0 },
+  ]
+  const pools = settlementPools(parts)
+  const lit = named(parts, /lit$/).length
+  assert.equal(pools.filter((pool) => pool.kind === 'band').length, lit)
+  // Only what stands on a deck lights it: the storeys above light nothing below.
+  assert.equal(pools.filter((pool) => pool.kind === 'round' && pool.color === 'amber').length, 1)
+  assert.deepEqual(pools.filter((pool) => pool.color !== 'amber').map((pool) => pool.color).sort(), ['cyan', 'magenta'])
+  for (const pool of pools) assert.ok(pool.y > 3.15 && pool.y < 3.25, 'just proud of the deck')
+})

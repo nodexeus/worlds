@@ -33,8 +33,8 @@ import { Crossings } from '../world/crossing-models.js'
 import { loadModels } from '../world/kit.js'
 import { loadGate } from '../world/gate.js'
 import { campusBuilding, loadCampusBuildings } from '../world/campus-buildings.js'
-import { Settlement, loadSettlement, settlementReady } from '../world/settlement.js'
-import { settlementParts } from '../world/settlement-plan.js'
+import { LightPools, Settlement, loadSettlement, settlementReady } from '../world/settlement.js'
+import { settlementParts, settlementPools } from '../world/settlement-plan.js'
 import { createPipeline, pipelineClearance, pipelineUniforms } from '../world/pipeline.js'
 import { createBuilding, buildingUniforms } from '../world/buildings.js'
 import { Ship } from '../world/ship.js'
@@ -155,6 +155,9 @@ const MOUTH_CLEAR = { along: 2.2, across: 1.7 }
 /** How far onto each deck a crossing's walkable strip reaches, so the two always join. */
 const CROSSING_OVERLAP = 0.6
 
+/** Which of a platform's seven places its stack stands on: the last of the ring. */
+const STACK_SLOT = 6
+
 /** Building slots on a place: two to a platform, across its middle from each other. */
 const PLACE_SLOTS = [1, 4]
 const SLOTS_PER_PLATFORM = 7
@@ -200,6 +203,7 @@ export class Colony {
 
     this.crossings = new Crossings(scene)
     this.settlement = new Settlement(scene)
+    this.lightPools = new LightPools(scene)
     /** The strip of ground each crossing occupies. See `crossing-spans.js`. */
     this.crossingSpans = []
     /** The plaza deck, when this world has one. */
@@ -801,6 +805,9 @@ export class Colony {
     this.tenants = tenants
     this.urgentPlots = urgent
     this.activePlots = active
+    // After everybody has their place, since a stack stands where no building does, and
+    // before the ground is mapped, since a stack is in the way.
+    this._syncSettlement()
     this._rebuildNavigation()
     for (const member of roster) {
       const entry = this.buildings.get(member.home)
@@ -924,7 +931,6 @@ export class Colony {
     }
     this._syncLabels()
     this._syncCrossings()
-    this._syncSettlement()
   }
 
   /**
@@ -1224,6 +1230,9 @@ export class Colony {
       }
     }
 
+    // A stack is as much in the way as a building.
+    for (const stack of this.stacks || []) obstacles.push({ x: stack.x, z: stack.z, r: 1.7 + TRAVEL_RADIUS, keep: 2.0 + AGENT_RADIUS })
+
     const ship = shipPosition()
     if (this.planet.gate) {
       // The gate is an arch, and the crew walk through it: its two legs are in the way, the
@@ -1254,14 +1263,35 @@ export class Colony {
     const style = this.planet.plot
     if (!style?.kit || !settlementReady()) {
       this.settlement.set([])
+      this.lightPools.set([])
+      this.stacks = []
       if (style?.kit) loadSettlement().then(() => this._syncSettlement(), () => {})
       return
     }
-    this.settlement.set(settlementParts(
-      this.plotOrder.map((plot) => ({ id: plot.id, cells: plot.cells, level: plot.level })),
+    // How many are at each workspace, and where its stack stands: the last place on its
+    // first platform, for as long as nobody's building needs that place.
+    const busy = new Map()
+    for (const thread of this.threads?.values() || []) {
+      if (thread.project) busy.set(thread.project, (busy.get(thread.project) || 0) + 1)
+    }
+    const spot = new THREE.Vector3()
+    this.stacks = []
+    const parts = settlementParts(
+      this.plotOrder.map((plot) => {
+        const count = busy.get(plot.id) || 0
+        const taken = plot.slotOf ? Math.max(-1, ...plot.slotOf.values()) : -1
+        const free = count > 0 && taken < STACK_SLOT
+        if (free) {
+          plot.worldSlot(STACK_SLOT, spot)
+          this.stacks.push({ x: spot.x, z: spot.z })
+        }
+        return { id: plot.id, cells: plot.cells, level: plot.level, busy: count, stackAt: free ? { x: spot.x, z: spot.z } : null }
+      }),
       this.crossingPlan || [],
       { deckTop: DECK_TOP, levelStep: style.levelStep, apothem: PLOT_APOTHEM - style.gap }
-    ))
+    )
+    this.settlement.set(parts)
+    this.lightPools.set(settlementPools(parts))
   }
 
   /** Whether (x, z) is on a crossing or in the ground just inside either of its mouths. */
@@ -1453,6 +1483,7 @@ export class Colony {
     const plot = this.plots.get(name)
     if (!plot) return
     this.settlement.setLift(name, dy)
+    this.lightPools.setLift(name, dy)
     // Lifted from wherever it stands: a raised workspace is carried at its own height.
     plot.group.position.y = plot.elev + dy
     if (plot.label) plot.label.position.y = 3.2 + plot.elev + dy
@@ -1712,6 +1743,8 @@ export class Colony {
   _updatePlots(night, elapsed) {
     const urgent = this.urgentPlots
     for (const plot of this.plotOrder) plot.setNight(night, urgent?.has(plot.id) ?? false, elapsed)
+    // Lamplight on a deck is faint by day and all there is by night.
+    this.lightPools.setStrength(0.2 + night * 0.8)
   }
 
   // ── interaction ─────────────────────────────────────────────────────────────────────

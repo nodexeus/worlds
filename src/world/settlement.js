@@ -125,3 +125,107 @@ export class Settlement {
     this.group.removeFromParent()
   }
 }
+
+const TINT = { amber: 0xfdb000, cyan: 0x35d6ff, magenta: 0xff3fd0 }
+
+/**
+ * The pools of light on the decks: the kit's two pictures, laid flat and added to what is
+ * under them, one instanced mesh a picture for the whole campus. See `settlementPools`.
+ */
+export class LightPools {
+  constructor(scene) {
+    this.group = new THREE.Group()
+    this.group.name = 'settlement-light'
+    scene.add(this.group)
+    this.pools = []
+    this.lifts = new Map()
+    this.strength = 1
+    const loader = new THREE.TextureLoader()
+    this.kinds = new Map(['round', 'band'].map((kind) => {
+      const map = loader.load(`${import.meta.env.BASE_URL}assets/campus/pool-${kind}.png`)
+      map.colorSpace = THREE.SRGBColorSpace
+      const material = new THREE.MeshBasicMaterial({
+        map, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
+        polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+      })
+      material.onBeforeCompile = (shader) => withCurve(shader)
+      // A unit square lying flat, its own +z the way the light is thrown.
+      const geometry = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2)
+      return [kind, { geometry, material, mesh: null, capacity: 0 }]
+    }))
+    this._m = new THREE.Matrix4()
+    this._q = new THREE.Quaternion()
+    this._p = new THREE.Vector3()
+    this._s = new THREE.Vector3()
+    this._c = new THREE.Color()
+    this._up = new THREE.Vector3(0, 1, 0)
+  }
+
+  /** @param {ReturnType<typeof import('./settlement-plan.js').settlementPools>} pools  each with the `plot` it is on */
+  set(pools) {
+    this.pools = pools
+    this._write()
+  }
+
+  setLift(plot, dy) {
+    if (dy) this.lifts.set(plot, dy)
+    else this.lifts.delete(plot)
+    this._write()
+  }
+
+  /** How bright the pools are: nothing in full daylight, all of it after dark. */
+  setStrength(strength) {
+    if (Math.abs(strength - this.strength) < 0.01) return
+    this.strength = strength
+    this._write()
+  }
+
+  _write() {
+    const counts = new Map()
+    for (const pool of this.pools) counts.set(pool.kind, (counts.get(pool.kind) || 0) + 1)
+    const at = new Map()
+    for (const [kind, held] of this.kinds) {
+      const count = counts.get(kind) || 0
+      if (count > held.capacity) {
+        if (held.mesh) {
+          this.group.remove(held.mesh)
+          held.mesh.dispose()
+        }
+        held.capacity = Math.max(16, Math.ceil(count * 1.5))
+        held.mesh = new THREE.InstancedMesh(held.geometry, held.material, held.capacity)
+        held.mesh.name = `settlement-light:${kind}`
+        held.mesh.frustumCulled = false
+        held.mesh.renderOrder = 2
+        this.group.add(held.mesh)
+      }
+      at.set(kind, 0)
+    }
+    for (const pool of this.pools) {
+      const held = this.kinds.get(pool.kind)
+      if (!held?.mesh) continue
+      const n = at.get(pool.kind)
+      at.set(pool.kind, n + 1)
+      this._p.set(pool.x, pool.y + (this.lifts.get(pool.plot) || 0), pool.z)
+      this._q.setFromAxisAngle(this._up, pool.turn)
+      this._s.set(pool.width, 1, pool.depth)
+      held.mesh.setMatrixAt(n, this._m.compose(this._p, this._q, this._s))
+      held.mesh.setColorAt(n, this._c.setHex(TINT[pool.color] ?? TINT.amber).multiplyScalar(this.strength * (pool.color === 'amber' ? 0.5 : 0.7)))
+    }
+    for (const [kind, held] of this.kinds) {
+      if (!held.mesh) continue
+      held.mesh.count = at.get(kind)
+      held.mesh.instanceMatrix.needsUpdate = true
+      if (held.mesh.instanceColor) held.mesh.instanceColor.needsUpdate = true
+    }
+  }
+
+  dispose() {
+    for (const held of this.kinds.values()) {
+      held.mesh?.dispose()
+      held.geometry.dispose()
+      held.material.map?.dispose()
+      held.material.dispose()
+    }
+    this.group.removeFromParent()
+  }
+}

@@ -591,8 +591,8 @@ def wear3(key, base, metal, rough, edge=1.0, emit=None, deck=False, rust_all=Fal
     worn_off = None
     if chip is not None:
         # paint that has been walked and scraped off in places, down to the dark steel under it
-        wn = g.m('ADD', g.m('MULTIPLY', g.noise(tc.outputs['Object'], 8, 5, 0.7), 0.6), g.m('MULTIPLY', g.noise(tc.outputs['Object'], 1.6, 2), 0.4))
-        worn_off = g.rng(wn, chip, chip + 0.035)
+        wn = g.m('ADD', g.m('MULTIPLY', g.noise(tc.outputs['Object'], 4, 2, 0.5), 0.6), g.m('MULTIPLY', g.noise(tc.outputs['Object'], 1.6, 2), 0.4))
+        worn_off = g.rng(wn, chip - 0.02, chip + 0.06)
         c = g.mix(c, (0.022, 0.022, 0.025), worn_off)
     r = g.m('ADD', r0, g.m('MULTIPLY', cavity, 0.3))
     r = g.m('ADD', r, g.m('MULTIPLY', drip, 0.2))
@@ -600,9 +600,12 @@ def wear3(key, base, metal, rough, edge=1.0, emit=None, deck=False, rust_all=Fal
     r = g.m('ADD', r, g.m('MULTIPLY_ADD', panel, 0.14, -0.07), clamp=True)
     if rust_all:
         r = g.m('ADD', r, 0.25, clamp=True)
+    if P.get('rmin'):
+        # nothing on a deck is polished: a smooth, bright, finely patterned surface turns to sparkle under the sun
+        r = g.m('MAXIMUM', r, P['rmin'])
     mt = g.m('MULTIPLY', g.m('MULTIPLY_ADD', cavity, -0.7 * metal, metal), g.m('MULTIPLY_ADD', drip, -0.5, 1.0), clamp=True)
     if worn_off is not None:
-        mt = g.m('MAXIMUM', mt, g.m('MULTIPLY', worn_off, 0.7))
+        mt = g.m('MAXIMUM', mt, g.m('MULTIPLY', worn_off, 0.4))
     L.new(c, pbr.inputs['Base Color'])
     L.new(r, pbr.inputs['Roughness'])
     L.new(mt, pbr.inputs['Metallic'])
@@ -757,9 +760,9 @@ class Kit(Bins):
 
 FINISH = {
     # how worn: (edge strength, share of parts allowed wear, where wear gathers, stains)
-    'clean': dict(edge_k=1.2, gate=0.97, hot_rng=(0.74, 0.8), stain_k=0.0, bevel=0.06),
+    'clean': dict(edge_k=1.2, gate=0.97, hot_rng=(0.74, 0.8), stain_k=0.0, bevel=0.06, rmin=0.56),
     'plain': dict(edge_k=1.8, gate=0.88, hot_rng=(0.62, 0.7), stain_k=0.0, bevel=0.065),
-    'used': dict(edge_k=3.0, gate=0.7, hot_rng=(0.47, 0.56), stain_k=0.9, bevel=0.1),
+    'used': dict(edge_k=3.0, gate=0.7, hot_rng=(0.47, 0.56), stain_k=0.9, bevel=0.1, rmin=0.56),
     'legs': dict(edge_k=2.4, gate=0.55, hot_rng=(0.44, 0.56), stain_k=0.0, bevel=0.07),
 }
 _made = {}
@@ -813,10 +816,12 @@ def finishes(kind):
         M['deckold'] = wear3('DeckOld', (0.03, 0.03, 0.033), 0.5, 0.75, edge=0.9, deck=True, mul=(0.4, 0.385, 0.37), tone=(0.4, 0.8))
         M['deckrust'] = wear3('DeckRust', (0.03, 0.025, 0.022), 0.4, 0.8, edge=0.6, deck=True, mul=(0.3, 0.27, 0.25), tone=(0.3, 0.85), rusty=0.85)
         M['deckhide'] = wear3('DeckHide', (0.006, 0.006, 0.007), 0.2, 0.9, edge=0.0)
+        # grating bars: thin, close together and seen against black, so dark, rough and hardly worn at all
+        M['grillebar'] = wear3('GrilleBar', (0.045, 0.047, 0.053), 0.5, 0.82, edge=0.12)
         M['slabtop'] = wear3('SlabTop', (0.006, 0.006, 0.007), 0.2, 0.9, edge=0.0)
         M['deckunder'] = wear3('DeckUnder', (0.03, 0.032, 0.037), 0.8, 0.75, edge=0.9)
         M['hazard'] = wear3('Hazard', (0.78, 0.4, 0.012), 0.0, 0.6, edge=0.0, chip=0.53, grime=0.3)
-        M['stencil'] = wear3('Stencil', (0.55, 0.55, 0.52), 0.0, 0.62, edge=0.0, chip=0.57, grime=0.3)
+        M['stencil'] = wear3('Stencil', (0.4, 0.4, 0.38), 0.0, 0.7, edge=0.0, chip=0.57, grime=0.3)
         # the legs: blackened sections, paler braces and ties, a concrete footing
         M['legsteel'] = wear3('LegSteel', (0.05, 0.052, 0.06), 0.9, 0.55, edge=1.25, streaks=0.9)
         M['leggalv'] = wear3('LegGalv', (0.21, 0.215, 0.225), 1.0, 0.5, edge=0.9, streaks=0.7)
@@ -987,7 +992,7 @@ def plating_k(b, poly, z, rng, a, lane, cross=None, grille=0.07, hatch=0.04, old
             # a grille: a real hole with bars over it and a frame round it, black from any distance
             n = max(3, int(sx / 0.2))
             for k in range(n):
-                box(b, 'steel', (0.045, sy - 0.1, 0.03), M @ T(-sx / 2 + (k + 0.5) * sx / n, 0, -0.016), bevel=False)
+                box(b, 'grillebar', (0.045, sy - 0.1, 0.03), M @ T(-sx / 2 + (k + 0.5) * sx / n, 0, -0.016), bevel=False)
             for e in (-1, 1):
                 box(b, 'steel', (sx, 0.08, 0.06), M @ T(0, e * (sy / 2 - 0.04), -0.014))
                 box(b, 'steel', (0.08, sy, 0.06), M @ T(e * (sx / 2 - 0.04), 0, -0.014))
@@ -1059,7 +1064,7 @@ def corner_drop(b, i):
         x = -DROP + 0.08 + k * (DROP - 0.16) / (n - 1)
         hw = (-x) * math.tan(math.pi / 3) - 0.05
         if hw > 0.05:
-            box(b, 'steel', (0.04, hw * 2, 0.03), F @ T(x, 0, -0.03), bevel=False)
+            box(b, 'grillebar', (0.04, hw * 2, 0.03), F @ T(x, 0, -0.03), bevel=False)
     box(b, 'steel', (0.1, half * 2 - 0.05, 0.12), F @ T(-DROP - 0.05, 0, -0.01))
 
 def corner_notch(b, i):
@@ -1072,7 +1077,7 @@ def corner_notch(b, i):
         box(b, 'steel', (s * 2 + 0.1, 0.09, 0.07), F @ T(0, e * s, 0.035))
         box(b, 'steel', (0.09, s * 2 + 0.1, 0.07), F @ T(e * s, 0, 0.035))
     for k in range(5):
-        box(b, 'steel', (0.04, s * 2 - 0.08, 0.03), F @ T(-s + (k + 0.5) * s * 2 / 5, 0, 0.04), bevel=False)
+        box(b, 'grillebar', (0.04, s * 2 - 0.08, 0.03), F @ T(-s + (k + 0.5) * s * 2 / 5, 0, 0.04), bevel=False)
     hazard_band(b, F @ T(-s - 0.24, 0, 0) @ RZ(math.pi / 2), s * 2, 0.16, 0.014)
 
 def corner_balcony(b, i):
@@ -1084,7 +1089,7 @@ def corner_balcony(b, i):
     box(b, 'deckhide', (x1 - x0 - 0.16, hw * 2 - 0.16, 0.01), F @ T((x0 + x1) / 2, 0, top + 0.004), bevel=False)
     n = 9
     for k in range(n):
-        box(b, 'leggalv', (0.035, hw * 2 - 0.16, 0.03), F @ T(x0 + 0.1 + (k + 0.5) * (x1 - x0 - 0.2) / n, 0, top + 0.02), bevel=False)
+        box(b, 'grillebar', (0.035, hw * 2 - 0.16, 0.03), F @ T(x0 + 0.1 + (k + 0.5) * (x1 - x0 - 0.2) / n, 0, top + 0.02), bevel=False)
     for e in (-1, 1):
         box(b, 'steel', (x1 - x0, 0.08, 0.1), F @ T((x0 + x1) / 2, e * (hw - 0.04), top + 0.03))
         beam(b, 'beam', F @ Vector((x1 - 0.1, e * (hw - 0.12), top - 0.12)), F @ Vector((-0.5, e * (hw - 0.12), -0.82)), 0.07, 0.09)
@@ -1173,7 +1178,7 @@ def edge_beam(b, i, extras, rng):
             w = 1.25
             box(b, 'deckhide', (w - 0.1, 0.3, 0.01), F @ T(x, 0.15, -0.1), bevel=False)
             for m in range(7):
-                box(b, 'leggalv', (0.035, 0.3, 0.03), F @ T(x - w / 2 + 0.09 + m * (w - 0.18) / 6, 0.15, -0.09), bevel=False)
+                box(b, 'grillebar', (0.035, 0.3, 0.03), F @ T(x - w / 2 + 0.09 + m * (w - 0.18) / 6, 0.15, -0.09), bevel=False)
             box(b, 'steel', (w, 0.06, 0.08), F @ T(x, 0.3, -0.1))
             for s in (-1, 1):
                 box(b, 'steel', (0.06, 0.3, 0.08), F @ T(x + s * (w / 2 - 0.03), 0.15, -0.1))
