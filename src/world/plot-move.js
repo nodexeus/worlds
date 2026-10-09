@@ -34,17 +34,32 @@ export const POOL_RINGS = 12
 
 export const cellKey = (q, r) => `${q},${r}`
 
-/**
- * Whether a cell is on a district's own side. The other side is where the square is, and past
- * it the other district: see `districts.js`. Nothing is given a cell there and nothing may be
- * carried to one, which is what keeps two districts from ever being run together.
- */
-export const inDistrict = (cell) => cell.q >= 0
-
 /** Hex distance in axial coordinates: the cube distance, halved. */
 export function hexDistance(a, b) {
   return (Math.abs(a.q - b.q) + Math.abs(a.q + a.r - b.q - b.r) + Math.abs(a.r - b.r)) / 2
 }
+
+/**
+ * How far back toward the square a district reaches, in its own terms and measured straight
+ * across (`q + r / 2`). The square's nearer platform is at -5 on that measure and the other
+ * district's edge at -8, so this leaves each district round for three platforms on every side
+ * of its origin and the two of them five platforms apart at their nearest.
+ */
+const EDGE = -3
+
+/**
+ * Whether a cell is a district's own to stand on. Nothing is given a cell that is not, and
+ * nothing may be carried to one, which is what keeps the two districts from ever being run
+ * together and keeps both back from the square between them. See `districts.js`.
+ */
+export const inDistrict = (cell) => cell.q + cell.r / 2 >= EDGE
+
+/**
+ * Cells of a district nobody may claim, in its own terms. There are none: the gate and the
+ * Library used to stand inside the one colony there was and had to be kept clear, and now
+ * stand outside both, behind `inDistrict`.
+ */
+const KEPT_CLEAR = Object.freeze([])
 
 /**
  * Is the colony one landmass?
@@ -65,7 +80,7 @@ export function isConnected(out) {
   const cells = new Map()
   for (const [, list] of out) for (const c of list) cells.set(cellKey(c.q, c.r), c)
   if (cells.size < 2) return true
-  const core = new Set(CORE_CELLS.map(c => cellKey(c.q, c.r)))
+  const core = new Set(KEPT_CLEAR.map(c => cellKey(c.q, c.r)))
   const passable = new Set([...cells.keys(), ...core])
   const [start] = cells.keys()
   const seen = new Set([start])
@@ -111,7 +126,7 @@ export function fits(layout, name, dq, dr) {
     if (id === name) continue
     for (const c of list) occupied.add(cellKey(c.q, c.r))
   }
-  const core = new Set(CORE_CELLS.map(c => cellKey(c.q, c.r)))
+  const core = new Set(KEPT_CLEAR.map(c => cellKey(c.q, c.r)))
   for (const c of moved) {
     const k = cellKey(c.q, c.r)
     if (core.has(k) || occupied.has(k)) return false
@@ -144,7 +159,7 @@ export function moveIsValid(layout, name, dq, dr) {
 export function componentsOf(layout) {
   const owner = new Map()
   for (const [name, list] of layout) for (const c of list) owner.set(cellKey(c.q, c.r), name)
-  const core = new Set(CORE_CELLS.map(c => cellKey(c.q, c.r)))
+  const core = new Set(KEPT_CLEAR.map(c => cellKey(c.q, c.r)))
 
   const groups = []
   const placed = new Set()
@@ -185,7 +200,7 @@ function touchesOthers(layout, name) {
     if (id === name) continue
     for (const c of list) others.add(cellKey(c.q, c.r))
   }
-  for (const c of CORE_CELLS) others.add(cellKey(c.q, c.r))
+  for (const c of KEPT_CLEAR) others.add(cellKey(c.q, c.r))
   for (const c of layout.get(name)) {
     for (const [dq, dr] of HEX_DIRS) if (others.has(cellKey(c.q + dq, c.r + dr))) return true
   }
@@ -258,7 +273,7 @@ export function planMove(layout, name, dq, dr) {
 
   const stranded = groups.filter((g) => g !== anchor).sort((a, b) => b.size - a.size)
 
-  const core = new Set(CORE_CELLS.map(c => cellKey(c.q, c.r)))
+  const core = new Set(KEPT_CLEAR.map(c => cellKey(c.q, c.r)))
   const placed = new Set()
   for (const zone of anchor) for (const c of after.get(zone)) placed.add(cellKey(c.q, c.r))
 

@@ -91,3 +91,47 @@ export function heightOnCrossings(spans, x, z, halfWidth, overlap) {
   return null
 }
 
+
+/**
+ * The walkway from the square out to a district: a long level run of plates, and at the far
+ * end one flight of stairs when the workspace it arrives at stands a level up.
+ *
+ * It runs in a straight line between the middles of two platforms, from the rim of one to
+ * the rim of the other. A flight is as long as the gap between two neighbouring workspaces,
+ * which is what the stair is made to span, and the plates share out the rest evenly, each as
+ * near that same length as divides it.
+ *
+ * @param {{x: number, z: number}} from  the middle of the square's platform
+ * @param {{x: number, z: number}} to    the middle of the platform arrived at
+ * @param {object} world
+ * @param {number} world.reach      from the middle of a platform to its rim
+ * @param {number} world.gap        how far each workspace pulls its outside edges in
+ * @param {number} world.levelStep  how far apart levels are
+ * @param {number} world.deckTop    height of a ground-level deck's top face
+ * @param {number} world.rise       levels climbed at the far end: 0 or 1
+ * @returns {{spans: Span[], plates: Array<{x: number, z: number, size: number}>,
+ *   stair: {x: number, z: number} | null, heading: number, y: number} | null}
+ *   null when the two platforms are too near for a walkway to fit between them
+ */
+export function causewayOf(from, to, { reach, gap, levelStep, deckTop, rise }) {
+  const length = Math.hypot(to.x - from.x, to.z - from.z)
+  const run = rise > 0 ? gap * 2 : 0
+  const level = length - reach * 2 - run
+  if (!(level > gap)) return null
+  const ux = (to.x - from.x) / length
+  const uz = (to.z - from.z) / length
+  const at = (along) => ({ x: from.x + ux * along, z: from.z + uz * along })
+
+  const count = Math.max(1, Math.round(level / (gap * 2)))
+  const size = level / count
+  const plates = []
+  for (let n = 0; n < count; n++) plates.push({ ...at(reach + size * (n + 0.5)), size })
+
+  const spans = [{ ...at(reach + level / 2), ux, uz, half: level / 2, y0: deckTop, rise: 0 }]
+  let stair = null
+  if (run) {
+    stair = at(length - reach - run / 2)
+    spans.push({ ...stair, ux, uz, half: gap, y0: deckTop, rise: levelStep })
+  }
+  return { spans, plates, stair, heading: Math.atan2(ux, uz), y: deckTop }
+}

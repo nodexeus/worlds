@@ -4,29 +4,29 @@ import { LIBRARY_CELL, CORE_CELLS, fits, componentsOf, isConnected, planMove } f
 
 const zones = entries => new Map(Object.entries(entries))
 
-test('the Library reserves its cell against direct and planned workspace moves', () => {
-  const layout = zones({ work: [{ q: 0, r: 0 }] })
-  assert.equal(fits(layout, 'work', LIBRARY_CELL.q, LIBRARY_CELL.r), false)
-  assert.equal(planMove(layout, 'work', LIBRARY_CELL.q, LIBRARY_CELL.r), null)
+test('the gate and the Library stand outside every district: no workspace is given their ground or can be carried onto it', async () => {
+  const { toFrame } = await import('../src/world/districts.js')
+  const { inDistrict } = await import('../src/world/plot-move.js')
   assert.equal(CORE_CELLS.length, 2)
+  for (const district of ['local', 'crew']) {
+    for (const cell of toFrame(district, [...CORE_CELLS])) {
+      assert.equal(inDistrict(cell), false)
+      const layout = zones({ work: [{ q: 0, r: 0 }] })
+      assert.equal(fits(layout, 'work', cell.q, cell.r), false)
+      assert.equal(planMove(layout, 'work', cell.q, cell.r), null)
+    }
+  }
 })
 
-test('core campus ground connects workspaces without becoming a workspace', () => {
-  const layout = zones({ west: [{ q: -3, r: 1 }], east: [{ q: -1, r: 2 }] })
-  assert.equal(isConnected(layout), true)
-  assert.deepEqual([...componentsOf(layout)[0]].sort(), ['east', 'west'])
-})
-
-test('allocation protects both core structures and relocates a legacy occupant', async () => {
+test('a workspace remembered on ground that is no longer a district\'s is moved, and the rest stay put', async () => {
   const { allocateCells } = await import('../src/world/plots.js')
-  const previous = zones({ legacy: [LIBRARY_CELL], stable: [{ q: 0, r: 0 }] })
+  const { inDistrict } = await import('../src/world/plot-move.js')
+  const previous = zones({ legacy: [{ q: -5, r: 0 }], stable: [{ q: 0, r: 0 }] })
   const projects = [{ id: 'legacy', size: 7 }, { id: 'stable', size: 7 }, { id: 'new', size: 20 }]
   const allocated = allocateCells(projects, previous)
-  for (const cells of allocated.values()) {
-    for (const cell of cells) assert.ok(!CORE_CELLS.some(core => core.q === cell.q && core.r === cell.r))
-  }
+  for (const cells of allocated.values()) for (const cell of cells) assert.ok(inDistrict(cell))
   assert.deepEqual(allocated.get('stable')[0], { q: 0, r: 0 })
-  assert.deepEqual(previous.get('legacy'), [LIBRARY_CELL], 'saved input is not mutated')
+  assert.deepEqual(previous.get('legacy'), [{ q: -5, r: 0 }], 'saved input is not mutated')
   assert.equal(isConnected(allocated), true)
   assert.deepEqual(allocateCells(projects, allocated), allocated, 'later polls keep the migrated layout')
 })

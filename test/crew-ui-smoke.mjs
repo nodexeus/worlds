@@ -223,10 +223,12 @@ async function run() {
   await until(`t.world().plots.length === 2`, 'both plots are up')
   assert.deepEqual(await page(`t.world()`), { plots: [['Api', 1], ['Site', 1]], crew: [], buildings: ['Api', 'Site'] })
 
-  step('the crew\'s workspaces stand in their own district, with a walkway out to it from the square and none to the other')
-  const district = await page(`(() => { const colony = window.botCrossing.colony; return { furthestEast: Math.max(...colony.plotOrder.flatMap((plot) => plot.cells.map((cell) => cell.q))), square: colony.plaza.cells.map((cell) => cell.q + ',' + cell.r) } })()`)
-  assert.ok(district.furthestEast <= -5, 'every platform is past the gate, on the crew\'s side')
-  assert.deepEqual(district.square, ['-2,1', '-1,1', '-3,1', '-4,1'])
+  step('the crew\'s workspaces stand in their own district, with one walkway out to it from the square')
+  const district = await page(`(() => { const colony = window.botCrossing.colony; return { furthestEast: Math.max(...colony.plotOrder.flatMap((plot) => plot.cells.map((cell) => cell.q))), square: colony.plaza.cells.map((cell) => cell.q + ',' + cell.r), walkways: colony.causeways.map((way) => way.plates.length) } })()`)
+  assert.ok(district.furthestEast <= -4, 'every platform is past the gate, on the crew\'s side')
+  assert.deepEqual(district.square, ['-2,1', '-1,1'], 'the square is the gate and the Library, and no more')
+  assert.equal(district.walkways.length, 1)
+  assert.ok(district.walkways[0] >= 15, 'a long run of plates, not a platform')
 
   step('an agent is added, and its card opens')
   await page(`t.all('.cp-add .cc-b')[0].click()`)

@@ -24,10 +24,10 @@ import {
   PLOT_CELL,
 } from '../world/plots.js'
 import { CORE_CELLS, LIBRARY_CELL, translateCells } from '../world/plot-move.js'
-import { causeway, districtOf, frameDelta, toWorld } from '../world/districts.js'
+import { districtOf, frameDelta, landing, squareEnd, toWorld } from '../world/districts.js'
 import { readLevels, settleLevels } from '../world/plot-levels.js'
 import { HEX_DIRS } from '../world/plot-move.js'
-import { heightOnCrossings, onSpan, spanOf } from '../world/crossing-spans.js'
+import { causewayOf, heightOnCrossings, onSpan, spanOf } from '../world/crossing-spans.js'
 import { planCrossings } from '../world/crossings.js'
 import { Crossings } from '../world/crossing-models.js'
 import { loadModels } from '../world/kit.js'
@@ -524,17 +524,9 @@ export class Colony {
    * Raise or remove the plaza deck to suit the world. It takes the core cells, which no
    * workspace is ever given, and the same styling as every workspace's deck.
    */
-  /**
-   * The square and the walkways off it, as cells on the campus: the gate's and the Library's,
-   * then a walkway out to each district that has anything standing in it. A walkway to an
-   * empty district would lead nowhere, so it is not there until the district is.
-   */
+  /** The square: the gate's platform and the Library's, as cells on the campus. */
   _squareCells() {
-    const cells = CORE_CELLS.map((c) => ({ q: c.q, r: c.r }))
-    for (const district of ['local', 'crew']) {
-      if (this.districts?.has(district)) cells.push(...causeway(district))
-    }
-    return cells
+    return CORE_CELLS.map((c) => ({ q: c.q, r: c.r }))
   }
 
   _syncPlaza() {
@@ -849,8 +841,14 @@ export class Colony {
     // From here on, where each stands on the campus.
     const layout = new Map()
     for (const [name, cells] of remembered) layout.set(name, toWorld(districtOf(name), cells))
-    // The square reaches out to whichever districts are now there.
-    this._syncPlaza()
+    // Where each district's walkway from the square arrives: see `landing`.
+    this.landings = new Map()
+    for (const district of this.districts) {
+      const held = []
+      for (const [name, cells] of layout) if (districtOf(name) === district) for (const cell of cells) held.push({ ...cell, name })
+      const cell = landing(district, held)
+      if (cell) this.landings.set(district, cell)
+    }
     while (this.plotCells.size > LAYOUT_MEMORY) this.plotCells.delete(this.plotCells.keys().next().value)
     // A level is remembered for exactly as long as the ground is.
     for (const name of this.plotLevels.keys()) if (!this.plotCells.has(name)) this.plotLevels.delete(name)
@@ -949,6 +947,15 @@ export class Colony {
       }
       return { id: name, neighbours }
     })
+    // A walkway from the square is a neighbour too, for all that it is a long one: whoever
+    // it arrives at has to be within a flight of the square's own level.
+    for (const cell of this.landings?.values() || []) {
+      const square = plots.find((plot) => plot.id === PLAZA)
+      const arrived = plots.find((plot) => plot.id === cell.name)
+      if (!square || !arrived) continue
+      square.neighbours.add(cell.name)
+      arrived.neighbours.add(PLAZA)
+    }
     const levels = settleLevels(plots, new Map([...this.plotLevels, [PLAZA, 0]]), count)
     levels.delete(PLAZA)
     for (const [name, level] of levels) this.plotLevels.set(name, level)
@@ -964,17 +971,31 @@ export class Colony {
     const plan = style?.crossings
       ? planCrossings(this._decks().map((plot) => ({ id: plot.id, cells: plot.cells, level: plot.level })))
       : []
-    const signature = JSON.stringify(plan)
+    const elevation = (id) => (id === PLAZA ? this.plaza : this.plots.get(id))?.elev || 0
+    // And the long walkways, from the square out to each district that is there.
+    const causeways = []
+    if (style?.crossings) {
+      for (const [district, cell] of this.landings || []) {
+        const end = squareEnd(district)
+        const way = causewayOf(hexToWorld(end.q, end.r), hexToWorld(cell.q, cell.r), {
+          reach: PLOT_APOTHEM - style.gap, gap: style.gap, levelStep: style.levelStep, deckTop: DECK_TOP,
+          rise: this.plots.get(cell.name)?.level ? 1 : 0,
+        })
+        if (way) causeways.push(way)
+      }
+    }
+    const signature = JSON.stringify([plan, causeways])
     if (signature === this._crossingSignature) return
     this._crossingSignature = signature
     this.crossingPlan = plan
-    const elevation = (id) => (id === PLAZA ? this.plaza : this.plots.get(id))?.elev || 0
-    this.crossingSpans = plan.map((crossing) =>
-      spanOf(crossing, { gap: style.gap, levelStep: style.levelStep, deckTop: DECK_TOP, elevation })
-    )
+    this.causeways = causeways
+    this.crossingSpans = [
+      ...plan.map((crossing) => spanOf(crossing, { gap: style.gap, levelStep: style.levelStep, deckTop: DECK_TOP, elevation })),
+      ...causeways.flatMap((way) => way.spans),
+    ]
     // Where the crew may step off a deck has just changed.
     if (this.nav) this._rebuildNavigation()
-    if (!plan.length) {
+    if (!plan.length && !causeways.length) {
       this.crossings.clear()
       return
     }
@@ -986,6 +1007,7 @@ export class Colony {
         gap: style.gap,
         levelStep: style.levelStep,
         elevation,
+        causeways,
       })
     }, () => {})
   }
