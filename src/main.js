@@ -7,6 +7,7 @@ import { CameraRig } from './core/camera.js'
 import { Colony, STATUS_LABEL, STATUS_ORDER, statusFor, transcriptProgress } from './game/colony.js'
 import { Hud } from './ui/hud.js'
 import { installCrew } from './crew/index.js'
+import { agentIdOf, crewWorld, isCrew } from './crew/world.js'
 import { PLANETS } from './world/planet.js'
 import { DECK_TOP, PLOT_CELL, hexToWorld, worldToHex } from './world/plots.js'
 import { planMove } from './world/plot-move.js'
@@ -214,7 +215,7 @@ const actions = {
    * behaviour you actually want and the reason this is a timestamp rather than a flag.
    */
   markViewed: () => {
-    const thread = threads.find((t) => t.id === selectedId)
+    const thread = session(selectedId)
     if (!thread) return
     state.viewedAt = { ...(state.viewedAt || {}), [thread.id]: Date.now() }
     queueSave()
@@ -260,7 +261,9 @@ const actions = {
   },
 
   openThread: async () => {
-    const thread = threads.find((t) => t.id === selectedId)
+    // One of the crew is opened by its card, not on this computer.
+    if (isCrew(selectedId)) return void crew?.open(agentIdOf(selectedId))
+    const thread = session(selectedId)
     if (!thread) return
     try {
       const shown = await openThread(thread, ...openChoice())
@@ -278,7 +281,7 @@ const actions = {
   // the astronaut walks back to the ship. The harness's own records are never touched — see
   // `reconcileArchived` in server/api.mjs for why that stopped being worth doing.
   archiveThread: () => {
-    const thread = threads.find((t) => t.id === selectedId)
+    const thread = session(selectedId)
     if (!thread) return
     const foldedBefore = new Set(colony.dormantProjects || [])
     state.archived = [...new Set([...state.archived, thread.id])]
@@ -323,7 +326,15 @@ const hud = new Hud(app, settings, actions)
 // that only monitors local sessions has none, and then this draws nothing.
 let crew = null
 installCrew(hud.el, { toast: (message, kind) => hud.toast(message, kind) }).then(
-  (installed) => { crew = installed },
+  (installed) => {
+    crew = installed
+    if (!crew) return
+    // The campus draws the crew, so who is in it and where is the campus's business too.
+    crew.store.subscribe((what) => {
+      if (what.kind === 'roster' || what.kind === 'workspaces') redraw()
+    })
+    redraw()
+  },
   (error) => console.error('crew:', error)
 )
 
@@ -331,6 +342,15 @@ installCrew(hud.el, { toast: (message, kind) => hud.toast(message, kind) }).then
 
 let lastVoiced = null
 let lastPhrase = 0
+
+/**
+ * Put up the card for whoever is selected. That card is a local session's: what it offers is
+ * opening the session on this computer and filing it away. One of the crew has its own.
+ */
+function showSelection(agent, thread) {
+  if (isCrew(agent.id)) hud.setSelection(null, null)
+  else hud.setSelection(agent, thread)
+}
 
 function select(id, { fly = false } = {}) {
   selectedId = id
@@ -345,7 +365,10 @@ function select(id, { fly = false } = {}) {
   }
   colony.astronauts.setSelected(agent)
   const thread = threads.find((t) => t.id === id) || agent.thread
-  hud.setSelection(agent, thread)
+  // One of the crew is talked to, not read about: its card opens, at whatever it is asking.
+  const member = isCrew(id)
+  if (member) crew?.open(agentIdOf(id))
+  showSelection(agent, thread)
   // It answers, in the voice of its kind. One of that voice's phrases, from where it is
   // standing, never the same one twice in a row.
   if (agent.id !== lastVoiced) {
@@ -358,7 +381,7 @@ function select(id, { fly = false } = {}) {
     ambience.play(`${voice}-${n}`, { x: agent.pos.x, y: agent.pos.y + 0.8, z: agent.pos.z, gain: 0.9 })
   }
   // Picking somebody is also picking the zone they are standing on: the sidebar follows.
-  if (thread?.project && colony.plots.has(thread.project)) selectedProject = thread.project
+  if (!member && thread?.project && colony.plots.has(thread.project)) selectedProject = thread.project
   syncProject()
   if (fly) {
     rig.focus(new THREE.Vector3(agent.pos.x, 0, agent.pos.z), { distance: Math.min(rig.desiredDistance, 26) })
@@ -369,6 +392,12 @@ function select(id, { fly = false } = {}) {
 /** Open a zone's sidebar. Any selected astronaut from a different zone lets go. */
 function selectProject(name, { fly = false } = {}) {
   if (!name || !colony.plots.has(name)) return
+  // The sidebar is about a folder of sessions on this computer. A crew's workspace is not
+  // one, and what there is to do with it is done from the crew's own list.
+  if (colony.plots.get(name).crew) {
+    if (fly) actions.focusProject(name)
+    return
+  }
   selectedProject = name
   const current = threads.find((t) => t.id === selectedId)
   if (current && current.project !== name) select(null, {})
@@ -944,6 +973,19 @@ window.addEventListener('keydown', (e) => {
 
 // ── data ──────────────────────────────────────────────────────────────────────────────
 
+/**
+ * The session with this id, for whatever is done to a session and to nothing else: marking it
+ * viewed, filing it away. One of the crew is not one, whoever happens to be selected.
+ */
+const session = (id) => (isCrew(id) ? undefined : threads.find((t) => t.id === id))
+
+/** What the last scan found, kept so the campus can be drawn again when only the crew changed. */
+let scanned = []
+/** Draw the campus again from what is already known. Waits for the first scan to have happened. */
+function redraw() {
+  if (seenFirstRoster) applyThreads(scanned)
+}
+
 function applyThreads(list) {
   // Parked while a plot is in hand. `allocateCells` would leave the carried zone's cells
   // alone, but a sibling that grew a thread still rebuilds — and any rebuild pass disposes
@@ -953,7 +995,14 @@ function applyThreads(list) {
     drag.pendingThreads = list
     return
   }
-  list = withErrands(list)
+  // Only what was scanned. Much of this file hands back the list it was last given, crew and
+  // all, and the crew are read afresh below every time: kept, they would be drawn twice, and
+  // as they were rather than as they are.
+  list = list.filter((t) => !t.crew)
+  scanned = list
+  // The crew stand on the same campus as the sessions scanned from this computer.
+  const drawn = crew ? crewWorld(crew.store.state) : { members: [], places: [] }
+  list = [...withErrands(list), ...drawn.members]
 
   // A thread you have said you looked at stops counting as unread until it moves on again.
   // Done here rather than in `statusFor` so the card, the badge and the astronaut all agree.
@@ -979,13 +1028,14 @@ function applyThreads(list) {
   }
   if (firstSeen) queueSave()
 
-  const stats = colony.setThreads(list, archivedSet, hiddenSet, known)
+  const stats = colony.setThreads(list, archivedSet, hiddenSet, known, drawn.places)
   hud.setStats(stats)
   chimeForNewWaiting(list, archivedSet, hiddenSet)
 
   legendProjects = colony.plotOrder
     .map((plot) => ({
       name: plot.name,
+      title: plot.title,
       accent: plot.accent,
       count: list.filter((t) => !t.archived && !archivedSet.has(t.id) && t.project === plot.name).length,
       urgent: colony.urgentPlots?.has(plot.id) ?? false,
@@ -995,7 +1045,7 @@ function applyThreads(list) {
   // Keep the card honest if the thread it is showing changed underneath it.
   if (selectedId) {
     const still = colony.agentFor(selectedId)
-    if (still) hud.setSelection(still, list.find((t) => t.id === selectedId) || still.thread)
+    if (still) showSelection(still, list.find((t) => t.id === selectedId) || still.thread)
     else select(null, {})
   }
   // Which also repaints the legend, so the open zone's chip is lit by the same pass.

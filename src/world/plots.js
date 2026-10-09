@@ -139,8 +139,9 @@ const cellsNeeded = (threadCount) =>
  * would work and does not, because the last cell of one ring and the first of the next sit
  * on opposite sides of the colony.
  *
- * @param projects [{ id, size }], biggest first — the order only decides who gets the
- *   innermost seed among repos that are *new*.
+ * @param projects [{ id, size, cells? }], biggest first — the order only decides who gets the
+ *   innermost seed among repos that are *new*. `cells` is an exact count, taken in place of
+ *   the one worked out from `size`.
  * @param previous Map of id → cells from the last pass (or a saved colony file).
  * @returns Map of id → cells.
  */
@@ -160,6 +161,9 @@ function layOut(projects, previous) {
   // one starts — and every hand-back rebuilds the plot and walks its whole crew. A tile is
   // only returned once the repo has lost a few threads past the line.
   const wanted = projects.map((p) => {
+    // A place that names its own size is given it, with none of the give in what follows: its
+    // size is a count of who stands on it, which does not hover about a line.
+    if (p.cells) return { id: p.id, want: Math.max(1, Math.min(MAX_CELLS, p.cells)) }
     const before = previous.get(p.id)
     let want = cellsNeeded(p.size)
     if (before && before.length > want) want = Math.min(before.length, cellsNeeded(p.size + 3))
@@ -354,6 +358,8 @@ function kerbUv(geo) {
 
 /** Centre of a deck tile to the middle of one of its edges. */
 const APOTHEM = TILE * Math.sqrt(3) / 2
+/** From the middle of a platform to the middle of one of its edges. */
+export const PLOT_APOTHEM = APOTHEM
 
 /**
  * A deck tile cut to an arbitrary convex outline, already in place at (cx, cz). By default its

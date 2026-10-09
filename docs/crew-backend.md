@@ -383,6 +383,7 @@ busy agent, or start a new task in a workspace. All of it is `src/crew/`:
 | `markdown.js` | The markdown agents write, as data. Never HTML. |
 | `panel.js`, `card.js`, `render.js` | The crew list, a card, and an item of a transcript, as elements. |
 | `dock.js` | The crew channel, docked at the bottom right: one bar until it is opened. |
+| `world.js` | The crew as the campus draws it: a robot an agent, a plot a workspace. |
 | `index.js` | Puts it together, and draws nothing on a monitor-only server. |
 
 The first six touch no DOM and are tested in Node. Nothing an agent or a person wrote is
@@ -394,6 +395,35 @@ An agent's status in the page is the status on the latest event about it. The ro
 after its own changes, after a reconnect, when the window regains focus and every 20
 seconds. `seq` on the agent list is what lets it tell a snapshot that is behind the stream
 from one that is ahead.
+
+### On the campus
+
+The campus draws the crew on the same ground as the sessions scanned from the computer it
+runs on. `world.js` says the crew in the campus's terms, and `main.js` hands both to the
+colony whenever a scan comes back or the crew changes.
+
+- **A workspace is a plot**, there as soon as it is made and for as long as it exists. It is
+  kept by the workspace's id and labelled with its name, so renaming one moves nothing.
+- **An agent is a robot**, of the kind the roster gives it. A new one walks in through the
+  gate. Its eyes and the marker over its head say how it is doing, as for a session.
+- **An agent with a workspace stands on it**, by a building. An agent with none roams: it
+  walks somewhere else on the crew's platforms or the plaza and potters there, stops by
+  another of the crew, or sits down for a while (`src/agents/roaming.js`).
+- **Clicking a robot opens its card.** The sidebar and the card for local sessions are not
+  shown for the crew: there is no folder on this computer behind a workspace.
+
+What a workspace costs to draw is bounded by who is in the crew, not by its history:
+
+| | |
+| --- | --- |
+| Agents to a platform | 2 |
+| Buildings to a platform | 2, one for each agent standing there |
+| Platforms to a workspace | One for every 2 agents on it, and at least one |
+| An empty workspace | One platform with one building |
+
+A building belongs to its spot on the platform and to whoever is standing at it. An earlier
+conversation raises nothing. Sessions scanned from the computer are drawn as they always
+were, a building each.
 
 ## Running it
 

@@ -28,7 +28,8 @@ export function unhideProject(hidden, name) {
 export function liveThreadsForColony(threads, archivedIds, hiddenProjects) {
   const archived = archivedIds instanceof Set ? archivedIds : new Set(archivedIds)
   const hidden = hiddenProjects instanceof Set ? hiddenProjects : new Set(hiddenProjects)
-  return threads.filter((t) => !t.archived && !archived.has(t.id) && !hidden.has(t.project || 'unknown'))
+  // Filing away and hiding are for sessions. The crew is whoever the roster says it is.
+  return threads.filter((t) => t.crew || (!t.archived && !archived.has(t.id) && !hidden.has(t.project || 'unknown')))
 }
 
 /**
@@ -39,6 +40,6 @@ export function hiddenCatalog(hidden, threads) {
   const names = [...new Set(hidden.map(String).filter(Boolean))].sort((a, b) => a.localeCompare(b))
   return names.map((name) => ({
     name,
-    count: threads.filter((t) => !t.archived && (t.project || 'unknown') === name).length,
+    count: threads.filter((t) => !t.crew && !t.archived && (t.project || 'unknown') === name).length,
   }))
 }

@@ -48,6 +48,8 @@ function startServer(port) {
       CODEX_HOME: path.join(temp, 'codex'),
       BOT_CROSSING_CLAUDE_DESKTOP: path.join(temp, 'no-desktop'),
       PORT: String(port),
+      // Its own saved campus, never the one in this checkout that a person's own server uses.
+      BOT_CROSSING_DATA: path.join(temp, 'campus'),
       WORLDS_DATABASE_URL: database,
       WORLDS_DATABASE_SCHEMA: schema,
       WORLDS_DATA_DIR: path.join(temp, 'data'),
@@ -141,6 +143,23 @@ const HELPERS = `
     chip(name, workspace) {
       [...this.card(name).querySelectorAll('.cc-chip')].find((chip) => chip.textContent === workspace).click()
     },
+    /** The crew as the campus has drawn it: its workspaces' plots, its robots, its buildings. */
+    world() {
+      const colony = window.botCrossing.colony
+      const title = (id) => colony.plots.get(id)?.title
+      return {
+        plots: colony.plotOrder.filter((plot) => plot.crew).map((plot) => [plot.title, plot.cells.length]).sort(),
+        crew: colony.astronauts.agents.filter((agent) => agent.thread?.crew && agent.state !== 'gone' && agent.state !== 'leaving')
+          .map((agent) => [agent.thread.title, agent.roams ? 'roams' : title(agent.thread.project), agent.status]).sort(),
+        buildings: [...colony.buildings.values()].filter((entry) => !entry.retiring).map((entry) => title(entry.plot)).sort(),
+      }
+    },
+    /** Look at one of the crew's workspaces from close by. */
+    lookAt(name) {
+      const { colony, rig } = window.botCrossing
+      const plot = colony.plotOrder.find((one) => one.title === name)
+      rig.focus(plot.middle || plot.center, { distance: 15 })
+    },
     dock: () => document.querySelector('.crew-dock'),
     box: () => document.querySelector('.crew-dock .cc-input'),
     /** The newest post in the channel, and parts of it. */
@@ -200,6 +219,10 @@ async function run() {
   await page(`t.all('.cp-add .cc-b')[1].click(), t.type(t.q('.cp-form input'), 'Api'), t.q('.cp-form form').requestSubmit()`)
   await until(`t.text('.cp-places') === 'SiteApi'`, 'the second workspace is listed')
 
+  step('each workspace is a plot on the campus, under its name, with one building and nobody on it')
+  await until(`t.world().plots.length === 2`, 'both plots are up')
+  assert.deepEqual(await page(`t.world()`), { plots: [['Api', 1], ['Site', 1]], crew: [], buildings: ['Api', 'Site'] })
+
   step('an agent is added, and its card opens')
   await page(`t.all('.cp-add .cc-b')[0].click()`)
   // A new agent is a name and a role. What it runs on is the server's business, never asked.
@@ -212,6 +235,11 @@ async function run() {
   assert.equal(await page(`t.line('Ada')`), 'idle')
   assert.equal(await page(`t.row('Ada').getAttribute('aria-pressed')`), 'true')
 
+  step('the new agent is a robot on the campus, with no workspace and so going where it likes')
+  await until(`t.world().crew.length === 1`, 'the robot is drawn')
+  assert.deepEqual(await page(`t.world().crew`), [['Ada', 'roams', 'idle']])
+  assert.deepEqual(await page(`t.world().buildings`), ['Api', 'Site'], 'an agent with no workspace raises nothing')
+
   step('with two workspaces and nothing to continue, it must be told where')
   await page(`t.type(t.card('Ada').querySelector('.cc-input'), 'Tidy the README')`)
   assert.equal(await page(`t.card('Ada').querySelector('.cc-send').disabled`), true)
@@ -223,6 +251,7 @@ async function run() {
   await page(`t.card('Ada').querySelector('.cc-send').click()`)
   await until(`t.line('Ada') === 'working · Site'`, 'the card says it is working')
   assert.equal(await page(`t.row('Ada').dataset.status`), 'working')
+  await until(`JSON.stringify(t.world().crew) === '[["Ada","Site","working"]]'`, 'the robot is working on its workspace')
   await until(`t.card('Ada').querySelector('.cc-draft')?.textContent.length > 20`, 'text is streaming')
   await shot('02-working')
   await until(`t.notes('Ada').some((note) => note.startsWith('finished'))`, 'the turn finished')
@@ -263,7 +292,24 @@ async function run() {
   await until(`t.q('.cc-ask', t.card('Ada'))`, 'the question is on the card')
   assert.equal(await page(`t.line('Ada')`), 'needs you · Site')
   assert.equal(await page(`t.row('Ada').dataset.status`), 'waiting')
+  await until(`JSON.stringify(t.world().crew) === '[["Ada","Site","waiting"]]'`, 'the robot is waiting on the person')
   await shot('04-question')
+
+  step('clicking the robot opens its card, at the question')
+  await page(`t.q('.cc-ib[aria-label="Close"]', t.card('Ada')).click()`)
+  await until(`!t.card('Ada')`, 'the card is closed')
+  await page(`window.botCrossing.hud.actions.select(window.botCrossing.colony.astronauts.agents.find((agent) => agent.thread?.title === 'Ada').id)`)
+  await until(`t.q('.cc-ask', t.card('Ada'))`, 'the card is open at the question')
+  assert.equal(await page(`document.querySelector('.thread-pop')?.classList.contains('on') ?? false`), false, 'the card for a local session stays shut')
+  assert.doesNotMatch(await page(`document.body.innerText`), /crew:/, 'nothing on the page shows an id of the crew\'s')
+
+  step('what is done to a session from the keyboard is not done to one of the crew')
+  // The robot is still selected. On a session, A files it away and V marks it viewed.
+  await page(`(document.activeElement?.blur(), ['a', 'v'].forEach((key) => window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))))`)
+  await page(`window.botCrossing.poll()`)
+  await delay(600)
+  assert.deepEqual(await page(`t.world().crew`), [['Ada', 'Site', 'waiting']], 'the robot is still there')
+  assert.deepEqual(await page(`fetch('/api/state').then((res) => res.json()).then((state) => [(state.archived || []).length, Object.keys(state.viewedAt || {}).length])`), [0, 0])
   await page(`t.all('.cc-ask .cc-b', t.card('Ada'))[0].click()`)
   await until(`t.notes('Ada').some((note) => note === 'Which should I begin with? answered: The README')`, 'the answer is shown')
   await until(`t.all('.cc-ag', t.card('Ada')).at(-1).textContent.includes('begin with: The README')`, 'the agent went on with it')
@@ -321,6 +367,8 @@ async function run() {
   await page(`t.chip('Ada', 'Api')`)
   await page(`t.say('Ada', 'hello from the other workspace')`)
   await until(`t.line('Ada') === 'working · Api'`, 'it moved to the other workspace')
+  await until(`t.world().crew[0][1] === 'Api'`, 'the robot belongs to the other plot now')
+  assert.deepEqual(await page(`t.world().buildings`), ['Api', 'Site'], 'a second task raised no second building')
   await until(`t.notes('Ada').some((note) => note.startsWith('finished'))`, 'the new task finished')
   assert.equal(await page(`t.all('.cc-me', t.card('Ada')).length`), 1, 'the card shows the new conversation only')
   await page(`t.q('.cc-ib[aria-label="Earlier conversations"]', t.card('Ada')).click()`)
@@ -365,6 +413,15 @@ async function run() {
   const [ada, quill] = await page(`[t.card('Ada'), t.card('Quill')].map((card) => card.getBoundingClientRect().toJSON())`)
   assert.ok(quill.left >= ada.right, 'a second card is put beside the first while there is room')
   await shot('08-two-cards')
+  await until(`t.world().crew.length === 2`, 'the specialist is drawn too')
+  assert.deepEqual(await page(`t.world().crew.find(([name]) => name === 'Quill')`), ['Quill', 'roams', 'idle'])
+  assert.deepEqual(await page(`t.world().buildings`), ['Api', 'Site'])
+  // The campus on its own, with the cards out of the way.
+  await page(`(t.q('.crew-layer').style.visibility = 'hidden', t.lookAt('Site'))`)
+  await delay(4000)
+  await shot('08b-campus')
+  assert.equal(await page(`document.querySelector('.thread-pop').classList.contains('on')`), false, 'the card for a local session stays shut however often the campus is redrawn')
+  await page(`t.q('.crew-layer').style.visibility = ''`)
 
   step('a pinned card comes back after a reload, and an unpinned one does not')
   await page(`t.q('.cc-ib[aria-label^="Pin"]', t.card('Ada')).click()`)
