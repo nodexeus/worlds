@@ -23,14 +23,17 @@ function hash(text) {
  * @param {string} name
  * @param {Map<string, number>} remembered  levels already decided, by workspace name
  * @param {number} count  how many levels this world has; one or fewer means it has none
- * @returns {number} a whole number from 0 to `count - 1`
+ * @param {number} [floor]  the lowest level a workspace may stand on. Above zero on a world
+ *   where every workspace is raised and the ground is left to the square.
+ * @returns {number} a whole number from `floor` to `count - 1`
  */
-export function levelFor(name, remembered, count) {
+export function levelFor(name, remembered, count, floor = 0) {
   if (!(count > 1)) return 0
   const known = remembered.get(name)
-  // A remembered level from a world with more levels than this one is brought down to fit.
-  if (Number.isInteger(known) && known >= 0) return Math.min(known, count - 1)
-  return hash(name) % count
+  // A remembered level from a world with more levels than this one is brought down to fit,
+  // and one from before there was a floor is lifted onto it.
+  if (Number.isInteger(known) && known >= 0) return Math.max(floor, Math.min(known, count - 1))
+  return floor + (hash(name) % (count - floor))
 }
 
 /**
@@ -52,10 +55,14 @@ export function levelFor(name, remembered, count) {
  *   workspaces it touches
  * @param {Map<string, number>} remembered
  * @param {number} count  how many levels this world has
+ * @param {object} [rules]
+ * @param {number} [rules.floor]  the lowest level a workspace may stand on: see `levelFor`
+ * @param {Set<string>} [rules.grounded]  what stands on the ground whatever the floor is, and
+ *   is never moved: the square
  * @returns {Map<string, number>} a level for every workspace in `plots`
  */
-export function settleLevels(plots, remembered, count) {
-  const levels = new Map(plots.map((plot) => [plot.id, levelFor(plot.id, remembered, count)]))
+export function settleLevels(plots, remembered, count, { floor = 0, grounded = new Set() } = {}) {
+  const levels = new Map(plots.map((plot) => [plot.id, grounded.has(plot.id) ? 0 : levelFor(plot.id, remembered, count, floor)]))
   if (!(count > 1)) return levels
   const touching = new Map(plots.map((plot) => [plot.id, [...plot.neighbours].filter((id) => levels.has(id)).sort()]))
   const ids = [...levels.keys()].sort()
@@ -76,10 +83,13 @@ export function settleLevels(plots, remembered, count) {
     return group
   }
 
+  // The campus is joined up outward from what cannot move, where there is such a thing.
+  const anchor = ids.find((id) => grounded.has(id)) ?? ids[0]
+
   // Each pass joins two groups that touch, so it cannot run for longer than there are
   // workspaces; the bound is there for worlds with more levels than have been thought about.
   for (let pass = 0; pass < ids.length * count; pass++) {
-    const main = groupOf(ids[0])
+    const main = groupOf(anchor)
     // Somebody outside the main group who touches somebody inside it, taken in a fixed order.
     let bridge = null
     for (const outside of ids) {
@@ -93,14 +103,15 @@ export function settleLevels(plots, remembered, count) {
     if (!bridge) {
       // Whatever is left over touches nothing in the main group. It may still be a group of
       // its own that needs joining up, so the search starts again from one of its members.
-      const stray = ids.find((id) => !main.has(id) && touching.get(id).some((other) => !joined(id, other)))
+      const stray = ids.find((id) => !grounded.has(id) && !main.has(id) && touching.get(id).some((other) => !joined(id, other)))
       if (!stray) break
       const other = touching.get(stray).find((id) => !joined(stray, id))
       levels.set(stray, levels.get(other) + Math.sign(levels.get(stray) - levels.get(other)))
       continue
     }
     // Brought to one level from its neighbour inside, on the side it was already on.
-    const { outside, inside } = bridge
+    // What stands on the ground stays there, so it is the other of the two that moves.
+    const [outside, inside] = grounded.has(bridge.outside) ? [bridge.inside, bridge.outside] : [bridge.outside, bridge.inside]
     levels.set(outside, levels.get(inside) + Math.sign(levels.get(outside) - levels.get(inside)))
   }
   return levels

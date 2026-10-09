@@ -134,3 +134,33 @@ test('a workspace that touches nothing keeps its own level', () => {
   const levels = settleLevels([{ id: 'alone', neighbours: [] }], new Map([['alone', 2]]), 3)
   assert.equal(levels.get('alone'), 2)
 })
+
+test('on a world where every workspace stands on stilts, none is given the ground', () => {
+  const names = Array.from({ length: 60 }, (_, n) => `project-${n}`)
+  const levels = names.map((name) => levelFor(name, new Map(), 6, 1))
+  assert.ok(levels.every((level) => level >= 1 && level <= 5), levels.join(' '))
+  // And all five of the raised levels are used, not just the lowest.
+  assert.deepEqual([...new Set(levels)].sort(), [1, 2, 3, 4, 5])
+  // One remembered on the ground, from before there was a floor, is lifted to the lowest deck.
+  assert.equal(levelFor('old', new Map([['old', 0]]), 6, 1), 1)
+  assert.equal(levelFor('old', new Map([['old', 4]]), 6, 1), 4)
+})
+
+test('the square stays on the ground, and whoever it is joined to is brought to the first level, never onto the ground', () => {
+  const plots = [
+    { id: 'square', neighbours: ['near'] },
+    { id: 'near', neighbours: ['square', 'far'] },
+    { id: 'far', neighbours: ['near'] },
+  ]
+  const remembered = new Map([['near', 4], ['far', 5]])
+  const levels = settleLevels(plots, remembered, 6, { floor: 1, grounded: new Set(['square']) })
+  assert.equal(levels.get('square'), 0)
+  assert.equal(levels.get('near'), 1, 'one flight up from the square')
+  assert.ok(levels.get('far') >= 1 && Math.abs(levels.get('far') - levels.get('near')) <= 1)
+})
+
+test('with no floor asked for, levels are decided exactly as before', () => {
+  const plots = [{ id: 'a', neighbours: ['b'] }, { id: 'b', neighbours: ['a'] }]
+  assert.deepEqual([...settleLevels(plots, new Map(), 3)], [...settleLevels(plots, new Map(), 3, {})])
+  assert.equal(levelFor('a', new Map(), 3), levelFor('a', new Map(), 3, 0))
+})

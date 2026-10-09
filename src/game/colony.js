@@ -141,6 +141,8 @@ export function transcriptProgress(thread) {
  * moved. The leading NUL keeps it clear of any real project name and sorts it first.
  */
 const PLAZA = '\u0000plaza'
+/** Under this name, beside the remembered levels, how many levels there were when they were decided. */
+const LEVEL_KIND = '\u0000kind'
 /** How much of a crossing's width the crew use: clear of the rails on either side. */
 const CROSSING_WALK = 1.05
 /**
@@ -956,7 +958,18 @@ export class Colony {
       square.neighbours.add(cell.name)
       arrived.neighbours.add(PLAZA)
     }
-    const levels = settleLevels(plots, new Map([...this.plotLevels, [PLAZA, 0]]), count)
+    // Levels remembered from a world with a different number of them say nothing useful
+    // about this one: three levels' worth would crowd everybody onto the lowest decks of six.
+    // They are decided afresh, once, and remembered from then on.
+    const kind = `${count}/${this.planet.plot.levelFloor || 0}`
+    if (this.levelKind !== kind) {
+      this.plotLevels = new Map()
+      this.levelKind = kind
+    }
+    const levels = settleLevels(plots, new Map([...this.plotLevels, [PLAZA, 0]]), count, {
+      floor: this.planet.plot.levelFloor || 0,
+      grounded: new Set([PLAZA]),
+    })
     levels.delete(PLAZA)
     for (const [name, level] of levels) this.plotLevels.set(name, level)
     return levels
@@ -1326,10 +1339,14 @@ export class Colony {
   /** The remembered level of each workspace, out of the colony file. See `plot-levels.js`. */
   restoreLevels(saved) {
     this.plotLevels = readLevels(saved)
+    // Which scheme of levels they were decided under: see `_settleLevels`.
+    this.levelKind = typeof saved?.[LEVEL_KIND] === 'string' ? saved[LEVEL_KIND] : undefined
   }
 
   levelsForSave() {
-    return Object.fromEntries(this.plotLevels)
+    const out = Object.fromEntries(this.plotLevels)
+    if (this.levelKind) out[LEVEL_KIND] = this.levelKind
+    return out
   }
 
   /** Every height a deck stands at right now, highest first. For pointing at raised ones. */

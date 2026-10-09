@@ -112,8 +112,10 @@ export const PLANETS = {
     // eight units across; this brings it down to stand comfortably on its own tile.
     gate: { scale: 0.82 },
     plot: {
-      // Workspaces stand on one of three levels, this far apart.
-      levels: 3,
+      // Six levels this far apart, and the lowest of them is the ground, which is the
+      // square's alone: every workspace stands on stilts on one of the five above it.
+      levels: 6,
+      levelFloor: 1,
       levelStep: CAMPUS_LEVEL_STEP,
       // Half the clear distance between two workspaces: set so that one flight of the kit's
       // stair, scaled to climb a level, spans the gap exactly.
