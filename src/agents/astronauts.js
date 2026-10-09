@@ -10,6 +10,7 @@ import { projectHitPoint, bodyHitDistance } from './picking.js'
 import { helmetGeometry, visorGeometry, screenGeometry } from './model.js'
 import { ROBOT_KINDS, decorateLights, robotGeometry, robotKind, robotLights } from './robots.js'
 import { nextRoam, visitSpot } from './roaming.js'
+import { walkBudget } from './walk-budget.js'
 import { campusBuilding } from '../world/campus-buildings.js'
 
 /**
@@ -973,7 +974,13 @@ export class Astronauts {
         // and the next poll hands it a site that has been checked against the grid.
         // Stuck for a couple of seconds gets a fresh route; stuck for longer gives up.
         if (agent.stuckFor > 2 && agent.stuckFor < 2.05) agent.pathVersion = -1
-        const stuck = agent.stuckFor > 5 || (agent.blocked && agent.stateAge > 8) || agent.stateAge > 45
+        // How long a walk may take before it is given up on depends on how far it is. It used
+        // to be three quarters of a minute whatever the distance, which was plenty on a campus
+        // a few platforms across. On one with a district a long walkway away it is not, and
+        // everybody bound for the far side gave up at whichever platform they had reached by
+        // then and sat down on it together.
+        agent.walkFar = agent.stateAge < 0.5 ? dist : Math.max(agent.walkFar || 0, dist)
+        const stuck = agent.stuckFor > 5 || (agent.blocked && agent.stateAge > 8) || agent.stateAge > walkBudget(agent.walkFar, WALK_SPEED)
         // Creeping the last metre for ten seconds — a crowd at the site, a spot just inside
         // a keep circle — is close enough.
         const nearEnough = dist < ARRIVE_RADIUS * 1.9 && agent.stateAge > 10
