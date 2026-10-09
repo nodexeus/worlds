@@ -146,16 +146,28 @@ const cellsNeeded = (threadCount) =>
  * @param previous Map of id → cells from the last pass (or a saved colony file).
  * @returns Map of id → cells.
  */
-export function allocateCells(projects, previous = new Map()) {
-  const laid = layOut(projects, previous)
+export function allocateCells(projects, previous = new Map(), { ragged = false } = {}) {
+  const laid = layOut(projects, previous, ragged)
   // Remembering where a zone sat is worth a great deal, right up until it leaves the colony
   // as scattered islands. Then the memory is describing a map that no longer exists, and
   // starting over — compact, from the middle, the way a first run does it — is the lesser
   // upheaval. It only happens when the alternative is visibly broken.
-  return isConnected(laid) ? laid : layOut(projects, new Map())
+  return isConnected(laid) ? laid : layOut(projects, new Map(), ragged)
 }
 
-function layOut(projects, previous) {
+/**
+ * Whether a cell is left empty by a district that is laid out raggedly: about one in five, by
+ * the cell alone, so the same ones every time. Never the origin, where the first workspace goes.
+ */
+function isHole(cell) {
+  if (cell.q === 0 && cell.r === 0) return false
+  return hashString(`hole/${cell.q},${cell.r}`) % 5 === 0
+}
+
+/** How far out of its turn a cell is taken when ground is given out raggedly: up to this many rings. */
+const RAGGED = 2.6
+
+function layOut(projects, previous, ragged = false) {
   // Shrinking has hysteresis. A zone sitting exactly on a cell boundary would otherwise
   // hand a tile back the moment one thread is archived and claim it again when the next
   // one starts — and every hand-back rebuilds the plot and walks its whole crew. A tile is
@@ -220,27 +232,49 @@ function layOut(projects, previous) {
   for (const { id, want } of wanted) {
     const cells = held.get(id)
     if (!cells) continue
-    growBlob(cells, want, free)
+    growBlob(cells, want, free, ragged)
     out.set(id, cells)
+  }
+  // Laid out raggedly, a newcomer does not take the innermost free cell. It takes one beside
+  // somebody already there, so the district stays in one piece, but not a cell that is to be
+  // left as a hole, and not strictly the nearest: some settle a ring or two further out than
+  // they need to, which is what gives the district an edge that looks grown and not drawn.
+  const claimed = new Set()
+  for (const cells of out.values()) for (const cell of cells) claimed.add(key(cell.q, cell.r))
+  const raggedSeed = () => {
+    let best = null
+    let bestScore = Infinity
+    for (const cell of pool) {
+      if (!free.has(key(cell.q, cell.r)) || isHole(cell)) continue
+      if (claimed.size && !HEX_DIRS.some(([dq, dr]) => claimed.has(key(cell.q + dq, cell.r + dr)))) continue
+      const jitter = (hashString(`edge/${cell.q},${cell.r}`) % 1000) / 1000
+      const score = hexDistance(cell, ORIGIN) + jitter * RAGGED
+      if (score < bestScore) {
+        bestScore = score
+        best = cell
+      }
+    }
+    return best
   }
 
   for (const { id, want } of wanted) {
     if (out.has(id)) continue
-    const seed = pool.find((c) => free.has(key(c.q, c.r)))
+    const seed = (ragged && raggedSeed()) || pool.find((c) => free.has(key(c.q, c.r)))
     if (!seed) {
       out.set(id, [])
       continue
     }
     free.delete(key(seed.q, seed.r))
     const cells = [{ q: seed.q, r: seed.r }]
-    growBlob(cells, want, free)
+    growBlob(cells, want, free, ragged)
+    for (const cell of cells) claimed.add(key(cell.q, cell.r))
     out.set(id, cells)
   }
   return out
 }
 
 /** Claim free neighbours until the blob is big enough, hugging its root cell first. */
-function growBlob(cells, want, free) {
+function growBlob(cells, want, free, ragged = false) {
   const root = cells[0]
   while (cells.length < want) {
     let best = null
@@ -250,7 +284,8 @@ function growBlob(cells, want, free) {
         const n = { q: c.q + dq, r: c.r + dr }
         if (!free.has(key(n.q, n.r))) continue
         // Hug the root first, then the middle of the colony, so blobs come out compact.
-        const score = hexDistance(n, root) * 100 + hexDistance(n, ORIGIN)
+        // A cell that is to be left as a hole is grown into only when there is nowhere else.
+        const score = hexDistance(n, root) * 100 + hexDistance(n, ORIGIN) + (ragged && isHole(n) ? 10000 : 0)
         if (score < bestScore) {
           bestScore = score
           best = n

@@ -1,7 +1,7 @@
 // test/districts.test.mjs
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { CORE_CELLS, HEX_DIRS, fits, hexDistance, inDistrict } from '../src/world/plot-move.js'
+import { CORE_CELLS, HEX_DIRS, fits, hexDistance, inDistrict, isConnected } from '../src/world/plot-move.js'
 import { allocateCells } from '../src/world/plots.js'
 import { districtOf, frameDelta, landing, squareEnd, toFrame, toWorld } from '../src/world/districts.js'
 import { causewayOf, onSpan } from '../src/world/crossing-spans.js'
@@ -142,4 +142,48 @@ test('a carry measured on the campus is the same carry in the district\'s own te
   const moved = toWorld('crew', [{ q: cell.q - 2, r: cell.r + 1 }])[0]
   const before = toWorld('crew', [cell])[0]
   assert.deepEqual({ dq: moved.q - before.q, dr: moved.r - before.r }, { dq: 2, dr: -1 })
+})
+
+// ── a district that grew, not one that was laid out ───────────────────────────────────
+
+const draw = (laid) => new Set([...laid.values()].flat().map(key))
+
+test('laid out raggedly, a district has holes in it and an uneven edge, and is still all one piece', () => {
+  const projects = Array.from({ length: 45 }, (_, n) => ({ id: `p${n}`, size: 3 }))
+  const packed = allocateCells(projects)
+  const ragged = allocateCells(projects, new Map(), { ragged: true })
+  assert.equal(isConnected(ragged), true, 'every workspace can still be joined to the rest')
+  assert.equal(draw(ragged).size, 45)
+  for (const cells of ragged.values()) for (const cell of cells) assert.ok(inDistrict(cell))
+  // Holes: cells with nobody on them that have somebody on at least four sides.
+  const holes = (laid) => {
+    const held = draw(laid)
+    let count = 0
+    for (let q = -8; q <= 8; q++) {
+      for (let r = -8; r <= 8; r++) {
+        if (held.has(key({ q, r }))) continue
+        if (HEX_DIRS.filter(([dq, dr]) => held.has(key({ q: q + dq, r: r + dr }))).length >= 4) count++
+      }
+    }
+    return count
+  }
+  assert.ok(holes(ragged) >= 4, `${holes(ragged)} holes`)
+  assert.ok(holes(ragged) > holes(packed))
+  // And it reaches further out than the same number packed tight would.
+  const reach = (laid) => Math.max(...[...laid.values()].flat().map((cell) => hexDistance(cell, { q: 0, r: 0 })))
+  assert.ok(reach(ragged) > reach(packed))
+})
+
+test('a ragged district stays put: what is there keeps its ground, and a newcomer joins on at the edge', () => {
+  const projects = Array.from({ length: 20 }, (_, n) => ({ id: `p${n}`, size: 3 }))
+  const first = allocateCells(projects, new Map(), { ragged: true })
+  assert.deepEqual(allocateCells(projects, first, { ragged: true }), first)
+  const more = allocateCells([...projects, { id: 'new', size: 3 }], first, { ragged: true })
+  for (const [id, cells] of first) assert.deepEqual(more.get(id), cells)
+  assert.equal(isConnected(more), true)
+})
+
+test('asked for nothing special, ground is given out exactly as it always was', () => {
+  const projects = Array.from({ length: 12 }, (_, n) => ({ id: `p${n}`, size: 9 }))
+  assert.deepEqual(allocateCells(projects, new Map(), {}), allocateCells(projects))
 })

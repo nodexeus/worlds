@@ -146,6 +146,8 @@ export function transcriptProgress(thread) {
 const PLAZA = '\u0000plaza'
 /** Under this name, beside the remembered levels, how many levels there were when they were decided. */
 const LEVEL_KIND = '\u0000kind'
+/** The name of the ragged way of laying a district out, as it is remembered. */
+const LAYOUT_RAGGED = 'ragged-1'
 /** How much of a crossing's width the crew use: clear of the rails on either side. */
 const CROSSING_WALK = 1.05
 /**
@@ -850,6 +852,13 @@ export class Colony {
     // between polls, and the colony file carries it between sessions.
     // Each district is laid out on its own, in its own terms, by the same rules: what one
     // holds can neither crowd the other nor be the reason the other is laid out again.
+    const ragged = Boolean(this.planet.plot?.kit)
+    // A campus remembered from before its districts were laid out raggedly is laid out
+    // afresh, once: packed tight as it was, it would have no holes for as long as it stood.
+    if (ragged && this.layoutKind !== LAYOUT_RAGGED) {
+      this.plotCells = new Map()
+      this.layoutKind = LAYOUT_RAGGED
+    }
     const remembered = new Map()
     this.districts = new Set()
     for (const district of ['local', 'crew']) {
@@ -859,7 +868,8 @@ export class Colony {
       const laid = allocateCells(
         // Where a place on each platform is kept for its stack, six buildings fill one, not seven.
         mine.map(([name, list]) => ({ id: name, size: this.planet.plot?.kit ? Math.ceil((list.length * SLOTS_PER_PLATFORM) / (SLOTS_PER_PLATFORM - 1)) : list.length, cells: placeOf.get(name)?.platforms })),
-        this.plotCells
+        this.plotCells,
+        { ragged }
       )
       for (const [name, cells] of laid) remembered.set(name, cells)
     }
@@ -1501,6 +1511,8 @@ export class Colony {
       if (list.length) clean.set(String(name), list)
     }
     this.plotCells = clean
+    // Which way of laying a district out they were given their ground under: see `_syncPlots`.
+    this.layoutKind = typeof saved?.[LEVEL_KIND] === 'string' ? saved[LEVEL_KIND] : undefined
   }
 
   /** The remembered level of each workspace, out of the colony file. See `plot-levels.js`. */
@@ -1526,6 +1538,7 @@ export class Colony {
   layoutForSave() {
     const out = {}
     for (const [name, cells] of this.plotCells) out[name] = cells.map((c) => [c.q, c.r])
+    if (this.layoutKind) out[LEVEL_KIND] = this.layoutKind
     return out
   }
 
