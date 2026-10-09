@@ -136,23 +136,42 @@ test('light falls on the deck beside a lit edge and round every module, and a si
   assert.equal(pools.filter((pool) => pool.kind === 'band').length, lit)
   // Only what stands on a deck lights it: the storeys above light nothing below.
   assert.equal(pools.filter((pool) => pool.kind === 'round' && pool.color === 'amber').length, 1)
-  assert.deepEqual(pools.filter((pool) => pool.color !== 'amber').map((pool) => pool.color).sort(), ['cyan', 'magenta'])
+  // The first two signs are cyan and the last two magenta, and each throws its own.
+  const thrown = named(parts, /^sign-[a-d]$/).map((sign) => (/[ab]$/.test(sign.part) ? 'cyan' : 'magenta')).sort()
+  assert.ok(thrown.includes('cyan') && thrown.includes('magenta'))
+  assert.deepEqual(pools.filter((pool) => pool.color !== 'amber').map((pool) => pool.color).sort(), thrown)
   for (const pool of pools) assert.ok(pool.y > 3.15 && pool.y < 3.25, 'just proud of the deck')
 })
 
-test('a sign or a dish stands on the roof of the top storey, never in the air above it', () => {
+/** A campus of `count` single-platform workspaces in a row, each with a stack. */
+const campus = (count) => Array.from({ length: count }, (_, n) => ({ id: `ws-${n}`, cells: [{ q: n * 2, r: 0 }], level: 1 + (n % 3), busy: 1 + (n % 6), stackAt: { x: hexToWorld(n * 2, 0).x + 3, z: 2 } }))
+
+test('a campus has a handful of neon signs: about one workspace in nine, never none, and not all the same', () => {
+  const signsIn = (count) => named(settlementParts(campus(count), [], WORLD), /^sign-[a-d]$/)
+  assert.deepEqual([1, 5, 9, 20, 45, 90].map((count) => signsIn(count).length), [1, 1, 1, 2, 5, 10])
+  assert.equal(new Set(signsIn(45).map((sign) => sign.part)).size, 4, 'all four kinds on a campus of 45')
+  assert.equal(signsIn(0).length, 0)
+})
+
+test('a sign stands on a flat roof or on the deck by the stack, a dish only on a roof, and nothing hangs in the air', () => {
   const roofs = { 'mod-cabin': 1.89, 'mod-drum': 1.93 }
-  let seen = 0
-  for (let n = 0; n < 200; n++) {
+  let onDeck = 0
+  let onRoofs = 0
+  for (let n = 0; n < 300; n++) {
+    // One workspace on its own always has the campus's one sign.
     const parts = stackOf(1 + (n % 6), `sign-${n}`)
-    const modules = named(parts, /^mod-/)
-    const top = modules.at(-1)
+    const deck = 0.45 + 2 * 1.35
+    const top = named(parts, /^mod-/).at(-1)
     for (const thing of named(parts, /^(sign-[a-d]|dish)$/)) {
-      seen++
-      assert.ok(roofs[top.part], `${thing.part} on a ${top.part}, which has no flat roof`)
-      assert.ok(Math.abs(thing.y - (top.y + roofs[top.part])) < 1e-6, `${thing.part} is not on the roof`)
-      assert.ok(Math.abs(thing.x - top.x) < 1e-6 && Math.abs(thing.z - top.z) < 1e-6)
+      const onRoof = roofs[top.part] && Math.abs(thing.y - (top.y + roofs[top.part])) < 1e-6
+      if (thing.part === 'dish') assert.ok(onRoof, 'a dish is on a flat roof')
+      else if (onRoof) onRoofs++
+      else {
+        onDeck++
+        assert.ok(Math.abs(thing.y - deck) < 1e-6, `${thing.part} is neither on a roof nor on the deck`)
+        assert.ok(Math.abs(Math.hypot(thing.x - 3, thing.z - 2) - 2.4) < 1e-6, 'beside the stack, clear of it')
+      }
     }
   }
-  assert.ok(seen > 20, 'and there are some')
+  assert.ok(onDeck > 20 && onRoofs > 20, `${onRoofs} on roofs, ${onDeck} on decks`)
 })

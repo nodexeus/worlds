@@ -41,6 +41,8 @@ const FRAME = 2.3
 const ROOF = { 'mod-cabin': 1.89, 'mod-drum': 1.93 }
 /** The neon signs: the first two are cyan, the last two magenta. */
 const SIGNS = ['sign-a', 'sign-b', 'sign-c', 'sign-d']
+/** One workspace in this many has one. */
+const SIGN_EVERY = 9
 
 /** The turn about Y that points a part's own +z along (dx, dz). */
 const facing = (dx, dz) => Math.atan2(dx, dz)
@@ -74,6 +76,15 @@ export function settlementParts(plots, crossings, { deckTop, levelStep, apothem 
     crossed.add(`${cellKey(crossing.from.q, crossing.from.r)}>${cellKey(crossing.to.q, crossing.to.r)}`)
     crossed.add(`${cellKey(crossing.to.q, crossing.to.r)}>${cellKey(crossing.from.q, crossing.from.r)}`)
   }
+
+  // Which workspaces have a neon sign: about one in `SIGN_EVERY` of those with a stack, and
+  // at least one, taken in an order their names decide, each with a different sign from the
+  // last. Counted across the campus so that there is always a handful and never a dozen.
+  const stacked = plots.filter((plot) => plot.stackAt && plot.busy > 0)
+    .sort((a, b) => hash(`${a.id}/sign`) - hash(`${b.id}/sign`) || (a.id < b.id ? -1 : 1))
+  const signOf = new Map()
+  const wanted = stacked.length ? Math.max(1, Math.round(stacked.length / SIGN_EVERY)) : 0
+  stacked.slice(0, wanted).forEach((plot, n) => signOf.set(plot.id, SIGNS[n % SIGNS.length]))
 
   const parts = []
   for (const plot of plots) {
@@ -158,11 +169,20 @@ export function settlementParts(plots, crossings, { deckTop, levelStep, apothem 
       // A sign or a dish stands on the roof of the top storey, and only on a roof that is
       // flat: on anything else it would hang in the air.
       const roof = ROOF[last]
-      if (roof) {
-        const top = y + (storeys - 1) * FRAME + roof
-        if (seed % 4 === 0) put(SIGNS[(seed >>> 6) % SIGNS.length], px, pz, turn, top)
-        else if (seed % 4 === 1) put('dish', px, pz, turn, top)
-      }
+      const top = y + (storeys - 1) * FRAME + (roof || 0)
+      // A neon sign, for the few that have one: on the roof where the roof is flat, and
+      // otherwise on the deck by the stack, on the side toward the middle of the platform.
+      const sign = signOf.get(plot.id)
+      if (sign) {
+        if (roof) put(sign, px, pz, turn, top)
+        else {
+          const home = hexToWorld(plot.cells[0].q, plot.cells[0].r)
+          const dx = home.x - plot.stackAt.x
+          const dz = home.z - plot.stackAt.z
+          const far = Math.hypot(dx, dz) || 1
+          put(sign, plot.stackAt.x + (dx / far) * 2.4, plot.stackAt.z + (dz / far) * 2.4, facing(dx, dz))
+        }
+      } else if (roof && seed % 4 === 1) put('dish', px, pz, turn, top)
     }
 
     // Every open edge has something along it, and one or two of them are lit: enough to say
