@@ -7,7 +7,7 @@ import { withCurve } from '../core/curve.js'
 import { OVERLAY_LAYER } from '../core/engine.js'
 import { BUILDING_RADIUS } from './buildings.js'
 import { edgeAngle, edgeSegments, onDeck, onTile, tileOutline } from './deck-shape.js'
-import { HEX_DIRS, SHIP_CELL, CORE_CELLS, ORIGIN, POOL_RINGS, cellKey as key, hexDistance, isConnected } from './plot-move.js'
+import { HEX_DIRS, SHIP_CELL, CORE_CELLS, ORIGIN, POOL_RINGS, cellKey as key, hexDistance, inDistrict, isConnected } from './plot-move.js'
 
 /**
  * Project plots — the fenced-off sections of the map, one per repo.
@@ -155,7 +155,6 @@ export function allocateCells(projects, previous = new Map()) {
 }
 
 function layOut(projects, previous) {
-  const reserved = new Set(CORE_CELLS.map(c => key(c.q, c.r)))
   // Shrinking has hysteresis. A zone sitting exactly on a cell boundary would otherwise
   // hand a tile back the moment one thread is archived and claim it again when the next
   // one starts — and every hand-back rebuilds the plot and walks its whole crew. A tile is
@@ -187,7 +186,8 @@ function layOut(projects, previous) {
   for (let ring = 0; (pool.length < total + 30 || ring <= farthest) && ring < POOL_RINGS; ring++) {
     for (const cell of hexRing(ring)) {
       const k = key(cell.q, cell.r)
-      if (reserved.has(k)) continue
+      // The square's side is nobody's: see `inDistrict`.
+      if (!inDistrict(cell)) continue
       pool.push(cell)
       free.add(k)
     }

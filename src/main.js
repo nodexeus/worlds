@@ -800,7 +800,8 @@ window.addEventListener('pointermove', (e) => {
   // The plan, not just a yes/no: a drop that strands a zone is allowed, and what comes back
   // says where everything ends up. Kept so the drop applies exactly what the ghost was drawn
   // against rather than recomputing against a layout a poll may have moved on.
-  drag.plan = planMove(colony.visibleLayout(), drag.name, dq, dr)
+  const carry = colony.carryOf(drag.name, dq, dr)
+  drag.plan = planMove(colony.visibleLayout(drag.name), drag.name, carry.dq, carry.dr)
   drag.valid = Boolean(drag.plan)
   placeGhost()
 })
