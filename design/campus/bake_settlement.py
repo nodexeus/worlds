@@ -201,7 +201,20 @@ def bake_part(name):
 
         # glTF reads occlusion, roughness and metalness from one image: R, G and B.
         orm = np.ones((size * size, 4), dtype=np.float32)
-        orm[:, 1] = pixels("roughness")[:, 0]
+        # Where nothing was baked the roughness image is 0, which is a mirror. Smaller copies of the
+        # map (what is sampled from far off) blend that into thin parts, and a bright thin part with
+        # a mirror's roughness sparkles under the sun. So: empty texels are fully rough, and texels
+        # at the rim of an island take the roughest value near them.
+        rough = pixels("roughness")[:, 0].reshape(size, size)
+        empty = rough < 0.02
+        rim = np.zeros_like(empty)
+        spread = rough.copy()
+        for dy in range(-3, 4):
+            for dx in range(-3, 4):
+                rim |= np.roll(np.roll(empty, dy, 0), dx, 1)
+                spread = np.maximum(spread, np.roll(np.roll(rough, dy, 0), dx, 1))
+        rough = np.where(empty, 1.0, np.where(rim, spread, rough))
+        orm[:, 1] = rough.ravel()
         orm[:, 2] = pixels("metallic")[:, 0]
         packed = image("orm", "Non-Color")
         packed.pixels.foreach_set(orm.ravel())
