@@ -39,6 +39,7 @@ const MODULES = ['mod-cabin', 'mod-drum', 'mod-shed', 'mod-tank']
 const FRAME = 2.3
 /** How high the flat roof of a module is above its base, for those that have one. */
 const ROOF = { 'mod-cabin': 1.89, 'mod-drum': 1.93 }
+const FLAT = Object.keys(ROOF)
 /** The neon signs: the first two are cyan, the last two magenta. */
 const SIGNS = ['sign-a', 'sign-b', 'sign-c', 'sign-d']
 /** One workspace in this many has one. */
@@ -144,7 +145,11 @@ export function settlementParts(plots, crossings, { deckTop, levelStep, apothem 
     // the room.
     if (plot.stackAt && plot.busy > 0) {
       const seed = hash(`${plot.id}/stack`)
-      const storeys = Math.min(3, 1 + (plot.busy >= 2 ? 1 : 0) + (plot.busy >= 4 ? 1 : 0))
+      // How high: one, two or three storeys, by the workspace's own name, so that a campus of
+      // quiet workspaces still has height to it; and never fewer than two where three or more
+      // are at work, nor fewer than three where five are.
+      const own = [1, 2, 2, 3, 2, 3, 1, 2, 3, 2][(seed >>> 9) % 10]
+      const storeys = Math.max(own, plot.busy >= 5 ? 3 : plot.busy >= 3 ? 2 : 1)
       // Its frame lies along the edge of the platform it stands by, where the workspace says
       // which way that is, so that no corner of it reaches past the deck.
       const start = plot.stackTurn ?? (seed % 6) * SIXTH
@@ -152,6 +157,7 @@ export function settlementParts(plots, crossings, { deckTop, levelStep, apothem 
       let pz = plot.stackAt.z
       let turn = start
       let last = null
+      const sign = signOf.get(plot.id)
       for (let k = 0; k < storeys; k++) {
         const roll = hash(`${plot.id}/stack/${k}`)
         if (k > 0) {
@@ -165,26 +171,20 @@ export function settlementParts(plots, crossings, { deckTop, levelStep, apothem 
           turn += [Math.PI / 2, Math.PI / 6, -Math.PI / 3, Math.PI / 4][(roll >>> 20) % 4]
         }
         last = MODULES[(seed + k * 3 + (roll >>> 24)) % MODULES.length]
+        // A sign needs a flat roof to stand on, so where there is to be one the top storey
+        // is one of the two that have one.
+        if (sign && k === storeys - 1 && !ROOF[last]) last = FLAT[(roll >>> 5) % FLAT.length]
         put(last, px, pz, turn, y + k * FRAME)
       }
       if (storeys > 1) put('ladder', plot.stackAt.x, plot.stackAt.z, start)
       // A sign or a dish stands on the roof of the top storey, and only on a roof that is
       // flat: on anything else it would hang in the air.
+      // On the roof of the top storey: a neon sign for the few workspaces that have one, a
+      // dish on some of the rest. Never on the deck, where there are buildings to stand in.
       const roof = ROOF[last]
       const top = y + (storeys - 1) * FRAME + (roof || 0)
-      // A neon sign, for the few that have one: on the roof where the roof is flat, and
-      // otherwise on the deck by the stack, on the side toward the middle of the platform.
-      const sign = signOf.get(plot.id)
-      if (sign) {
-        if (roof) put(sign, px, pz, turn, top)
-        else {
-          const home = hexToWorld(plot.cells[0].q, plot.cells[0].r)
-          const dx = home.x - plot.stackAt.x
-          const dz = home.z - plot.stackAt.z
-          const far = Math.hypot(dx, dz) || 1
-          put(sign, plot.stackAt.x + (dx / far) * 2.4, plot.stackAt.z + (dz / far) * 2.4, facing(dx, dz))
-        }
-      } else if (roof && seed % 4 === 1) put('dish', px, pz, turn, top)
+      if (sign) put(sign, px, pz, turn, top)
+      else if (roof && seed % 4 === 1) put('dish', px, pz, turn, top)
     }
 
     // Every open edge has something along it, and one or two of them are lit: enough to say
