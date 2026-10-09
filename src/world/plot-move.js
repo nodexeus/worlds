@@ -34,6 +34,13 @@ export const POOL_RINGS = 12
 
 export const cellKey = (q, r) => `${q},${r}`
 
+/**
+ * Whether a cell is on a district's own side. The other side is where the square is, and past
+ * it the other district: see `districts.js`. Nothing is given a cell there and nothing may be
+ * carried to one, which is what keeps two districts from ever being run together.
+ */
+export const inDistrict = (cell) => cell.q >= 0
+
 /** Hex distance in axial coordinates: the cube distance, halved. */
 export function hexDistance(a, b) {
   return (Math.abs(a.q - b.q) + Math.abs(a.q + a.r - b.q - b.r) + Math.abs(a.r - b.r)) / 2
@@ -108,6 +115,7 @@ export function fits(layout, name, dq, dr) {
   for (const c of moved) {
     const k = cellKey(c.q, c.r)
     if (core.has(k) || occupied.has(k)) return false
+    if (!inDistrict(c)) return false
     if (hexDistance(c, ORIGIN) >= POOL_RINGS) return false
   }
   return true

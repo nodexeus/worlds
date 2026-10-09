@@ -24,6 +24,7 @@ import {
   PLOT_CELL,
 } from '../world/plots.js'
 import { CORE_CELLS, LIBRARY_CELL, translateCells } from '../world/plot-move.js'
+import { causeway, districtOf, frameDelta, toWorld } from '../world/districts.js'
 import { readLevels, settleLevels } from '../world/plot-levels.js'
 import { HEX_DIRS } from '../world/plot-move.js'
 import { heightOnCrossings, onSpan, spanOf } from '../world/crossing-spans.js'
@@ -346,7 +347,7 @@ export class Colony {
     for (const plot of this.plotOrder) {
       for (const local of plot.localCenters) list.push({ x: plot.center.x + local.x, z: plot.center.z + local.z })
     }
-    for (const cell of CORE_CELLS) list.unshift(hexToWorld(cell.q, cell.r))
+    for (const cell of this._squareCells()) list.unshift(hexToWorld(cell.q, cell.r))
     return list.slice(0, SKY_MAX_CELLS)
   }
 
@@ -523,9 +524,24 @@ export class Colony {
    * Raise or remove the plaza deck to suit the world. It takes the core cells, which no
    * workspace is ever given, and the same styling as every workspace's deck.
    */
+  /**
+   * The square and the walkways off it, as cells on the campus: the gate's and the Library's,
+   * then a walkway out to each district that has anything standing in it. A walkway to an
+   * empty district would lead nowhere, so it is not there until the district is.
+   */
+  _squareCells() {
+    const cells = CORE_CELLS.map((c) => ({ q: c.q, r: c.r }))
+    for (const district of ['local', 'crew']) {
+      if (this.districts?.has(district)) cells.push(...causeway(district))
+    }
+    return cells
+  }
+
   _syncPlaza() {
     const style = this.planet.plot?.crossings ? this.planet.plot : null
-    if (this.plaza && this.plaza.style?.gap === style?.gap && Boolean(style)) return
+    const cells = this._squareCells()
+    const shape = cells.map((c) => `${c.q},${c.r}`).join('/')
+    if (this.plaza && this.plaza.style?.gap === style?.gap && Boolean(style) && this.plaza.shape === shape) return
     if (this.plaza) {
       this.plotGroup?.remove(this.plaza.group)
       this.plaza.dispose()
@@ -533,9 +549,10 @@ export class Colony {
     }
     if (!style || !this.plotGroup) return
     this.plaza = new Plot({
-      id: PLAZA, name: PLAZA, index: -1, cells: CORE_CELLS.map((c) => ({ q: c.q, r: c.r })),
+      id: PLAZA, name: PLAZA, index: -1, cells,
       accent: style.palette?.[0] ?? PLOT_PALETTE[0], style: { ...style, bare: true }, level: 0,
     })
+    this.plaza.shape = shape
     this.plotGroup.add(this.plaza.group)
   }
 
@@ -809,16 +826,31 @@ export class Colony {
     // The previous layout is an input, so a zone only moves when its own footprint changes
     // — never because a different repo gained or lost a thread. `plotCells` carries it
     // between polls, and the colony file carries it between sessions.
-    const layout = allocateCells(
-      projects.map(([name, list]) => ({ id: name, size: list.length, cells: placeOf.get(name)?.platforms })),
-      this.plotCells
-    )
+    // Each district is laid out on its own, in its own terms, by the same rules: what one
+    // holds can neither crowd the other nor be the reason the other is laid out again.
+    const remembered = new Map()
+    this.districts = new Set()
+    for (const district of ['local', 'crew']) {
+      const mine = projects.filter(([name]) => districtOf(name) === district)
+      if (!mine.length) continue
+      this.districts.add(district)
+      const laid = allocateCells(
+        mine.map(([name, list]) => ({ id: name, size: list.length, cells: placeOf.get(name)?.platforms })),
+        this.plotCells
+      )
+      for (const [name, cells] of laid) remembered.set(name, cells)
+    }
     // Remembered, not replaced: a project that has just lost its last thread keeps its
     // ground on the books, and the oldest entries fall off the end.
-    for (const [name, cells] of layout) {
+    for (const [name, cells] of remembered) {
       this.plotCells.delete(name)
       this.plotCells.set(name, cells)
     }
+    // From here on, where each stands on the campus.
+    const layout = new Map()
+    for (const [name, cells] of remembered) layout.set(name, toWorld(districtOf(name), cells))
+    // The square reaches out to whichever districts are now there.
+    this._syncPlaza()
     while (this.plotCells.size > LAYOUT_MEMORY) this.plotCells.delete(this.plotCells.keys().next().value)
     // A level is remembered for exactly as long as the ground is.
     for (const name of this.plotLevels.keys()) if (!this.plotCells.has(name)) this.plotLevels.delete(name)
@@ -905,7 +937,7 @@ export class Colony {
     const owner = new Map()
     // The plaza takes part so that every workspace ends up with a way to it. It is given
     // ground level and, sorting first, is the one the others are brought into reach of.
-    const decks = this.planet.plot.crossings ? [[PLAZA, CORE_CELLS], ...layout] : [...layout]
+    const decks = this.planet.plot.crossings ? [[PLAZA, this._squareCells()], ...layout] : [...layout]
     for (const [name, cells] of decks) for (const cell of cells) owner.set(`${cell.q},${cell.r}`, name)
     const plots = decks.map(([name, cells]) => {
       const neighbours = new Set()
@@ -1295,11 +1327,23 @@ export class Colony {
     this.hoveredPlot = plot || null
   }
 
-  /** The zones actually on the map, name → cells — what a drag validates against. */
-  visibleLayout() {
+  /**
+   * The zones a drag of `name` is validated against, name → cells: those of its own district,
+   * in that district's terms, as they are remembered. A workspace is carried about within
+   * its district and has nothing to do with what stands in the other.
+   */
+  visibleLayout(name) {
+    const district = districtOf(name)
     const out = new Map()
-    for (const [name, plot] of this.plots) out.set(name, plot.cells)
+    for (const id of this.plots.keys()) {
+      if (districtOf(id) === district && this.plotCells.has(id)) out.set(id, this.plotCells.get(id))
+    }
     return out
+  }
+
+  /** A carry across the campus, in the terms of the district `name` stands in. */
+  carryOf(name, dq, dr) {
+    return frameDelta(districtOf(name), dq, dr)
   }
 
   /**

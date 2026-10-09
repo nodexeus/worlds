@@ -421,6 +421,12 @@ What a workspace costs to draw is bounded by who is in the crew, not by its hist
 | Platforms to a workspace | One for every 2 agents on it, and at least one |
 | An empty workspace | One platform with one building |
 
+Where both are present, the crew's workspaces and the sessions scanned from the computer stand
+in two districts either side of the square (the gate and the Library), each reached by a
+walkway of two bare platforms. A workspace can be carried about within its district and never
+out of it, so the two cannot be run together. `src/world/districts.js` has how: each district
+is laid out by the campus's ordinary rules in its own terms and then put in its place.
+
 A building belongs to its spot on the platform and to whoever is standing at it. An earlier
 conversation raises nothing. Sessions scanned from the computer are drawn as they always
 were, a building each.
