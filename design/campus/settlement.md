@@ -102,6 +102,87 @@ Attach points (deck space): edge k mid point at angle 30 + 60k degrees, distance
 under-lamp at the origin; modules, frames, signs and dishes stand anywhere on y = 0 inside the
 hexagon, clear of a notch.
 
+## Decks of their own shape
+
+`deck-e` to `deck-j`: single platforms whose outline is not a hexagon. Origin at the cell centre on
+the walking surface, as the hexagon decks. Any multiple of 60 degrees of turn; no mirroring. Their
+kerbs, rails, lit strips and edge beams are part of the model: they take no edge parts.
+`deck-shapes.json` carries each one's outline, ports, footprints, lit strips and number place, and is
+written by `build_settlement.py` from the same figures the models are built from.
+
+What every one of them keeps to:
+
+- A port is at an edge mid point of the cell's hexagon: 5.146 from the centre at 30 + 60k degrees.
+  At a port the floor reaches that point, flush, with a mouth 2.2 wide and no kerb or rail across it.
+- Beyond 5.146 in any of the six directions, within 1.7 either side, there is no floor, port or not.
+  (Bolt heads in the slab's face stand 0.03 into it.)
+- Nothing is more than 6.2 from the centre measured toward an edge mid point, or 6.8 from the centre.
+- The legs go under at the same origin and the SAME TURN as the deck. Every leg head of every set is
+  then covered with 0.4 or more to spare.
+
+| Part | Ports (k) | Outline | Area | Finish | Triangles | Bytes | Maps |
+|---|---|---|---|---|---|---|---|
+| deck-e | 0 1 2 3 4 5 | a bay at corner 0, a tab at 1, a diagonal at 2, a half tab at 3, a square step at 4, a small diagonal at 5 | 87.3 | used | 7840 | 3263168 | 1024 |
+| deck-f | 0 1 2 3 4 5 | a wide tab at corner 0, a step at 1, a bay at 3, a tab at 4, a long diagonal at 5 | 89.2 | nearly clean | 8511 | 3214984 | 1024 |
+| deck-g | 0 2 3 5 | sides 1 and 4 cut back to 3.9 and 4.25, a wide tab at corner 0, a tab at 3 | 82.0 | used | 7956 | 3220908 | 1024 |
+| deck-h | 0 1 3 4 | a bay at corner 0, a diagonal at 1, a tab at 2, a step at 3, a half tab at 5 | 87.9 | nearly clean | 7534 | 3171740 | 1024 |
+| deck-i | 0 2 4 | side 1 cut back to 3.9, a tab at corner 0, a bay at 3, a diagonal at 4, a wide tab at 5 | 82.4 | used | 8380 | 3236144 | 1024 |
+| deck-j | 0 1 3 | side 4 cut back to 3.6, a half tab at corner 0, a diagonal at 1, a wide tab at 2, a step at 3 | 82.0 | nearly clean | 8093 | 3107880 | 1024 |
+
+Corner k is toward 60k degrees, side k toward 30 + 60k. A hexagon deck's area is 91.7.
+
+Each has a balcony or a shelf of plant standing off a cut side or the back of a bay. These stay inside
+the hexagon. Highest point of any of the six: 1.27 (a balcony's mast).
+
+### Room for buildings and a stack
+
+The rule asked for (six buildings of radius 1.6 and a stack 3.56 by 2.36, 0.3 from the edge, 0.9
+between any two, 1.0 clear of each port's centre line for 2.5 inward) cannot be met on these decks,
+nor on the hexagon deck (by the same search the hexagon allows a radius of 1.09, and 1.27 with no
+port lanes). The spots given are the ones that leave every building the most room with all those
+margins kept. `buildingRadius` is the radius that fits at all six; `buildingRoom` is each spot's own
+room to the edge, the lanes and the stack, roomiest first (the spots are listed in that order).
+
+| Part | Radius that fits six | Stack's spare |
+|---|---|---|
+| deck-e | 0.66 | -0.13 (it stands 0.13 inside a port lane: with six ports no place for it is clear of all six) |
+| deck-f | 0.65 | -0.13 (the same) |
+| deck-g | 0.70 | 0.05 |
+| deck-h | 0.85 | 0.02 |
+| deck-i | 0.78 | 0.08 |
+| deck-j | 0.75 | 0.15 |
+
+### Number place
+
+Same sheet, size and convention as the hexagon decks (digit height 0.97).
+
+| Part | Centre (x, z) | Turn about Y | Plate (along the number by across it) |
+|---|---|---|---|
+| deck-e | (-0.08, -3.13) | 90 degrees | 2.36 x 1.96 |
+| deck-f | (3.04, -1.08) | 30 degrees | 2.36 x 1.76 |
+| deck-g | (2.26, -1.09) | 30 degrees | 2.36 x 1.76 |
+| deck-h | (2.12, -0.48) | 90 degrees | 2.76 x 2.36 |
+| deck-i | (-1.91, -0.39) | 150 degrees | 2.36 x 1.76 |
+| deck-j | (0.69, -3.56) | 90 degrees | 1.56 x 1.76 |
+
+On `deck-j` the plate is 1.56 along the number: two digits (1.30 of paint) fit with 0.13 either side.
+
+### deck-shapes.json
+
+Axes as everywhere here: x across, z toward the viewer, on y = 0. Turns are about +y in radians, the
+number plates' convention. For each deck: `ports` (the k of each), `outline` (the floor's outline in
+order, closed implicitly), `buildings` (six spots, roomiest first), `stack` (`x`, `z`, `turn`: the
+frame's length runs along (cos turn, 0, -sin turn)), `lit` (the middle of each lit strip, its `turn`
+with the deck on the strip's own -z side, and its `length`), `number` (`x`, `z`, `turn`), and three
+figures more: `area`, `buildingRadius`, `buildingRoom`.
+
+### port-gate
+
+A swing gate between two short posts, to close a port that has no crossing. Origin at the edge mid
+point on the deck top. It runs along x, 2.2 over the posts (2.0 between their middles), 1.0 high,
+and stands on the deck's side of the origin (z from -0.23 to -0.03), like the edge parts: turn it
+so that its -z points at the deck centre. 540 triangles, 557360 bytes, maps 512.
+
 ## Deck numbers
 
 `stencil-digits.png` (made by `make_stencil_digits.py`): the digits 0 to 9 in one row, left to right,

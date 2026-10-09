@@ -33,6 +33,7 @@ SCENE_NAME = "NX_Settlement"
 # Map sizes: decks and modules are looked at closely, the rest are small or thin.
 SIZES = {
     "deck-a": 1024, "deck-b": 1024, "deck-c": 1024, "deck-d": 1024,
+    "deck-e": 1024, "deck-f": 1024, "deck-g": 1024, "deck-h": 1024, "deck-i": 1024, "deck-j": 1024,
     "mod-cabin": 1024, "mod-drum": 1024, "mod-shed": 1024, "mod-tank": 1024, "stair-2": 1024,
     "legs-1": 1024, "legs-2": 1024, "legs-3": 1024, "legs-4": 1024, "legs-5": 1024,
 }
