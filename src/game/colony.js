@@ -35,7 +35,7 @@ import { loadGate } from '../world/gate.js'
 import { campusBuilding, loadCampusBuildings } from '../world/campus-buildings.js'
 import { DeckNumbers, LightPools, Settlement, Walkways, loadSettlement, settlementReady } from '../world/settlement.js'
 import { WALK_TOP, walkwayRoute, walkwayStrips } from '../world/walkway.js'
-import { reachDown, settlementNumbers, settlementParts, settlementPools } from '../world/settlement-plan.js'
+import { reachDown, settlementNumbers, settlementParts, settlementPools, underLamps } from '../world/settlement-plan.js'
 import { mouth, placed, planDecks } from '../world/settlement-decks.js'
 import { placesOf, stackHeights } from '../world/settlement-load.js'
 import { SHADES, shadeOf } from '../world/shades.js'
@@ -1600,6 +1600,7 @@ export class Colony {
           for (const unit of plot.units) {
             shapedParts.push({ part: unit.deck, plot: plot.id, x: unit.at.x, y, z: unit.at.z, turn: unit.at.turn })
             unit.at.posts.forEach((at, n) => shapedParts.push({ part: post, plot: plot.id, x: at.x, y, z: at.z, turn: ((n * 5 + unit.turn) % 4) * (Math.PI / 2) }))
+            for (const lamp of underLamps(plot.id, unit)) shapedParts.push({ part: 'under-lamp', plot: plot.id, x: lamp.x, y, z: lamp.z, turn: unit.at.turn })
             for (const gate of unit.gates) {
               const at = mouth(gate.cell, gate.side, reach)
               shapedParts.push({ part: 'port-gate', plot: plot.id, x: at.x, y, z: at.z, turn: at.turn })
@@ -1658,6 +1659,10 @@ export class Colony {
     this.settlement.set(parts)
     this.lightPools.set([
       ...settlementPools(parts),
+      // What a lamp under a deck throws on the ground beneath it, in that workspace's shade.
+      ...parts.filter((part) => part.part === 'under-lamp').map((part) => ({
+        plot: '', calls: part.plot, kind: 'round', color: shadeOf(part.plot), x: part.x, y: Math.max(0, terrainHeight(part.x, part.z, this.planet)) + 0.06, z: part.z, turn: 0, width: 7.5, depth: 7.5, gain: 1.3,
+      })),
       // The strips of light down the edges of each walkway. Its lamps light nothing but themselves.
       ...(this.walks || []).flatMap((walk) => walk.strips),
     ])
@@ -2125,6 +2130,9 @@ export class Colony {
     for (const plot of this.plotOrder) plot.setNight(night, urgent?.has(plot.id) ?? false, elapsed)
     // Lamplight on a deck is faint by day and all there is by night.
     this.lightPools.setStrength(0.2 + night * 0.8)
+    // And the lights of a workspace that needs somebody beat: see `callPulse`.
+    this.lightPools.setCalling(urgent, elapsed)
+    this.settlement.setCalling(urgent, elapsed)
   }
 
   // ── interaction ─────────────────────────────────────────────────────────────────────

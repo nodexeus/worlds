@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { withCurve } from '../core/curve.js'
 import { tameSheen } from '../core/sheen.js'
-import { RESHADE, SHADES, shadeOf } from './shades.js'
+import { RESHADE, SHADES, callPulse, shadeOf } from './shades.js'
 import { campusBuilding } from './campus-buildings.js'
 
 /**
@@ -93,7 +93,32 @@ export class Settlement {
     this._write()
   }
 
+  /**
+   * Which workspaces need somebody, and the time: every lamp, lit strip and window on their
+   * parts beats, by day as well as night. It is the fixtures themselves that beat, so a
+   * workspace calls as plainly as it is built up. Only their own parts are touched.
+   */
+  setCalling(plots, elapsed) {
+    const now = plots?.size ? [...plots].sort().join('|') : ''
+    if (now !== this._calling) {
+      // One that has stopped calling goes back to how it burns at rest.
+      this._calling = now
+      this._write()
+    }
+    if (!now) return
+    const { gain, white } = callPulse(elapsed)
+    const touched = new Set()
+    for (const slot of this.slots) {
+      if (!slot.shade || !plots.has(slot.part.plot)) continue
+      for (let k = 0; k < 3; k++) slot.held.glow.array[slot.n * 4 + k] = (slot.shade[k] + (HOT[k] - slot.shade[k]) * white) * gain
+      slot.held.glow.array[slot.n * 4 + 3] = 1
+      touched.add(slot.held)
+    }
+    for (const held of touched) held.glow.needsUpdate = true
+  }
+
   _write() {
+    this.slots = []
     const counts = new Map()
     for (const part of this.parts) counts.set(part.part, (counts.get(part.part) || 0) + 1)
     for (const [name, count] of counts) this._room(name, count)
@@ -112,6 +137,8 @@ export class Settlement {
       // A neon sign is its own colour; everything else takes the workspace's shade.
       const shade = /^sign-/.test(part.part) ? null : SHADES[shadeOf(part.plot)]
       held.glow.array.set(shade ? [...shade, 1] : [1, 1, 1, 0], n * 4)
+      // What it beats from when its workspace calls: its shade, or the amber it was made. A sign keeps its own colour.
+      this.slots.push({ part, held, n, shade: /^sign-/.test(part.part) ? null : shade || AMBER })
     }
     for (const [name, held] of this.meshes) {
       held.mesh.count = at.get(name) || 0
@@ -159,6 +186,10 @@ export class Settlement {
   }
 }
 
+/** The amber a lamp is made, as a shade, and the hot white a calling workspace's lamps beat toward. */
+const AMBER = [1.0, 0.69, 0.05]
+const HOT = [1.0, 0.92, 0.78]
+
 const TINT = { amber: 0xfdb000, cyan: 0x35d6ff, magenta: 0xff3fd0, white: 0xffd9a0, red: 0xff4a1c, teal: 0x2ee6c6, ice: 0x8cc6ff }
 
 /**
@@ -191,6 +222,7 @@ export class LightPools {
     this._p = new THREE.Vector3()
     this._s = new THREE.Vector3()
     this._c = new THREE.Color()
+    this._white = new THREE.Color()
     this._up = new THREE.Vector3(0, 1, 0)
   }
 
@@ -213,7 +245,47 @@ export class LightPools {
     this._write()
   }
 
+  /**
+   * Which workspaces need somebody, and the time: their pools beat, by day as well as night.
+   * Only their own pools are touched, so a quiet campus costs nothing.
+   */
+  setCalling(plots, elapsed) {
+    const calling = plots?.size ? plots : null
+    if (!calling) {
+      if (this._called) {
+        this._called = false
+        this._calling = ''
+        this._write()
+      }
+      return
+    }
+    this._called = true
+    const { gain, white } = callPulse(elapsed)
+    const touched = new Set()
+    for (const slot of this.slots || []) {
+      if (!calling.has(slot.pool.calls ?? slot.pool.plot)) continue
+      const base = this._base(slot.pool, Math.max(this.strength, 0.75))
+      base.lerp(this._white.copy(base).setScalar(Math.max(base.r, base.g, base.b)), white).multiplyScalar(gain)
+      slot.held.mesh.setColorAt(slot.n, base)
+      touched.add(slot.held)
+    }
+    // A workspace that has stopped calling goes back to how it burns at rest.
+    const now = [...calling].sort().join('|')
+    if (now !== this._calling) {
+      this._calling = now
+      this._write()
+      return this.setCalling(plots, elapsed)
+    }
+    for (const held of touched) if (held.mesh.instanceColor) held.mesh.instanceColor.needsUpdate = true
+  }
+
+  /** The colour a pool burns at rest. */
+  _base(pool, strength = this.strength) {
+    return this._c.setHex(TINT[pool.color] ?? TINT.amber).multiplyScalar(strength * (pool.color === 'amber' ? 0.5 : 0.7) * (pool.gain || 1))
+  }
+
   _write() {
+    this.slots = []
     const counts = new Map()
     for (const pool of this.pools) counts.set(pool.kind, (counts.get(pool.kind) || 0) + 1)
     const at = new Map()
@@ -242,7 +314,8 @@ export class LightPools {
       this._q.setFromAxisAngle(this._up, pool.turn)
       this._s.set(pool.width, 1, pool.depth)
       held.mesh.setMatrixAt(n, this._m.compose(this._p, this._q, this._s))
-      held.mesh.setColorAt(n, this._c.setHex(TINT[pool.color] ?? TINT.amber).multiplyScalar(this.strength * (pool.color === 'amber' ? 0.5 : 0.7) * (pool.gain || 1)))
+      held.mesh.setColorAt(n, this._base(pool))
+      this.slots.push({ pool, held, n })
     }
     for (const [kind, held] of this.kinds) {
       if (!held.mesh) continue

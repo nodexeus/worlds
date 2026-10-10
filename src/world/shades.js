@@ -39,3 +39,16 @@ export const shadeOf = (id) => DEAL[hash(`${id}/shade`) % DEAL.length]
  */
 export const RESHADE = `
   totalEmissiveRadiance = mix( totalEmissiveRadiance, vec3( dot( totalEmissiveRadiance, vec3( 0.42, 0.55, 0.03 ) ) * 1.35 ) * GLOW.rgb, GLOW.a );`
+
+/**
+ * How the lights of a workspace that needs somebody burn at a moment: a slow beat, from
+ * dimmer than usual to far brighter and whiter, so it is picked out from across the campus
+ * by day or night without reading a label. The same beat for every such workspace, in step.
+ *
+ * @param {number} elapsed  seconds
+ * @returns {{gain: number, white: number}} what its lights are multiplied by, and how far toward white they go
+ */
+export function callPulse(elapsed) {
+  const beat = 0.5 + 0.5 * Math.sin(elapsed * 3.4)
+  return { gain: 0.5 + 2.5 * beat * beat, white: 0.6 * beat * beat }
+}

@@ -364,3 +364,27 @@ export function reachDown(part, drop, levelStep) {
 
 /** How high the lowest deck stands above the floor: the length of the shortest leg. */
 const LEVEL_ONE = 1.8
+
+/**
+ * Where lamps hang under a deck of its own shape, lighting its legs and the ground below.
+ *
+ * Under where a stack stands, since there is slab there whatever the deck's shape. Most decks
+ * have one, some two, and some were never given any.
+ *
+ * @param {string} plot  the workspace's id
+ * @param {{deck: string, at: {stacks: Array<{x: number, z: number}>}}} unit
+ * @returns {Array<{x: number, z: number}>}
+ */
+export function underLamps(plot, unit) {
+  const spots = unit.at.stacks
+  if (!spots.length) return []
+  const roll = hash(`${plot}/${unit.deck}/under`)
+  if (roll % 4 === 0) return []
+  const first = (roll >>> 4) % spots.length
+  const lamps = [{ x: spots[first].x, z: spots[first].z }]
+  if (spots.length > 1 && (roll >>> 8) % 3 === 0) {
+    const other = spots[(first + 1) % spots.length]
+    lamps.push({ x: other.x, z: other.z })
+  }
+  return lamps
+}
