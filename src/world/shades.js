@@ -50,5 +50,5 @@ export const RESHADE = `
  */
 export function callPulse(elapsed) {
   const beat = 0.5 + 0.5 * Math.sin(elapsed * 3.4)
-  return { gain: 0.5 + 2.5 * beat * beat, white: 0.6 * beat * beat }
+  return { gain: 0.5 + 2.5 * beat * beat, white: 0.35 * beat * beat }
 }

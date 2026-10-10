@@ -22,7 +22,7 @@ test('the lights of a workspace that needs somebody beat: from dimmer than usual
   const gains = beats.map((b) => b.gain)
   assert.ok(Math.min(...gains) < 0.7 && Math.min(...gains) > 0.3, 'never out altogether')
   assert.ok(Math.max(...gains) > 2.5 && Math.max(...gains) <= 3.2, 'far brighter than a deck at rest')
-  assert.ok(beats.every((b) => b.white >= 0 && b.white <= 0.7), 'whiter at the top of the beat, never all white')
+  assert.ok(beats.every((b) => b.white >= 0 && b.white <= 0.4), 'a little whiter at the top of the beat, still its own colour')
   const top = beats.findIndex((b, n) => n > 0 && n < 399 && b.gain > beats[n - 1].gain && b.gain >= beats[n + 1].gain)
   const next = beats.findIndex((b, n) => n > top + 5 && n < 399 && b.gain > beats[n - 1].gain && b.gain >= beats[n + 1].gain)
   assert.ok(next - top > 150 && next - top < 220, `one beat is ${(next - top) / 100}s`)

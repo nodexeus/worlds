@@ -155,6 +155,8 @@ const LAYOUT_RAGGED = 'ragged-1'
 const CROSSING_WALK = 1.05
 /** How far from the middle of a walkway on the ground anyone walks: inside its kerbs, body and all. */
 const BOARDS_WALK = 0.55
+/** How far from a walkway's boards nothing is scattered: half the longest thing scattered, and a pace. */
+const WALK_CLEAR = 5.5
 /**
  * How far round a crossing's mouth nobody may be given a place to stand. Somebody parked in
  * a mouth is in everybody else's way, and there is only the one way through.
@@ -501,6 +503,8 @@ export class Colony {
     clear.push({ x: ship.x, z: ship.z, r: 7.5 })
     const library = this.library.group.position
     clear.push({ x: library.x, z: library.z, r: 7.5 })
+    // Nothing is stood across a walkway: a long thing set down beside one reaches over it.
+    for (const walk of this.walks || []) for (const span of walk.spans) clear.push({ x: span.x, z: span.z, r: span.half + WALK_CLEAR })
     if (this.planet.pipeline) clear.push(...pipelineClearance(this.planet.pipeline, this._footprintCells(), this._floorOpen))
     this.scatterGroup = createScatter(this.planet, this.settings.get('scatterDensity'), clear, 4242, (x, z) => this.onIsland(x, z))
     this.worldGroup.add(this.scatterGroup)
@@ -1088,6 +1092,12 @@ export class Colony {
     this.crossingPlan = plan
     this.causeways = causeways
     this.walks = walks
+    // The scatter was laid before it knew where the walkways run.
+    const ways = JSON.stringify(walks.map((walk) => walk.spans.map((span) => [Math.round(span.x), Math.round(span.z)])))
+    if (this.scatterGroup && ways !== this._scatterWays) {
+      this._scatterWays = ways
+      this._buildScatter()
+    }
     this.deckLinks = links
     this.walkways.set(walks.flatMap((walk) => walk.pieces))
     this.crossingSpans = [
