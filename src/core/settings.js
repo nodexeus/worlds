@@ -6,6 +6,8 @@
  * of keys that moved, so the renderer can rebuild only what actually needs rebuilding.
  */
 
+import { offeredPlanet } from '../world/planets-offered.js'
+
 const STORE_KEY = 'botcrossing.settings.v1'
 
 /**
@@ -228,6 +230,8 @@ export class Settings {
   constructor() {
     const stored = load()
     this.values = { ...DEFAULTS, ...stored }
+    // A world remembered from before it stopped being offered.
+    this.values.planet = offeredPlanet(this.values.planet)
     // An existing Low/Potato install should not inherit Balanced's new effect by accident.
     if (!Object.hasOwn(stored, 'ambientOcclusion')) {
       this.values.ambientOcclusion = PRESETS[this.values.preset]?.values.ambientOcclusion ?? DEFAULTS.ambientOcclusion
@@ -254,6 +258,7 @@ export class Settings {
   }
 
   set(key, value) {
+    if (key === 'planet') value = offeredPlanet(value)
     if (this.values[key] === value) return
     this.values[key] = value
     // Touching any quality knob directly means you are no longer on a named preset.

@@ -8,7 +8,7 @@ import { Colony, STATUS_LABEL, STATUS_ORDER, statusFor, transcriptProgress } fro
 import { Hud } from './ui/hud.js'
 import { installCrew } from './crew/index.js'
 import { agentIdOf, crewWorld, isCrew } from './crew/world.js'
-import { PLANETS } from './world/planet.js'
+import { PLANETS, PLANET_ORDER } from './world/planet.js'
 import { DECK_TOP, PLOT_CELL, hexToWorld, worldToHex } from './world/plots.js'
 import { planMove } from './world/plot-move.js'
 import { loadKit } from './world/kit.js'
@@ -123,7 +123,8 @@ const actions = {
   },
 
   cyclePlanet: () => {
-    const ids = Object.keys(PLANETS)
+    const ids = PLANET_ORDER
+    if (ids.length < 2) return
     const next = ids[(ids.indexOf(settings.get('planet')) + 1) % ids.length]
     settings.set('planet', next)
     hud.hint(`${PLANETS[next].name} — ${PLANETS[next].blurb}`)

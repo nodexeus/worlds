@@ -1,4 +1,5 @@
 import { tameSheen } from '../core/sheen.js'
+import { OFFERED } from './planets-offered.js'
 import * as THREE from 'three'
 import { atlasTexture, hasPart, kitReady, kitUsesVertexColors, part } from './kit.js'
 import { withCurve } from '../core/curve.js'
@@ -642,8 +643,8 @@ export const PLANETS = {
   },
 }
 
-/** Display order for the picker: home first, then outward, then the pretty ones. */
-export const PLANET_ORDER = ['campus', 'moon', 'mars', 'terra', 'beach', 'ocean', 'jungle', 'desert', 'tundra', 'autumn', 'sakura', 'volcanic', 'sky']
+/** The worlds in the picker, in order: see `planets-offered.js`. */
+export const PLANET_ORDER = OFFERED
 
 export let GROUND_SIZE = 340
 /** The smallest the ground ever is, and the step it grows by. */
