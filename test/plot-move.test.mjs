@@ -5,7 +5,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { SHIP_CELL, componentsOf, isConnected, moveIsValid, planMove, translateCells } from '../src/world/plot-move.js'
+import { POOL_RINGS, SHIP_CELL, componentsOf, isConnected, moveIsValid, planMove, translateCells } from '../src/world/plot-move.js'
 
 const layout = (zones) => new Map(Object.entries(zones))
 
@@ -57,8 +57,8 @@ test('a move to a free neighbouring cell is accepted', () => {
 
 test('a move past the allocator\'s pool is refused — it would lose its ground next pass', () => {
   const zones = layout({ a: [{ q: 0, r: 0 }] })
-  assert.equal(moveIsValid(zones, 'a', 12, 0), false)
-  assert.equal(moveIsValid(zones, 'a', 11, 0), true)
+  assert.equal(moveIsValid(zones, 'a', POOL_RINGS, 0), false)
+  assert.equal(moveIsValid(zones, 'a', POOL_RINGS - 1, 0), true)
 })
 
 // ── connectivity ──────────────────────────────────────────────────────────────
@@ -153,3 +153,12 @@ test('a drop into open ground is refused rather than dragging the colony over to
 function hexStep(a, b) {
   return (Math.abs(a.q - b.q) + Math.abs(a.q + a.r - b.q - b.r) + Math.abs(a.r - b.r)) / 2
 }
+
+test('a campus of a thousand workspaces places every one of them: none is left off the map for want of room', async () => {
+  const { allocateCells } = await import('../src/world/plots.js')
+  const projects = Array.from({ length: 1000 }, (_, n) => ({ id: `p${n}`, name: `p${n}`, want: 1, cells: 1, count: 1 }))
+  const cells = allocateCells(projects, new Map(), { ragged: true })
+  const placed = projects.filter((project) => cells.get(project.id)?.length)
+  assert.equal(placed.length, 1000)
+  assert.equal(new Set(placed.flatMap((project) => cells.get(project.id).map((c) => `${c.q},${c.r}`))).size >= 1000, true, 'each on ground of its own')
+})

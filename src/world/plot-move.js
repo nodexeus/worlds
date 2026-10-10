@@ -25,12 +25,16 @@ export const CORE_CELLS = Object.freeze([SHIP_CELL, LIBRARY_CELL])
 export const ORIGIN = { q: 0, r: 0 }
 
 /**
- * How many rings out the allocator's cell pool reaches. A cell past this is one the
+ * How many rings out the allocator's cell pool can reach. A cell past this is one the
  * allocator does not know exists: a zone dropped there would pass every visible check, then
  * lose its ground on the next roster pass when `allocateCells` cannot find its root in the
  * pool and re-seeds it in the middle — the exact jump the drag is for preventing.
+ *
+ * It is far out: room for some thousands of workspaces a district. The pool is only built as
+ * far as it is needed, so a small campus pays nothing for it; at twelve rings, as it was,
+ * every workspace after about the 270th was left off the map without a word.
  */
-export const POOL_RINGS = 12
+export const POOL_RINGS = 48
 
 export const cellKey = (q, r) => `${q},${r}`
 
