@@ -35,7 +35,7 @@ import { loadGate } from '../world/gate.js'
 import { campusBuilding, loadCampusBuildings } from '../world/campus-buildings.js'
 import { DeckNumbers, LightPools, Settlement, Walkways, loadSettlement, settlementReady } from '../world/settlement.js'
 import { WALK_TOP, walkwayRoute, walkwayStrips } from '../world/walkway.js'
-import { reachDown, settlementNumbers, settlementParts, settlementPools, settlementRuns, underLamps } from '../world/settlement-plan.js'
+import { mastFor, reachDown, settlementNumbers, settlementParts, settlementPools, settlementRuns, underLamps } from '../world/settlement-plan.js'
 import { mouth, placed, planDecks } from '../world/settlement-decks.js'
 import { placesOf, stackHeights } from '../world/settlement-load.js'
 import { SHADES, shadeOf } from '../world/shades.js'
@@ -1321,6 +1321,9 @@ export class Colony {
       }
     }
 
+    // A mast is a pole: walked round, close.
+    for (const mast of this.masts || []) obstacles.push({ x: mast.x, z: mast.z, r: 0.2 + TRAVEL_RADIUS, keep: 0.3 + AGENT_RADIUS })
+
     // A stack is as much in the way as a building.
     // Long and narrow, so two rounds along its length and not one about its middle.
     for (const stack of this.stacks || []) {
@@ -1586,6 +1589,8 @@ export class Colony {
       this.lightPools.set([])
       this.deckNumbers.set([])
       this.stacks = []
+      this.masts = []
+    this.masts = []
       if (style?.kit) loadSettlement().then(() => this._syncSettlement(), () => {})
       return
     }
@@ -1597,6 +1602,7 @@ export class Colony {
     }
     const spot = new THREE.Vector3()
     this.stacks = []
+    this.masts = []
     const reach = PLOT_APOTHEM - style.gap
     const shapedParts = []
     const parts = settlementParts(
@@ -1610,6 +1616,11 @@ export class Colony {
           for (const unit of plot.units) {
             shapedParts.push({ part: unit.deck, plot: plot.id, x: unit.at.x, y, z: unit.at.z, turn: unit.at.turn })
             unit.at.posts.forEach((at, n) => shapedParts.push({ part: post, plot: plot.id, x: at.x, y, z: at.z, turn: ((n * 5 + unit.turn) % 4) * (Math.PI / 2) }))
+            const mast = mastFor(plot.id, unit)
+            if (mast) {
+              shapedParts.push({ ...mast, plot: plot.id, y })
+              this.masts.push(mast)
+            }
             for (const lamp of underLamps(plot.id, unit)) shapedParts.push({ part: 'under-lamp', plot: plot.id, x: lamp.x, y, z: lamp.z, turn: unit.at.turn })
             for (const gate of unit.gates) {
               const at = mouth(gate.cell, gate.side, reach)

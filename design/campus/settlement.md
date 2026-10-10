@@ -239,6 +239,10 @@ point, and scale it along z to the span.
 | run-lights | one thin cable, sag 0.45, with ten small lamps at uneven gaps, two of them out | -0.58, at the middle | 0.12 | 380 | 127064 | 512 | 0.6 to 2.0 |
 | run-lights-b | a cable of sag 0.70 with nine lamps, one out, and a second cable beside it | -0.85, at the middle | 0.13 | 440 | 235068 | 512 | 0.6 to 2.0 |
 | run-pipe | three straight pipes one above another, bores 0.14, 0.10 and 0.07, two clamps and a flange | -0.12 (top at 0.40) | 0.24 | 280 | 82812 | 256 | 0.5 to 2.5 |
+| run-cable-c | one heavy cable, sag 0.50, with a splice box past the middle and a drip loop let down before it | -0.80, at z = 1.8 (the loop) | 0.17 | 280 | 64148 | 256 | 0.5 to 2.5 |
+| run-cable-d | five thin lines, together at the near end and fanned 0.66 apart at the far one; one hangs far below the rest | -1.30, at z = 2.4 | 0.66 | 334 | 127276 | 256 | 0.5 to 2.5 |
+| run-hose | a thick ribbed hose, sag 0.25, with one coupling | -0.39, at the middle | 0.29 | 376 | 80288 | 256 | 0.5 to 2.0 |
+| run-lights-c | a heavier line, sag 0.60, with five big caged lamps hung 0.36 under it in twos and ones, two of them out | -1.11, at the middle | 0.34 | 474 | 205488 | 512 | 0.7 to 1.6 |
 
 - The sag does not change with the scale along z: it is a depth, in the part's own y, whatever the
   span. Pitching the part tips the sag with it. Keep whatever is under a run clear of its lowest
@@ -251,7 +255,29 @@ point, and scale it along z to the span.
 - The pipes' clamps (0.07 long), collars and flange stretch with the run; at 2.5 times a clamp is
   0.18 long, which still reads as a clamp. The pipe bundle is rigid: do not hang it where it would
   cross a walking area below head height, and it looks wrong pitched steeply.
-- The `-b` parts are second versions for variety, so two runs side by side do not match.
+- The `-b`, `-c` and `-d` parts are further versions for variety, so two runs side by side do not match.
+- `run-cable-d` is not the same end for end: its lines leave the origin together and are tied along a
+  bar 0.66 wide at the far end. Its low line hangs 1.30 down: keep it for spans with room under them.
+- `run-hose` swells and narrows every 0.86 along its length; beyond 2.0 times that reads as a jointed duct.
+- `run-lights-c` has lamps 0.2 across in a cage 0.34 wide. They take stretch worst of all the runs:
+  at 1.6 times a lamp is 0.32 long, beyond that it reads as a canister. Its lamps hang to 1.11 below
+  the line between its ends.
+
+## Masts
+
+Something to make a line fast to on a deck with no tall stack. Origin at the foot, on the deck top
+(y = 0). Each stands on a base plate no wider than 0.46 and keeps within 0.7 of its axis in plan. A
+line is tied at the very top, on the axis, at (0, H, 0). The crossarms run along x. Maps as given.
+
+| Part | What it is | H (tie a line here) | Reach from the axis | Triangles | Bytes | Maps |
+|---|---|---|---|---|---|---|
+| mast-1 | a plain pole with one crossarm, two braces and two insulators | 3.40 | 0.55 | 156 | 91252 | 256 |
+| mast-2 | two uprights braced in a zigzag, crossarms at 4.15 and 3.25 with three insulators, a junction box at 1.35 and an amber lamp at 3.6 | 4.60 | 0.63 | 324 | 316284 | 512 |
+| mast-3 | a short pole that leans and comes back, patched at the join, an offcut for an arm to one side, a coil of spare cable hung on it | 2.80 | 0.66 | 248 | 198936 | 256 |
+
+`mast-2`'s lamp is in the emission map in the kit's amber. `mast-3` is not the same from both sides:
+its arm reaches 0.66 toward +x and 0.30 toward -x.
+
 
 ### port-gate
 

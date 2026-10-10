@@ -1967,7 +1967,8 @@ def sweep(b, mat, pts, r, sides=4):
         side = d.cross(Vector((0, 0, 1)))
         side = side.normalized() if side.length > 1e-4 else Vector((1, 0, 0))
         up = side.cross(d)
-        rings.append([bm.verts.new(p + (side * math.cos(TAU * k / sides) + up * math.sin(TAU * k / sides)) * r) for k in range(sides)])
+        ri = r[i] if isinstance(r, (list, tuple)) else r          # a thickness for each point, or one for all
+        rings.append([bm.verts.new(p + (side * math.cos(TAU * k / sides) + up * math.sin(TAU * k / sides)) * ri) for k in range(sides)])
     for a, c in zip(rings, rings[1:]):
         for k in range(sides):
             bm.faces.new((a[k], a[(k + 1) % sides], c[(k + 1) % sides], c[k]))
@@ -2030,6 +2031,141 @@ def part_run_pipe(b):
         box(b, 'black', (0.2, 0.07, 0.46), T(0, y, 0.12), bevel=False)
         box(b, 'leggalv', (0.24, 0.03, 0.05), T(0, y, 0.37), bevel=False)
     sweep(b, 'leggalv', [Vector((0, -2.9, 0.0)), Vector((0, -2.97, 0.0))], 0.115, 8)   # one flange, on the big pipe
+
+def part_run_cable_c(b):
+    """One heavy cable with a splice box past the middle and a drip loop let down before it."""
+    sag = 0.5
+    low = lambda f: -sag * 4 * f * (1 - f)
+    sweep(b, 'grillebar', slack(sag, 1.0, 0.0, (0.0, 0.0), 12), 0.04, 6)
+    f = 0.68
+    box(b, 'black', (0.17, 0.36, 0.15), T(0, -RUN * f, low(f)), bevel=False)
+    for e in (-1, 1):
+        box(b, 'leggalv', (0.11, 0.05, 0.11), T(0, -RUN * f + e * 0.21, low(f + e * 0.035 * -1)), bevel=False)
+    # the drip loop: a thinner line leaves the cable, hangs in a U and comes back to it
+    f0, f1 = 0.24, 0.36
+    loop = [Vector((0.03, -RUN * (f0 + (f1 - f0) * t), low(f0 + (f1 - f0) * t) - 0.36 * math.sin(math.pi * t) ** 0.7)) for t in [i / 8 for i in range(9)]]
+    sweep(b, 'grillebar', loop, 0.016, 4)
+    for y in (0.0, -RUN):
+        box(b, 'leggalv', (0.14, 0.06, 0.12), T(0, y, 0.0), bevel=False)
+
+def part_run_cable_d(b):
+    """A loose bundle of five thin lines, together at the near end and fanned apart at the far one; one hangs far below the rest."""
+    rng = random.Random(81)
+    #        sag, where it is lowest, how far across at the far end, how high at the far end, thickness
+    for sag, skew, x1, z1, r in ((0.3, 1.0, -0.26, 0.1, 0.012), (0.45, 1.2, -0.1, -0.04, 0.014), (0.38, 0.9, 0.06, 0.06, 0.011),
+                                 (0.6, 1.1, 0.24, -0.08, 0.013), (1.3, 0.85, 0.14, 0.0, 0.015)):
+        pts = []
+        for i in range(11):
+            f = i / 10
+            g = f ** skew
+            pts.append(Vector((x1 * f * f, -RUN * f, z1 * f - sag * 4 * g * (1 - g))))
+        sweep(b, 'grillebar', pts, r, 3)
+    box(b, 'leggalv', (0.16, 0.06, 0.12), T(0, 0, 0.0), bevel=False)
+    box(b, 'leggalv', (0.66, 0.05, 0.05), T(-0.01, -RUN, 0.0), bevel=False)       # the bar the fanned ends are tied along
+
+def part_run_hose(b):
+    """A thick ribbed hose with a shallow sag and one coupling."""
+    sag, n = 0.25, 14
+    pts = slack(sag, 1.0, 0.0, (0.0, 0.0), n)
+    sweep(b, 'black', pts, [0.092 if i % 2 == 0 else 0.074 for i in range(n + 1)], 8)
+    f = 0.4
+    c = Vector((0, -RUN * f, -sag * 4 * f * (1 - f)))
+    sweep(b, 'leggalv', [c + Vector((0, 0.13, 0.0)), c - Vector((0, 0.13, 0.0))], 0.125, 8)
+    for e in (-1, 1):
+        sweep(b, 'steel', [c + Vector((0, e * 0.15, 0.0)), c + Vector((0, e * 0.19, 0.0))], 0.145, 8)
+    for y in (0.0, -RUN):
+        sweep(b, 'steel', [Vector((0, y + 0.07, 0.0)), Vector((0, y - 0.07, 0.0))], 0.12, 8)
+
+def part_run_lights_c(b):
+    """A heavier line with five big caged lamps hung from it in twos and ones; two of them are out."""
+    sag = 0.6
+    low = lambda f: -sag * 4 * f * (1 - f)
+    sweep(b, 'grillebar', slack(sag, 1.0, 0.0, (0.0, 0.0), 12), 0.02, 4)
+    for i, s in enumerate((0.9, 1.55, 3.3, 4.55, 5.15)):
+        f = s / RUN
+        top = Vector((0, -s, low(f)))
+        c = top - Vector((0, 0, 0.36))
+        box(b, 'grillebar', (0.02, 0.02, 0.2), T(top.x, top.y, top.z - 0.1), bevel=False)          # the dropper
+        mat = 'dim' if i in (1, 3) else 'light'
+        bm = b.bm(mat, False)
+        r = 0.1
+        ring = [bm.verts.new(c + Vector((math.cos(TAU * k / 6) * r, 0, math.sin(TAU * k / 6) * r * 1.25))) for k in range(6)]
+        ends = [bm.verts.new(c + Vector((0, e * r, 0))) for e in (-1, 1)]
+        for k in range(6):
+            bm.faces.new((ring[k], ring[(k + 1) % 6], ends[1]))
+            bm.faces.new((ring[(k + 1) % 6], ring[k], ends[0]))
+        # the cage: a hood over it, a hoop under it, a bar down each side
+        bm = b.bm('leggalv', False)
+        hood = [bm.verts.new(c + Vector((math.cos(TAU * k / 6) * 0.17, math.sin(TAU * k / 6) * 0.17, 0.13))) for k in range(6)]
+        tip = bm.verts.new(c + Vector((0, 0, 0.2)))
+        for k in range(6):
+            bm.faces.new((hood[k], hood[(k + 1) % 6], tip))
+        bm.faces.new(list(reversed(hood)))
+        box(b, 'leggalv', (0.3, 0.02, 0.02), T(c.x, c.y, c.z - 0.15), bevel=False)
+        for e in (-1, 1):
+            box(b, 'leggalv', (0.02, 0.02, 0.3), T(c.x + e * 0.14, c.y, c.z), bevel=False)
+    for y in (0.0, -RUN):
+        box(b, 'leggalv', (0.12, 0.05, 0.08), T(0, y, 0.0), bevel=False)
+
+# ---------------------------------------------------------------------- masts
+# Something to make a line fast to on a deck with no tall stack. Origin at the foot on the deck top.
+# A line is tied at the very top, on the mast's axis: MAST_TOP gives the height.
+MAST_TOP = {'mast-1': 3.4, 'mast-2': 4.6, 'mast-3': 2.8}
+
+def _insulator(b, x, y, z):
+    sweep(b, 'leggalv', [Vector((x, y, z)), Vector((x, y, z + 0.16))], 0.035, 5)
+    sweep(b, 'leggalv', [Vector((x, y, z + 0.05)), Vector((x, y, z + 0.09))], 0.07, 5)
+
+def part_mast_1(b):
+    """A plain pole with one crossarm and two insulators."""
+    H = MAST_TOP['mast-1']
+    box(b, 'steel', (0.44, 0.44, 0.04), T(0, 0, 0.02), bevel=False)
+    sweep(b, 'steel', [Vector((0, 0, 0.04)), Vector((0, 0, H - 0.06))], 0.055, 6)
+    box(b, 'black', (0.14, 0.14, 0.06), T(0, 0, H - 0.03), bevel=False)                           # the cap a line is tied to
+    box(b, 'steel', (1.1, 0.07, 0.07), T(0, 0, H - 0.5), bevel=False)
+    for e in (-1, 1):
+        beam(b, 'leggalv', (e * 0.42, 0, H - 0.53), (0, 0, H - 0.95), 0.03, 0.03, bevel=False)
+        _insulator(b, e * 0.48, 0, H - 0.465)
+    box(b, 'rustpart', (0.16, 0.16, 0.1), T(0, 0, 0.09), bevel=False)
+
+def part_mast_2(b):
+    """A braced pole of two uprights with two crossarms at different heights, a junction box and a lamp."""
+    H = MAST_TOP['mast-2']
+    box(b, 'steel', (0.46, 0.3, 0.04), T(0, 0, 0.02), bevel=False)
+    for e in (-1, 1):
+        sweep(b, 'steel', [Vector((e * 0.13, 0, 0.04)), Vector((e * 0.07, 0, H - 0.08))], 0.03, 4)
+    n = 8
+    for i in range(n):
+        z0, z1 = 0.25 + i * (H - 0.6) / n, 0.25 + (i + 1) * (H - 0.6) / n
+        s = 1 if i % 2 else -1
+        w0, w1 = 0.13 - 0.06 * (z0 / H), 0.13 - 0.06 * (z1 / H)
+        beam(b, 'leggalv', (s * w0, 0, z0), (-s * w1, 0, z1), 0.022, 0.022, bevel=False)
+    box(b, 'black', (0.2, 0.12, 0.08), T(0, 0, H - 0.04), bevel=False)                            # the cap a line is tied to
+    box(b, 'steel', (1.2, 0.06, 0.06), T(0.0, 0, H - 0.45), bevel=False)
+    box(b, 'steel', (0.8, 0.06, 0.06), T(0.22, 0, H - 1.35), bevel=False)
+    for x, z in ((-0.54, H - 0.42), (0.54, H - 0.42), (0.56, H - 1.32)):
+        _insulator(b, x, 0, z)
+    box(b, 'black', (0.26, 0.14, 0.34), T(0, -0.1, 1.35), bevel=False)                            # junction box
+    box(b, 'leggalv', (0.3, 0.18, 0.03), T(0, -0.1, 1.54), bevel=False)
+    box(b, 'leggalv', (0.05, 0.3, 0.04), T(0, -0.16, H - 0.95), bevel=False)                      # the lamp's arm
+    box(b, 'black', (0.2, 0.16, 0.05), T(0, -0.3, H - 0.96), bevel=False)
+    box(b, 'light', (0.14, 0.11, 0.06), T(0, -0.3, H - 1.015), bevel=False)
+
+def part_mast_3(b):
+    """A short pole that leans and has been patched, an offcut welded on for an arm, a coil of spare cable hung on it."""
+    H = MAST_TOP['mast-3']
+    box(b, 'steel', (0.4, 0.4, 0.04), T(0, 0, 0.02), bevel=False)
+    sweep(b, 'steel', [Vector((0, 0, 0.04)), Vector((0.14, 0.03, 1.5))], 0.06, 5)
+    sweep(b, 'rustpart', [Vector((0.14, 0.03, 1.36)), Vector((0.0, 0.0, H - 0.05))], 0.045, 5)
+    box(b, 'leggalv', (0.2, 0.18, 0.36), T(0.135, 0.03, 1.43) @ RY(0.09), bevel=False)            # the patch over the join
+    box(b, 'black', (0.12, 0.12, 0.05), T(0, 0, H - 0.025), bevel=False)                          # the cap a line is tied to
+    box(b, 'rustpart', (0.78, 0.06, 0.09), T(0.27, 0.0, H - 0.42) @ RY(-0.12), bevel=False)       # the offcut arm, to one side
+    _insulator(b, 0.57, 0, H - 0.35)
+    # a coil of cable hung over the arm's short end
+    c = Vector((-0.02, -0.08, H - 0.78))
+    ring = [c + Vector((math.cos(TAU * k / 8) * 0.24, 0.02 * math.sin(TAU * k / 4), math.sin(TAU * k / 8) * 0.3)) for k in range(9)]
+    sweep(b, 'grillebar', ring, 0.035, 4)
+    sweep(b, 'grillebar', [p + Vector((0.0, -0.05, -0.02)) for p in ring], 0.03, 4)
 
 def part_port_gate(b):
     """A swing gate between two short posts, to close a port that has no crossing. 2.0 wide."""
@@ -2524,6 +2660,13 @@ PARTS = {
     'run-lights': (part_run_lights(0.45, 71, 2, 0.055), 'plain', 512, 0.0),
     'run-lights-b': (part_run_lights(0.7, 72, 1, 0.065, second=0.5), 'plain', 512, 0.0),
     'run-pipe': (part_run_pipe, 'plain', 256, 0.0),
+    'run-cable-c': (part_run_cable_c, 'plain', 256, 0.0),
+    'run-cable-d': (part_run_cable_d, 'plain', 256, 0.0),
+    'run-hose': (part_run_hose, 'plain', 256, 0.0),
+    'run-lights-c': (part_run_lights_c, 'plain', 512, 0.0),
+    'mast-1': (part_mast_1, 'plain', 256, 0.0),
+    'mast-2': (part_mast_2, 'plain', 512, 0.0),
+    'mast-3': (part_mast_3, 'plain', 256, 0.0),
     'legs-1': (part_legs(1), 'legs', 1024, 0.0),
     'legs-2': (part_legs(2), 'legs', 1024, 0.0),
     'legs-3': (part_legs(3), 'legs', 1024, 0.0),

@@ -389,30 +389,67 @@ export function underLamps(plot, unit) {
   return lamps
 }
 
-/** How long a run is made, and how far it can be drawn or squeezed: see "Runs between stacks" in the kit's notes. */
+/** How long a run is made: see "Runs between stacks" in the kit's notes. */
 const RUN = 6
-const RUN_REACH = { lights: [3.6, 12], other: [3, 15] }
-/** How high each module's roof is at its middle, and half a frame's length and width. */
+/**
+ * The kinds of run: how far each sags at its lowest, how short and long it can be drawn, and
+ * how often it is wanted. Strings of lights are the fewest, since a campus hung with the same
+ * string of lights over and over reads as one part used again.
+ */
+export const RUNS = {
+  'run-cable': { sag: 0.81, reach: [3, 15], often: 4 },
+  'run-cable-b': { sag: 0.98, reach: [3, 15], often: 4 },
+  'run-cable-c': { sag: 0.8, reach: [3, 15], often: 4 },
+  'run-cable-d': { sag: 1.3, reach: [3, 15], often: 3 },
+  'run-hose': { sag: 0.39, reach: [3, 12], often: 2 },
+  'run-pipe': { sag: 0.12, reach: [3, 9], often: 3, level: true },
+  'run-lights': { sag: 0.58, reach: [3.6, 12], often: 1 },
+  'run-lights-b': { sag: 0.85, reach: [3.6, 12], often: 1 },
+  'run-lights-c': { sag: 1.11, reach: [4.2, 9.6], often: 1 },
+}
+const RUN_REACH = [3, 15]
+/** How high each module's roof is at its middle, half a frame's length and width, and how high a line is tied on each mast. */
 const ROOF_HIGH = { 'mod-cabin': 1.89, 'mod-drum': 1.93, 'mod-shed': 1.73, 'mod-tank': 1.79 }
 const FRAME_HALF = { along: 1.78, across: 1.18 }
-/** The least a line's ends are above the higher of its two decks: over the heads of whoever is on it. */
-const RUN_CLEAR = 1.7
-/** How far each kind of run sags at its lowest, and how far above a deck that must stay: a robot and a hand. */
-const RUN_SAG = { 'run-cable': 0.81, 'run-cable-b': 0.98, 'run-lights': 0.58, 'run-lights-b': 0.85, 'run-pipe': 0.12 }
+export const MAST_HIGH = { 'mast-1': 3.4, 'mast-2': 4.6, 'mast-3': 2.8 }
+/** How far above a deck a run's lowest point must stay: a robot and a hand. */
 const HEAD_ROOM = 1.15
+/** How far in from an end a line is asked how high it is: about where it comes over the edge of that end's deck. */
+const EDGE_IN = 4
 
 /**
- * What is hung between stacks: cables, a string of lights, a bundle of pipes.
+ * Where a mast stands on a deck of its own shape, and which: at one of its posts, which are
+ * out at its edges, on most decks and not all. Something to hang a line from where there is
+ * no stack.
  *
- * A line is made fast to something that is there: the middle of the roof of whatever is on
- * top of a stack, or the edge of the floor a frame carries, on the side facing the other end.
- * Stacks near enough to each other are tied, some of them and not all, each end at whichever
- * of its places its own name picks, so the lines cross the campus at every height. None goes
- * to a stack that already has two, none passes through a third stack, none comes down to
- * where anybody walks on the higher of its two decks, and a pipe, being rigid, only where it
- * can run level.
+ * @param {string} plot
+ * @param {{deck: string, at: {posts: Array<{x: number, z: number}>, stacks: Array<{x: number, z: number}>, buildings: Array<{x: number, z: number}>}}} unit
+ * @returns {{part: string, x: number, z: number, turn: number} | null}
+ */
+export function mastFor(plot, unit) {
+  const roll = hash(`${plot}/${unit.deck}/mast`)
+  if (roll % 5 >= 4 || !unit.at.posts.length) return null
+  // The post with most room about it: a mast is not stood against a stack or a building.
+  const taken = [...unit.at.stacks, ...(unit.at.buildings || [])]
+  const room = (post) => Math.min(9, ...taken.map((thing) => Math.hypot(thing.x - post.x, thing.z - post.z)))
+  const posts = [...unit.at.posts].sort((p, q) => room(q) - room(p) || p.x - q.x || p.z - q.z)
+  const at = posts[(roll >>> 4) % Math.min(2, posts.length)]
+  if (room(at) < 2.4) return null
+  return { part: `mast-${1 + ((roll >>> 8) % 3)}`, x: at.x, z: at.z, turn: ((roll >>> 12) % 12) * (Math.PI / 6) }
+}
+
+/**
+ * What is hung across the settlement: cables, hoses, pipes, the odd string of lights.
  *
- * @param {Placed[]} parts  the settlement's parts; only its modules and frames are read
+ * A line is made fast to something that is there: the top of a mast, the middle of the roof
+ * of whatever is on top of a stack, or the edge of the floor a frame carries on the side
+ * facing the other end. Whatever stands near enough is tied, nearest first, each end at
+ * whichever of its places its own name picks, so the lines cross the campus at every height.
+ * Nothing carries more than three. None passes through a stack on the way, none comes down
+ * to where anybody walks, a pipe, being rigid, runs only level, and no two lines at one
+ * place are the same kind where another kind will do.
+ *
+ * @param {Placed[]} parts  the settlement's parts; only its modules, frames and masts are read
  * @returns {Array<Placed & {pitch: number, span: number}>} `pitch` tips the far end up (negative) or down, `span` draws it along its length
  */
 export function settlementRuns(parts) {
@@ -421,7 +458,7 @@ export function settlementRuns(parts) {
     // The storeys of one stack stand a hand's width off each other: whatever is within a pace is the same stack.
     let stack = stacks.find((other) => other.plot === part.plot && Math.hypot(other.x - part.x, other.z - part.z) < reach)
     if (!stack) {
-      stack = { key: `${part.x.toFixed(2)},${part.z.toFixed(2)}`, plot: part.plot, x: part.x, z: part.z, deck: part.y, places: [], top: null, runs: 0 }
+      stack = { key: `${part.x.toFixed(2)},${part.z.toFixed(2)}`, plot: part.plot, x: part.x, z: part.z, deck: part.y, places: [], top: null, kinds: [], solid: true }
       stacks.push(stack)
     }
     stack.deck = Math.min(stack.deck, part.y)
@@ -435,11 +472,16 @@ export function settlementRuns(parts) {
     const high = ROOF_HIGH[part.part]
     if (!high) continue
     const stack = stackAt(part, 0.9)
-    if (!stack.top || part.y > stack.top.y - high) stack.top = { x: part.x, z: part.z, y: part.y + high }
+    if (!stack.top || part.y + high > stack.top.y) stack.top = { x: part.x, z: part.z, y: part.y + high }
   }
   for (const stack of stacks) {
     if (stack.top) stack.places.push(stack.top)
     stack.places.sort((a, b) => a.y - b.y)
+  }
+  for (const part of parts) {
+    const high = MAST_HIGH[part.part]
+    if (!high) continue
+    stacks.push({ key: `${part.x.toFixed(2)},${part.z.toFixed(2)}`, plot: part.plot, x: part.x, z: part.z, deck: part.y, places: [{ x: part.x, z: part.z, y: part.y + high }], kinds: [], solid: false })
   }
   const all = stacks.filter((stack) => stack.places.length).sort((a, b) => (a.key < b.key ? -1 : 1))
   /** Where a line toward (tx, tz) is made fast at one of a stack's places. */
@@ -459,56 +501,59 @@ export function settlementRuns(parts) {
   for (let i = 0; i < all.length; i++) {
     for (let j = i + 1; j < all.length; j++) {
       const far = Math.hypot(all[j].x - all[i].x, all[j].z - all[i].z)
-      if (far >= RUN_REACH.other[0] && far <= RUN_REACH.other[1] + 3.6) pairs.push({ a: all[i], b: all[j], far })
+      if (far >= RUN_REACH[0] && far <= RUN_REACH[1] + 3.6) pairs.push({ a: all[i], b: all[j], far })
     }
   }
   // Nearest first, so what is tied is what stands together.
   pairs.sort((p, q) => p.far - q.far || (p.a.key + p.b.key < q.a.key + q.b.key ? -1 : 1))
   const runs = []
   for (const { a, b, far } of pairs) {
-    if (a.runs >= 2 || b.runs >= 2) continue
+    if (a.kinds.length >= 3 || b.kinds.length >= 3) continue
     const roll = hash(`${a.key}/${b.key}/run`)
-    if (roll % 5 >= 4) continue
-    const floor = Math.max(a.deck, b.deck) + RUN_CLEAR
-    const pick = (stack, n) => {
-      const high = stack.places.filter((place) => place.y >= floor)
-      return high.length ? high[n % high.length] : null
-    }
-    const pa = pick(a, roll >>> 4)
-    const pb = pick(b, roll >>> 9)
-    if (!pa || !pb) continue
+    // Now and then two things that could be tied are not.
+    if (roll % 6 === 0) continue
     const ux = (b.x - a.x) / far
     const uz = (b.z - a.z) / far
-    // Not through another stack on the way.
+    // Not through a stack on the way.
     const through = all.some((other) => {
-      if (other === a || other === b) return false
+      if (other === a || other === b || !other.solid) return false
       const along = (other.x - a.x) * ux + (other.z - a.z) * uz
       const across = Math.abs((other.x - a.x) * -uz + (other.z - a.z) * ux)
       return along > 0 && along < far && across < 2.2
     })
     if (through) continue
-    const from = fast(pa, b.x, b.z)
-    const to = fast(pb, a.x, a.z)
-    const flat = Math.hypot(to.x - from.x, to.z - from.z)
-    const rise = to.y - from.y
-    const length = Math.hypot(flat, rise)
-    const pitch = -Math.atan2(rise, flat)
-    if (Math.abs(pitch) > 0.45 || length < RUN_REACH.other[0] || length > RUN_REACH.other[1]) continue
-    const lit = length >= RUN_REACH.lights[0] && length <= RUN_REACH.lights[1]
-    const kind = (roll >>> 14) % 10
-    // Whichever kinds hang clear of the heads of anybody on the higher deck, at their lowest.
-    const room = Math.min(from.y, to.y) - Math.max(a.deck, b.deck) - HEAD_ROOM
-    const hangs = (name) => RUN_SAG[name] <= room && (lit || !/lights/.test(name))
-    const wanted = Math.abs(rise) < 0.01 && flat < 9 && kind === 0
-      ? ['run-pipe']
-      : lit && kind < 6
-        ? (kind % 2 ? ['run-lights', 'run-lights-b'] : ['run-lights-b', 'run-lights'])
-        : (kind % 2 ? ['run-cable', 'run-cable-b', 'run-lights'] : ['run-cable-b', 'run-cable', 'run-lights'])
-    const part = wanted.find(hangs)
-    if (!part) continue
-    a.runs++
-    b.runs++
-    runs.push({ part, plot: a.plot, x: from.x, y: from.y, z: from.z, turn: Math.atan2(to.x - from.x, to.z - from.z), pitch, span: length / RUN })
+    // Each end at one of its places, tried from the one its name picks: the first two that leave room.
+    let hung = null
+    for (let n = 0; n < a.places.length * b.places.length && !hung; n++) {
+      const pa = a.places[((roll >>> 4) + n) % a.places.length]
+      const pb = b.places[((roll >>> 9) + Math.floor(n / a.places.length)) % b.places.length]
+      const from = fast(pa, b.x, b.z)
+      const to = fast(pb, a.x, a.z)
+      const flat = Math.hypot(to.x - from.x, to.z - from.z)
+      const rise = to.y - from.y
+      const length = Math.hypot(flat, rise)
+      if (Math.abs(Math.atan2(rise, flat)) > 0.45 || length < RUN_REACH[0] || length > RUN_REACH[1]) continue
+      // How high the line is where it comes in over each deck's edge, and at its lowest between.
+      const over = (deck, y, other) => (flat <= EDGE_IN ? Math.min(y, other) : y + ((other - y) * EDGE_IN) / flat) - deck
+      if (Math.min(over(a.deck, from.y, to.y), over(b.deck, to.y, from.y)) < HEAD_ROOM) continue
+      // It hangs lowest about its middle, which is half way between its ends in height and over the ground between the two decks, or over one of them.
+      const room = (from.y + to.y) / 2 - (a.deck + b.deck) / 2 - HEAD_ROOM
+      const fits = Object.keys(RUNS).filter((name) => {
+        const kind = RUNS[name]
+        return kind.sag <= room && length >= kind.reach[0] && length <= kind.reach[1] && (!kind.level || Math.abs(rise) < 0.01)
+      })
+      if (!fits.length) continue
+      // A kind neither end has already, where there is one; then by how often each is wanted.
+      const fresh = fits.filter((name) => !a.kinds.includes(name) && !b.kinds.includes(name))
+      const from_ = fresh.length ? fresh : fits
+      let pickAt = (roll >>> 14) % from_.reduce((sum, name) => sum + RUNS[name].often, 0)
+      const part = from_.find((name) => (pickAt -= RUNS[name].often) < 0)
+      hung = { part, plot: a.plot, x: from.x, y: from.y, z: from.z, turn: Math.atan2(to.x - from.x, to.z - from.z), pitch: -Math.atan2(rise, flat), span: length / RUN }
+    }
+    if (!hung) continue
+    a.kinds.push(hung.part)
+    b.kinds.push(hung.part)
+    runs.push(hung)
   }
   return runs
 }
