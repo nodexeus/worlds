@@ -283,21 +283,47 @@ test('a leg that comes down over a canal reaches its bed: a longer leg where the
 
 import { settlementRuns } from '../src/world/settlement-plan.js'
 
-test('cables, pipes and strings of lights are hung between stacks that stand near each other, from roof to roof, and not between every pair', () => {
-  const frame = (plot, x, z, y) => ({ part: 'mod-cabin', plot, x: x + 0.1, y, z: z - 0.05, turn: 0 })
-  // A scatter of two- and three-storey stacks on decks at two heights.
+test('cables, pipes and strings of lights are hung between stacks that stand near each other, each end made fast to a roof or to the edge of a frame, and not between every pair', () => {
+  // A scatter of stacks on decks at two heights: a module alone, or frames with a module in each and one on top.
   const parts = []
+  const kinds = ['mod-cabin', 'mod-drum', 'mod-shed', 'mod-tank']
+  const high = { 'mod-cabin': 1.89, 'mod-drum': 1.93, 'mod-shed': 1.73, 'mod-tank': 1.79 }
+  const stacks = []
   for (let n = 0; n < 40; n++) {
     const x = (n % 8) * 9 + ((n * 37) % 5)
     const z = Math.floor(n / 8) * 9 + ((n * 53) % 4)
     const deck = n % 3 ? 3.15 : 4.5
-    parts.push(frame(`p${n}`, x, z, deck))
-    if (n % 2) parts.push(frame(`p${n}`, x, z, deck + 2.3))
+    const storeys = 1 + (n % 3)
+    const turn = (n % 4) * 0.5
+    const stack = { x, z, turn, frames: [], top: null }
+    for (let k = 0; k < storeys; k++) {
+      const kind = kinds[(n + k) % 4]
+      const last = k === storeys - 1
+      if (!last) {
+        parts.push({ part: 'frame', plot: `p${n}`, x, y: deck + k * 2.3, z, turn })
+        stack.frames.push(deck + (k + 1) * 2.3)
+      }
+      const mod = { part: kind, plot: `p${n}`, x: x + (last ? 0.2 : 0.04), y: deck + k * 2.3, z: z - (last ? 0.15 : 0), turn }
+      parts.push(mod)
+      if (last) stack.top = { x: mod.x, z: mod.z, y: mod.y + high[kind] }
+    }
+    stacks.push(stack)
   }
   const runs = settlementRuns(parts)
   assert.ok(runs.length > 8, `some are hung: ${runs.length}`)
   assert.ok(runs.length < 60, 'not every pair')
   assert.ok(new Set(runs.map((run) => run.part)).size >= 3, 'of more than one kind')
+  /** The stack a point is made fast to, if it is on something of that stack's. */
+  const fastTo = (p) => stacks.find((stack) => {
+    if (Math.hypot(stack.top.x - p.x, stack.top.z - p.z) < 1e-6 && Math.abs(stack.top.y - p.y) < 1e-6) return true
+    // The edge of a frame's floor: on the outline of its rectangle, at its height.
+    const dx = p.x - stack.x
+    const dz = p.z - stack.z
+    const along = Math.abs(dx * Math.cos(stack.turn) - dz * Math.sin(stack.turn))
+    const across = Math.abs(dx * Math.sin(stack.turn) + dz * Math.cos(stack.turn))
+    const onEdge = along <= 1.78 + 1e-6 && across <= 1.18 + 1e-6 && (Math.abs(along - 1.78) < 1e-6 || Math.abs(across - 1.18) < 1e-6)
+    return onEdge && stack.frames.some((y) => Math.abs(y - p.y) < 1e-6)
+  })
   const ends = new Map()
   for (const run of runs) {
     assert.match(run.part, /^run-(cable|cable-b|lights|lights-b|pipe)$/)
@@ -307,17 +333,17 @@ test('cables, pipes and strings of lights are hung between stacks that stand nea
     // Where its far end comes to: along its heading, pitched up or down.
     const flat = Math.cos(run.pitch) * length
     const far = { x: run.x + Math.sin(run.turn) * flat, y: run.y - Math.sin(run.pitch) * length, z: run.z + Math.cos(run.turn) * flat }
-    const near = (p) => parts.some((f) => Math.hypot(f.x - p.x, f.z - p.z) < 1.4 && Math.abs(f.y + 2.2 - p.y) < 1e-6)
-    assert.ok(near(run) && near(far), 'both ends are made fast at a roof, at its edge')
+    const from = fastTo(run)
+    const to = fastTo(far)
+    assert.ok(from && to && from !== to, 'both ends are on something: a roof, or the edge of a frame, of two different stacks')
     assert.ok(Math.abs(run.pitch) < 0.5, 'none is hung steeply')
     if (run.part === 'run-pipe') assert.ok(Math.abs(run.pitch) < 0.05, 'a pipe is rigid and runs level')
-    for (const p of [run, far]) {
-      const stack = parts.find((f) => Math.hypot(f.x - p.x, f.z - p.z) < 1.4)
-      const key = `${stack.x},${stack.z}`
-      ends.set(key, (ends.get(key) || 0) + 1)
-    }
+    const sag = { 'run-cable': 0.81, 'run-cable-b': 0.98, 'run-lights': 0.58, 'run-lights-b': 0.85, 'run-pipe': 0.12 }[run.part]
+    const decks = [from, to].map((stack) => parts.find((p) => p.plot === parts.find((q) => Math.hypot(q.x - stack.x, q.z - stack.z) < 0.5).plot).y)
+    assert.ok(Math.min(run.y, far.y) - sag >= Math.max(...decks) + 1.15 - 1e-9, 'its lowest point is over the heads of anybody on the higher deck')
+    for (const stack of [from, to]) ends.set(stack, (ends.get(stack) || 0) + 1)
   }
   assert.ok(Math.max(...ends.values()) <= 2, 'no stack is made a maypole')
   assert.deepEqual(settlementRuns(parts), runs, 'the same every time')
-  assert.deepEqual(settlementRuns([frame('a', 0, 0, 3)]), [], 'one stack alone has nothing to be tied to')
+  assert.deepEqual(settlementRuns([{ part: 'mod-drum', plot: 'a', x: 0, y: 3, z: 0, turn: 0 }]), [], 'one stack alone has nothing to be tied to')
 })
