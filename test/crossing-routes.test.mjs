@@ -126,3 +126,26 @@ test('a span narrower than the rest is walked no wider than it is: nobody is car
   assert.equal(height([boards], 0, 0.9, 1.4, 0), null, 'off the boards: not held up')
   assert.equal(height([gangway], 0, 1.3, 1.4, 0), 0.45)
 })
+
+test('spans are found by where they are: asking near a point gives every span that point could be on, in their own order, and few others', async () => {
+  const { SpanIndex, onSpan: on } = await import('../src/world/crossing-spans.js')
+  const spans = []
+  for (let n = 0; n < 600; n++) {
+    const a = n * 0.7
+    spans.push({ x: (n % 30) * 12 - 180 + Math.sin(n) * 3, z: Math.floor(n / 30) * 12 - 120 + Math.cos(n) * 3, ux: Math.cos(a), uz: Math.sin(a), half: 1.4 + (n % 4), y0: 0.45, rise: n % 3 ? 0 : 2 })
+  }
+  const index = new SpanIndex(spans, 2.2)
+  let asked = 0
+  let given = 0
+  for (let x = -200; x <= 200; x += 3.7) {
+    for (let z = -140; z <= 140; z += 4.1) {
+      const near = index.near(x, z)
+      const all = spans.filter((span) => on(span, x, z, 1.4, 0.6))
+      assert.deepEqual(near.filter((span) => on(span, x, z, 1.4, 0.6)), all, 'none missed, and in order')
+      asked++
+      given += near.length
+    }
+  }
+  assert.ok(given / asked < 6, `a handful to look at each time, not all 600: ${(given / asked).toFixed(1)}`)
+  assert.deepEqual(new SpanIndex([], 2).near(0, 0), [])
+})

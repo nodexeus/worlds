@@ -140,3 +140,45 @@ export function causewayOf(from, to, { reach, gap, levelStep, deckTop, rise }) {
   }
   return { spans, plates, stair, heading: Math.atan2(ux, uz), y: deckTop }
 }
+
+/** How wide a square of ground the index keeps its spans by. */
+const INDEX_CELL = 8
+const NONE = []
+
+/**
+ * Spans, kept by where they are.
+ *
+ * Whether a point is on a crossing is asked for every cell of the crew's map and for every
+ * walker every frame. Asked of every span in turn, that is the campus's size squared, and on
+ * a campus of hundreds of workspaces it is seconds. Here a span is filed under each square of
+ * ground it could be reached from, and a point is asked only of the spans in its own square.
+ */
+export class SpanIndex {
+  /**
+   * @param {Span[]} spans
+   * @param {number} margin  the most that will be asked for beyond a span's own length: half-width, overlap and slack together
+   */
+  constructor(spans, margin) {
+    this.cells = new Map()
+    spans.forEach((span, n) => {
+      // The square it could be reached from: its length along its heading, the margin all round.
+      const reach = span.half + margin
+      const rx = Math.abs(span.ux) * reach + Math.abs(span.uz) * margin
+      const rz = Math.abs(span.uz) * reach + Math.abs(span.ux) * margin
+      for (let cx = Math.floor((span.x - rx) / INDEX_CELL); cx <= Math.floor((span.x + rx) / INDEX_CELL); cx++) {
+        for (let cz = Math.floor((span.z - rz) / INDEX_CELL); cz <= Math.floor((span.z + rz) / INDEX_CELL); cz++) {
+          const key = cx * 73856093 + cz * 19349663
+          const list = this.cells.get(key)
+          // Filed in the order given, so the first span a point is on is the same one a scan would find.
+          if (list) list.push(span)
+          else this.cells.set(key, [span])
+        }
+      }
+    })
+  }
+
+  /** The spans a point could be on, in the order they were given. */
+  near(x, z) {
+    return this.cells.get(Math.floor(x / INDEX_CELL) * 73856093 + Math.floor(z / INDEX_CELL) * 19349663) || NONE
+  }
+}
