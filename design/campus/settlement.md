@@ -104,53 +104,70 @@ hexagon, clear of a notch.
 
 ## Decks of their own shape
 
-`deck-e` to `deck-j`: single platforms whose outline is not a hexagon. Origin at the cell centre on
-the walking surface, as the hexagon decks. Any multiple of 60 degrees of turn; no mirroring. Their
-kerbs, rails, lit strips and edge beams are part of the model: they take no edge parts.
-`deck-shapes.json` carries each one's outline, ports, footprints, lit strips and number place, and is
-written by `build_settlement.py` from the same figures the models are built from.
+Ten decks in three sizes. Origin at the centre of the deck's (first) cell on the walking surface. Any
+multiple of 60 degrees of turn; no mirroring. Kerbs, rails, lit strips and edge beams are part of the
+model: they take no edge parts and no leg sets. `deck-shapes.json` carries each one's outline, ports,
+wings, footprints, posts, lit strips and number place, and is written by `build_settlement.py` from the
+same figures the models are built from.
+
+A large deck covers two cells: its own and the neighbour in direction k = 0, whose centre is 13.164
+away at 30 degrees (x 11.400, z -6.582). Its ports and wings are given as (cell, k).
 
 What every one of them keeps to:
 
-- A port is at an edge mid point of the cell's hexagon: 5.146 from the centre at 30 + 60k degrees.
-  At a port the floor reaches that point, flush, with a mouth 2.2 wide and no kerb or rail across it.
-- Beyond 5.146 in any of the six directions, within 1.7 either side, there is no floor, port or not.
-  (Bolt heads in the slab's face stand 0.03 into it.)
-- Nothing is more than 6.2 from the centre measured toward an edge mid point, or 6.8 from the centre.
-- The legs go under at the same origin and the SAME TURN as the deck. Every leg head of every set is
-  then covered with 0.4 or more to spare.
+- A port is at an edge mid point of a cell's hexagon: 5.146 from that cell's centre at 30 + 60k
+  degrees. There the floor ends flush, 2.6 wide, with 2.2 of it open (no kerb or rail) and 2.1 clear
+  between the kerbs of the floor that leads to it.
+- A wing is a direction with no port in which the floor runs out past 5.146: at most 9.0 from the cell
+  centre and 1.7 either side of the direction. Use a deck only at a turn where each wing points at a
+  cell that stays empty.
+- In every other direction there is no floor beyond 5.146 within 1.7 either side. Bolt heads in the
+  slab's face stand 0.03 past it, and on `deck-s2` the end of a beam under the deck stands 0.10 past it.
+- Elsewhere the floor stays inside its cell's hexagon or within 7.0 of the cell centre toward a corner.
+  A large deck's floor also crosses the gap between its own two cells, up to 5.94 wide.
 
-| Part | Ports (k) | Outline | Area | Finish | Triangles | Bytes | Maps |
-|---|---|---|---|---|---|---|---|
-| deck-e | 0 1 2 3 4 5 | a bay at corner 0, a tab at 1, a diagonal at 2, a half tab at 3, a square step at 4, a small diagonal at 5 | 87.3 | used | 7840 | 3263168 | 1024 |
-| deck-f | 0 1 2 3 4 5 | a wide tab at corner 0, a step at 1, a bay at 3, a tab at 4, a long diagonal at 5 | 89.2 | nearly clean | 8511 | 3214984 | 1024 |
-| deck-g | 0 2 3 5 | sides 1 and 4 cut back to 3.9 and 4.25, a wide tab at corner 0, a tab at 3 | 82.0 | used | 7956 | 3220908 | 1024 |
-| deck-h | 0 1 3 4 | a bay at corner 0, a diagonal at 1, a tab at 2, a step at 3, a half tab at 5 | 87.9 | nearly clean | 7534 | 3171740 | 1024 |
-| deck-i | 0 2 4 | side 1 cut back to 3.9, a tab at corner 0, a bay at 3, a diagonal at 4, a wide tab at 5 | 82.4 | used | 8380 | 3236144 | 1024 |
-| deck-j | 0 1 3 | side 4 cut back to 3.6, a half tab at corner 0, a diagonal at 1, a wide tab at 2, a step at 3 | 82.0 | nearly clean | 8093 | 3107880 | 1024 |
+| Part | Size | What it is | Area | Ports | Wings | Fits (buildings + stacks) | Posts | Triangles | Bytes |
+|---|---|---|---|---|---|---|---|---|---|
+| deck-s1 | small | a tight landing in the corner between two ports | 44.5 | 0 1 | none | 0 + 1 | 3 | 5151 | 3119988 |
+| deck-s2 | small | an L with a port at the end of each arm | 40.8 | 2 5 | none | 0 + 1 | 3 | 4810 | 2904312 |
+| deck-s3 | small | a pad out on a wing, reached by its own walkway | 49.7 | 3 4 | 1 | 1 + 1 | 3 | 7951 | 3148208 |
+| deck-m1 | medium | a long pier with a bulb at one end | 81.6 | 0 2 4 | 1 | 2 + 2 | 5 | 7063 | 3226908 |
+| deck-m2 | medium | a wedge running out to a point, a jetty either side | 81.2 | 1 3 5 | 0 | 2 + 1 | 5 | 7336 | 3090388 |
+| deck-m3 | medium | a slab with a bite out of it and a pier off one side | 83.5 | 0 1 3 4 | 5 | 0 + 2 | 5 | 7833 | 3179268 |
+| deck-m4 | medium | half a slab and a forked jetty to the two far ports | 77.2 | 0 1 2 3 4 5 | none | 0 + 1 | 5 | 5774 | 2978312 |
+| deck-l1 | large | a dumbbell: two pads and a neck across the gap | 158.0 | (0,1) (0,3) (1,0) (1,4) | none | 2 + 4 | 8 | 12055 | 3366212 |
+| deck-l2 | large | a broad yard with a pier | 166.9 | (0,1) (0,5) (1,0) (1,5) | (1,1) | 3 + 3 | 8 | 11296 | 3247980 |
+| deck-l3 | large | a pad, a long arm to a far landing, a pier behind | 148.2 | (0,2) (0,4) (1,0) (1,1) (1,5) | (0,3) | 0 + 4 | 8 | 12451 | 3295804 |
 
-Corner k is toward 60k degrees, side k toward 30 + 60k. A hexagon deck's area is 91.7.
+All maps are 1024. Highest point of any of them is 1.27 (a balcony's mast); most stop at 0.98 (rail).
 
-Each has a balcony or a shelf of plant standing off a cut side or the back of a bay. These stay inside
-the hexagon. Highest point of any of the six: 1.27 (a balcony's mast).
+### What fits
 
-### Room for buildings and a stack
+The footprints given keep every margin: a building is a circle of radius 1.6, a stack a rectangle
+3.56 by 2.36; 0.3 from the edge, 0.8 between any two, and outside each port's lane (1.0 either side
+of its centre line for 2.0 inward). "Fits" in the table is what a search found with all of that kept,
+most footprints first and stacks before buildings. It is a search, not a proof: a count one higher
+may exist on some decks.
 
-The rule asked for (six buildings of radius 1.6 and a stack 3.56 by 2.36, 0.3 from the edge, 0.9
-between any two, 1.0 clear of each port's centre line for 2.5 inward) cannot be met on these decks,
-nor on the hexagon deck (by the same search the hexagon allows a radius of 1.09, and 1.27 with no
-port lanes). The spots given are the ones that leave every building the most room with all those
-margins kept. `buildingRadius` is the radius that fits at all six; `buildingRoom` is each spot's own
-room to the edge, the lanes and the stack, roomiest first (the spots are listed in that order).
+### Posts
 
-| Part | Radius that fits six | Stack's spare |
-|---|---|---|
-| deck-e | 0.66 | -0.13 (it stands 0.13 inside a port lane: with six ports no place for it is clear of all six) |
-| deck-f | 0.65 | -0.13 (the same) |
-| deck-g | 0.70 | 0.05 |
-| deck-h | 0.85 | 0.02 |
-| deck-i | 0.78 | 0.08 |
-| deck-j | 0.75 | 0.15 |
+`post-1` to `post-5`: one heavy leg for a deck on levels 1 to 5. Origin at the middle of the post's
+head, with y = 0 at the walking surface as the leg sets have it: the head plate is at y = -0.45 and
+the footing's underside at -1.80, -3.15, -4.50, -5.85 and -7.20. A concrete pad, a bolted base plate,
+an H section, a head plate and four knee braces. Maps 512.
+
+| Part | Footprint (x by z) | Triangles | Bytes |
+|---|---|---|---|
+| post-1 | 1.76 x 1.76 | 972 | 737420 |
+| post-2 | 2.46 x 2.46 | 1040 | 758972 |
+| post-3 | 2.54 x 2.54 | 1016 | 760228 |
+| post-4 | 2.64 x 2.64 | 1084 | 731632 |
+| post-5 | 2.72 x 2.72 | 1132 | 518756 |
+
+The footprint is the knee braces' reach just under the slab; the pad is under 1.6 across. Each deck's
+post places are in `deck-shapes.json`: under floor, 0.75 or more in from the edge. A brace of a post
+that near an edge reaches past the edge under the deck by up to 0.6. `ties` lists pairs of posts
+within 6.0 of each other (each post's two nearest); nothing is modelled between them.
 
 ### Number place
 
@@ -158,23 +175,27 @@ Same sheet, size and convention as the hexagon decks (digit height 0.97).
 
 | Part | Centre (x, z) | Turn about Y | Plate (along the number by across it) |
 |---|---|---|---|
-| deck-e | (-0.08, -3.13) | 90 degrees | 2.36 x 1.96 |
-| deck-f | (3.04, -1.08) | 30 degrees | 2.36 x 1.76 |
-| deck-g | (2.26, -1.09) | 30 degrees | 2.36 x 1.76 |
-| deck-h | (2.12, -0.48) | 90 degrees | 2.76 x 2.36 |
-| deck-i | (-1.91, -0.39) | 150 degrees | 2.36 x 1.76 |
-| deck-j | (0.69, -3.56) | 90 degrees | 1.56 x 1.76 |
+| deck-s1 | (0.63, -3.47) | 30 degrees | 1.96 x 1.76 |
+| deck-s2 | (-2.37, 1.56) | 0 degrees | 1.96 x 2.36 |
+| deck-s3 | (0.89, 1.64) | 90 degrees | 2.76 x 1.54 |
+| deck-m1 | (-1.23, -1.13) | 90 degrees | 1.96 x 2.36 |
+| deck-m2 | (-0.61, 1.25) | 30 degrees | 1.96 x 1.76 |
+| deck-m3 | (0.29, 1.12) | 150 degrees | 1.96 x 1.76 |
+| deck-m4 | (-0.87, 2.82) | 90 degrees | 1.96 x 1.96 |
+| deck-l1 | (0.68, -0.02) | 30 degrees | 2.36 x 2.36 |
+| deck-l2 | (13.07, -4.39) | 30 degrees | 1.96 x 1.76 |
+| deck-l3 | (2.72, -1.95) | 30 degrees | 1.56 x 1.56 |
 
-On `deck-j` the plate is 1.56 along the number: two digits (1.30 of paint) fit with 0.13 either side.
+On `deck-s3` and `deck-l3` the place is the largest piece of plate there is, not a whole plate.
 
 ### deck-shapes.json
 
 Axes as everywhere here: x across, z toward the viewer, on y = 0. Turns are about +y in radians, the
-number plates' convention. For each deck: `ports` (the k of each), `outline` (the floor's outline in
-order, closed implicitly), `buildings` (six spots, roomiest first), `stack` (`x`, `z`, `turn`: the
-frame's length runs along (cos turn, 0, -sin turn)), `lit` (the middle of each lit strip, its `turn`
-with the deck on the strip's own -z side, and its `length`), `number` (`x`, `z`, `turn`), and three
-figures more: `area`, `buildingRadius`, `buildingRoom`.
+number plates' convention. For each deck: `size`, `cells`, `ports` and `wings` (k, or [cell, k] on a
+large deck), `outline` (the floor's outline in order, closed implicitly), `area`, `buildings`,
+`stacks` (`x`, `z`, `turn`: the frame's length runs along (cos turn, 0, -sin turn)), `posts`, `ties`
+(pairs of indices into `posts`), `lit` (the middle of each lit strip, its `turn` with the deck on the
+strip's own -z side, and its `length`), `number` (`x`, `z`, `turn`).
 
 ### port-gate
 

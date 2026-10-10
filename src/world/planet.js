@@ -33,7 +33,7 @@ const DRONES = { count: 3 }
  * How far out the foundry floor's square canal runs. On a plate seam (a multiple of sixteen),
  * and known to the coolant lines too, which keep to the ground inside it.
  */
-const FOUNDRY_CANAL = 96
+const FOUNDRY_CANAL = 240
 
 /** How far apart the campus world's levels stand. */
 const CAMPUS_LEVEL_STEP = 1.35
@@ -648,7 +648,7 @@ export const PLANETS = {
 /** Display order for the picker: home first, then outward, then the pretty ones. */
 export const PLANET_ORDER = ['campus', 'moon', 'mars', 'terra', 'beach', 'ocean', 'jungle', 'desert', 'tundra', 'autumn', 'sakura', 'volcanic', 'sky']
 
-export const GROUND_SIZE = 340
+export const GROUND_SIZE = 720
 /** Everything inside this radius is the buildable colony, and is kept nearly flat. */
 export const COLONY_RADIUS = 46
 const DETAIL_SEGMENTS = { low: 72, medium: 128, high: 190 }

@@ -1288,59 +1288,29 @@ def part_edge(rail, lit):
     return build
 
 # ====================================================================== decks that are not hexagons
-# A deck of its own shape still sits on the lattice. What it must keep to (see settlement.md):
-PORT_R = AP                 # a crossing meets a deck 5.146 from its middle, at 30 + 60k degrees
+# Three sizes of deck of their own shape. They still sit on the lattice: what they keep to is
+# written out in settlement.md, and checked by the numbers here.
+PORT_R = AP                 # a crossing meets a deck 5.146 from its cell's middle, at 30 + 60k degrees
 MOUTH = 1.1                 # half the width left open at a port
-CLEAR = 1.7                 # either side of every one of those six directions, nothing beyond PORT_R
-REACH_CORNER, REACH_SIDE = 7.0, 6.2
+CLEAR = 1.7                 # either side of a direction that is not a wing: nothing beyond PORT_R
+WING_REACH, WING_HALF = 9.0, 1.7
+REACH_CORNER = 7.0
 BUILDING_R, STACK_SIZE = 1.6, (3.56, 2.36)
-EDGE_ROOM, WALK_ROOM, LANE_ROOM, LANE_IN = 0.3, 0.9, 1.0, 2.5
+EDGE_ROOM, WALK_ROOM, LANE_ROOM, LANE_IN = 0.3, 0.8, 1.0, 2.0
+POST_IN = 0.75              # a post's middle is at least this far in from the edge
+CELL2 = Vector((PITCH * math.cos(math.pi / 6), PITCH * math.sin(math.pi / 6)))   # a large deck's second cell
 
 def _dir(k):
     a = math.radians(30 + 60 * k)
     return Vector((math.cos(a), math.sin(a)))
 
-def _corner_pts(j, kind, depth):
-    """
-    The outline's points at corner j (at 60j degrees, between side j - 1 and side j), going
-    round the deck anticlockwise. `depth` is how far each side's line is from the middle.
-    """
-    u = Vector((math.cos(TAU * j / 6), math.sin(TAU * j / 6)))
-    v = Vector((-u.y, u.x))
-    P = lambda a, c: u * a + v * c
-    ecw = P(-0.5, -math.sqrt(3) / 2)               # along side j - 1, away from the corner
-    eccw = P(-0.5, math.sqrt(3) / 2)               # along side j, away from the corner
-    # the corner the two sides' lines make
-    d0, d1 = _dir(j - 1), _dir(j)
-    r0, r1 = depth[(j - 1) % 6], depth[j % 6]
-    det = d0.x * d1.y - d0.y * d1.x
-    C = Vector(((r0 * d1.y - r1 * d0.y) / det, (d0.x * r1 - d1.x * r0) / det))
-    name, arg = (kind if isinstance(kind, tuple) else (kind, None))
-    if name == 'x':
-        return [C]
-    if name == 'cham':                             # a diagonal cut
-        return [C + ecw * arg, C + eccw * arg]
-    if name == 'step':                             # the corner taken out square
-        return [C + ecw * arg, C + ecw * arg + eccw * arg, C + eccw * arg]
-    if name == 'bite':                             # a bay cut well back, between the two ports' mouths
-        a = arg or 3.75
-        return [C + ecw * 1.7, P(a, -0.75), P(a, 0.75), C + eccw * 1.7]   # its rails stand clear of both mouths
-    if name == 'wing':                             # a tab pushed out into the corner of the cell
-        return [C + ecw * 1.2, P(6.5, -1.0), P(6.5, 1.0), C + eccw * 1.2]
-    if name == 'half':                             # half a tab: one side of the corner only
-        return [C + ecw * 1.2, P(6.4, -1.0), P(6.4, 0.0), C]
-    if name == 'big':                              # the widest thing the corner of a cell allows
-        return [C + ecw * 1.15, P(6.15, -1.45), P(6.75, -0.6), P(6.75, 0.6), P(6.15, 1.45), C + eccw * 1.15]
-    raise ValueError(name)
+def _cell(i):
+    return CELL2 if i else Vector((0, 0))
 
-def free_outline(spec):
-    depth = [PORT_R] * 6
-    for k, r in spec.get('cut', {}).items():
-        depth[k] = r
-    out = []
-    for j in range(6):
-        out += _corner_pts(j, spec['corners'][j], depth)
-    return out
+def port_pt(cell, k, lat=0.0):
+    """A point on a port's line: the edge's middle, moved `lat` along the edge (anticlockwise is positive)."""
+    d = _dir(k)
+    return _cell(cell) + d * PORT_R + Vector((-d.y, d.x)) * lat
 
 def offset_poly(poly, d):
     """Every edge of an anticlockwise polygon (it may have hollows) moved in by d."""
@@ -1387,90 +1357,134 @@ def _rect_dist(px, py, x, y, turn, size=STACK_SIZE):
         return max(dx, dy)
     return math.hypot(max(dx, 0), max(dy, 0))
 
-def _footing_room(circles, stack, pts, lanes):
-    """
-    How the seven footprints sit: the largest radius every building could have with all the
-    rooms kept (edge, walking, port lanes), and how much the stack has to spare (negative: it
-    breaks a rule).
-    """
-    R = 1e9
-    sx, sy, st = stack
-    for i, (x, y) in enumerate(circles):
-        R = min(R, _edge_room(x, y, pts) - EDGE_ROOM)
-        for a, b_ in lanes:
-            R = min(R, _seg_dist(x, y, *a, *b_) - LANE_ROOM)
-        for x2, y2 in circles[i + 1:]:
-            R = min(R, (math.hypot(x - x2, y - y2) - WALK_ROOM) / 2)
-        R = min(R, _rect_dist(x, y, sx, sy, st) - WALK_ROOM)
-    rp = _rect_pts(sx, sy, st)
-    spare = 1e9
-    for i in range(4):
-        ax, ay = rp[i]
-        bx, by = rp[(i + 1) % 4]
-        for f in (0.0, 0.25, 0.5, 0.75):
-            spare = min(spare, _edge_room(ax + (bx - ax) * f, ay + (by - ay) * f, pts) - EDGE_ROOM)
-    for px, py in pts:
-        spare = min(spare, _rect_dist(px, py, sx, sy, st) - EDGE_ROOM)
-    for a, b_ in lanes:
-        for f in (0.0, 0.2, 0.4, 0.6, 0.8, 1.0):
-            spare = min(spare, _rect_dist(a[0] + (b_[0] - a[0]) * f, a[1] + (b_[1] - a[1]) * f, sx, sy, st) - LANE_ROOM)
-    return R, spare
+def _rect_rect(r1, r2):
+    """How far apart two stacks are (negative when one's corner or side middle is inside the other)."""
+    best = 1e9
+    for a, b_ in ((r1, r2), (r2, r1)):
+        pts = _rect_pts(*a)
+        for i in range(4):
+            (x0, y0), (x1, y1) = pts[i], pts[(i + 1) % 4]
+            for f in (0.0, 0.5):
+                best = min(best, _rect_dist(x0 + (x1 - x0) * f, y0 + (y1 - y0) * f, *b_))
+    return best
 
-def place_footings(pts, lanes, seed):
-    """Six buildings and a stack, placed to leave the buildings as much room as the deck can give."""
+def footing_slack(circles, stacks, pts, lanes):
+    """The least any margin has to spare with these footprints (negative: a rule is broken)."""
+    s = 1e9
+    for i, (x, y) in enumerate(circles):
+        s = min(s, _edge_room(x, y, pts) - EDGE_ROOM - BUILDING_R)
+        for a, b_ in lanes:
+            s = min(s, _seg_dist(x, y, *a, *b_) - LANE_ROOM - BUILDING_R)
+        for x2, y2 in circles[i + 1:]:
+            s = min(s, math.hypot(x - x2, y - y2) - 2 * BUILDING_R - WALK_ROOM)
+        for st in stacks:
+            s = min(s, _rect_dist(x, y, *st) - BUILDING_R - WALK_ROOM)
+    for i, st in enumerate(stacks):
+        rp = _rect_pts(*st)
+        for j in range(4):
+            ax, ay = rp[j]
+            bx, by = rp[(j + 1) % 4]
+            for f in (0.0, 0.25, 0.5, 0.75):
+                s = min(s, _edge_room(ax + (bx - ax) * f, ay + (by - ay) * f, pts) - EDGE_ROOM)
+        for px, py in pts:
+            s = min(s, _rect_dist(px, py, *st) - EDGE_ROOM)
+        for a, b_ in lanes:
+            for f in (0.0, 0.25, 0.5, 0.75, 1.0):
+                s = min(s, _rect_dist(a[0] + (b_[0] - a[0]) * f, a[1] + (b_[1] - a[1]) * f, *st) - LANE_ROOM)
+        for st2 in stacks[i + 1:]:
+            s = min(s, _rect_rect(st, st2) - WALK_ROOM)
+    return s
+
+def place_footings(pts, lanes, nb, ns, seed, tries=None, steps=5000):
+    """
+    Buildings and stacks placed to leave every margin as much to spare as the deck can give.
+    A search that starts in several places and is allowed to get worse for a while before it
+    settles, so one footprint caught in a bad corner does not hold the rest back.
+    """
+    xs, ys = [p[0] for p in pts], [p[1] for p in pts]
     best = None
-    for attempt in range(9):
+    turns = [math.pi * i / 12 for i in range(12)]
+    tries = tries or (8 if nb + ns <= 4 else 4)
+    for attempt in range(tries):
         rng = random.Random(seed * 31 + attempt)
-        def anywhere():
-            while True:
-                x, y = rng.uniform(-6, 6), rng.uniform(-6, 6)
-                if _edge_room(x, y, pts) > 1.0:
+        def anywhere(room):
+            for _ in range(4000):
+                x, y = rng.uniform(min(xs), max(xs)), rng.uniform(min(ys), max(ys))
+                if _edge_room(x, y, pts) > room:
                     return (x, y)
-        circles = [anywhere() for _ in range(6)]
-        stack = (*anywhere(), rng.choice([0, math.pi / 6, math.pi / 3, math.pi / 2, 2 * math.pi / 3, 5 * math.pi / 6]))
-        def score(c, s):
-            R, spare = _footing_room(c, s, pts, lanes)
-            return R + 25 * min(0.0, spare - 0.02)
-        cur = score(circles, stack)
-        steps = 7000
+            return (sum(xs) / len(xs), sum(ys) / len(ys))
+        circles = [anywhere(1.2) for _ in range(nb)]
+        stacks = [(*anywhere(1.0), rng.choice(turns)) for _ in range(ns)]
+        cur = footing_slack(circles, stacks, pts, lanes)
+        top = (cur, circles, stacks)
         for it in range(steps):
-            step = 1.6 * (1 - it / steps) + 0.03
-            c2, s2 = list(circles), stack
-            pick = rng.randrange(8)
-            if pick < 6:
+            cool = 1 - it / steps
+            step = 1.8 * cool + 0.03
+            c2, s2 = list(circles), list(stacks)
+            pick = rng.randrange(nb + 2 * ns)
+            if pick < nb:
                 x, y = circles[pick]
-                c2[pick] = (x + rng.gauss(0, step), y + rng.gauss(0, step))
-            elif pick == 6:
-                s2 = (stack[0] + rng.gauss(0, step), stack[1] + rng.gauss(0, step), stack[2])
+                c2[pick] = anywhere(1.2) if rng.random() < 0.03 * cool else (x + rng.gauss(0, step), y + rng.gauss(0, step))
+            elif pick < nb + ns:
+                x, y, t = stacks[pick - nb]
+                s2[pick - nb] = (*anywhere(1.0), t) if rng.random() < 0.03 * cool else (x + rng.gauss(0, step), y + rng.gauss(0, step), t)
             else:
-                s2 = (stack[0], stack[1], stack[2] + rng.choice([-1, 1]) * math.pi / 6)
-            new = score(c2, s2)
-            if new >= cur:
-                circles, stack, cur = c2, s2, new
-        if best is None or cur > best[0]:
-            best = (cur, circles, stack)
-    return best[1], best[2], _footing_room(best[1], best[2], pts, lanes)
+                x, y, t = stacks[pick - nb - ns]
+                s2[pick - nb - ns] = (x, y, rng.choice(turns))
+            new = footing_slack(c2, s2, pts, lanes)
+            if new >= cur - 0.35 * cool * cool * rng.random():
+                circles, stacks, cur = c2, s2, new
+                if cur > top[0]:
+                    top = (cur, circles, stacks)
+        if best is None or top[0] > best[0]:
+            best = top
+        if best[0] > 0.1:
+            break
+    return best
+
+def chords(pts, origin, direction):
+    """Where a straight line lies inside an outline: pairs of distances along it from `origin`."""
+    ox, oy = origin
+    dx, dy = direction
+    hits = []
+    n = len(pts)
+    for i in range(n):
+        ax, ay = pts[i]
+        bx, by = pts[(i + 1) % n]
+        ex, ey = bx - ax, by - ay
+        den = dx * ey - dy * ex
+        if abs(den) < 1e-9:
+            continue
+        t = ((ax - ox) * ey - (ay - oy) * ex) / den
+        u = ((ax - ox) * dy - (ay - oy) * dx) / den
+        if 0 <= u < 1:
+            hits.append(t)
+    hits.sort()
+    return [(hits[i], hits[i + 1]) for i in range(0, len(hits) - 1, 2)]
 
 def plating_free(b, poly, z, rng, a, ways, grille, hatch, old, marks, note):
     """
     The plates of a deck of any shape, in the hexagon decks' language: one grid, a dark tread
-    field, a pale brushed way wherever a plate lies on the way from the middle to a port, plates
-    put in later, grilles, hatches, one or two painted marks. Where the number goes is noted, not painted.
+    field, a pale brushed way wherever a plate lies on the way from the deck's hub to a port,
+    plates put in later, grilles, hatches, one or two painted marks. Where the number goes is
+    noted, not painted. `ways` are straight runs, each a pair of points.
     """
     ca, sa = math.cos(a), math.sin(a)
     def w(x, y):
         return Vector((x * ca - y * sa, x * sa + y * ca))
     def back(p):
         return p.x * ca + p.y * sa, -p.x * sa + p.y * ca
-    ys = [-9.0 + rng.uniform(0, 1.2)]
-    while ys[-1] < 9:
+    lo = [min(back(p)[i] for p in poly) for i in (0, 1)]
+    hi = [max(back(p)[i] for p in poly) for i in (0, 1)]
+    ys = [lo[1] - rng.uniform(0.2, 1.4)]
+    while ys[-1] < hi[1]:
         ys.append(ys[-1] + rng.choice([1.6, 1.8, 2.0, 2.4]))
     marks = list(marks)
     rusted = False
     free = []
     for j in range(len(ys) - 1):
-        xs = [-9.4 + rng.uniform(0, 1)]
-        while xs[-1] < 9:
+        xs = [lo[0] - rng.uniform(0.2, 1.2)]
+        while xs[-1] < hi[0]:
             xs.append(xs[-1] + rng.choice([1.6, 2.0, 2.0, 2.4, 2.8]))
         for i in range(len(xs) - 1):
             g = 0.02
@@ -1491,10 +1505,9 @@ def plating_free(b, poly, z, rng, a, ways, grille, hatch, old, marks, note):
             sx, sy = x1 - x0, y1 - y0
             whole = abs(area(cut) - sx * sy) < 0.01
             mid_w = w((x0 + x1) / 2, (y0 + y1) / 2)
-            on_way = any(_seg_dist(mid_w.x, mid_w.y, 0, 0, q.x, q.y) < 0.82 for q in ways)
+            on_way = any(_seg_dist(mid_w.x, mid_w.y, p.x, p.y, q.x, q.y) < 0.82 for p, q in ways)
             M = T(0, 0, z) @ RZ(a) @ T((x0 + x1) / 2, (y0 + y1) / 2, 0)
             roll = rng.random()
-            mid = mid_w.length
             if whole and not on_way and roll < grille:
                 n = max(3, int(sx / 0.2))
                 for k in range(n):
@@ -1522,8 +1535,14 @@ def plating_free(b, poly, z, rng, a, ways, grille, hatch, old, marks, note):
                 uvs.append((qu + (0.01 + 0.98 * u) * 0.5, qv + (0.01 + 0.98 * v) * 0.5))
             lift = rng.choice([0, 0, 0.007]) + (0.004 if mat == 'deckwalk' else 0)
             plate_uv(b, mat, cut, uvs, z - 0.05, z + lift)
+            big = note.get('biggest_area', 0.0)
+            if area(cut) > big:
+                c_ = sum(cut, Vector((0, 0))) / len(cut)
+                span = [max(back(p)[i] for p in cut) - min(back(p)[i] for p in cut) for i in (0, 1)]
+                note['biggest_area'] = area(cut)
+                note['biggest'] = (False, c_, span[0], span[1])
             top = lift + 0.001
-            if whole and on_way and marks and mid > 2.2:
+            if whole and on_way and marks:
                 kind = marks.pop(0)
                 if kind == 'chevron':
                     chevrons(b, M, 3, min(sx, sy) * 0.3, z + top)
@@ -1535,8 +1554,8 @@ def plating_free(b, poly, z, rng, a, ways, grille, hatch, old, marks, note):
                     for e in (-1, 1):
                         box(b, 'hazard', (sx - 0.16, 0.09, 0.006), M @ T(0, e * (sy / 2 - 0.16), top + 0.003), bevel=False)
                 continue
-            if whole and mat == 'deckwalk':
-                free.append((mid, mid_w, sx, sy))
+            if whole:
+                free.append((mat == 'deckwalk', mid_w, sx, sy))
             if whole and mat == 'decktread' and rng.random() < hatch:
                 hs = min(sx, sy) * 0.3
                 for e in (-1, 1):
@@ -1544,26 +1563,34 @@ def plating_free(b, poly, z, rng, a, ways, grille, hatch, old, marks, note):
                     box(b, 'steel', (0.09, hs * 2 + 0.14, 0.07), M @ T(e * hs, 0, 0.03))
                 box(b, 'black', (hs * 2 - 0.1, hs * 2 - 0.1, 0.034), M @ T(0, 0, 0.015))
                 box(b, 'steel', (0.3, 0.06, 0.05), M @ T(0, hs * 0.5, 0.05))
+                free.pop()
                 continue
             if rng.random() < 0.3 and whole:
                 c = sum(cut, Vector((0, 0))) / len(cut)
                 for p in cut:
                     q = p + (c - p).normalized() * 0.13
                     cyl(b, 'fixing', 0.04, 0.02, T(q.x, q.y, z + lift), 5, bevel=False, cap=True)
-    if 'number' not in note and free:
-        mid, at, sx, sy = max(free, key=lambda f: f[0])
-        note['number'] = dict(x=at.x, y=at.y, turn=a, plate=(sx, sy))
+    if 'number' not in note:
+        # no whole plate of the way was left for it: any whole plate will do, one of the way's first;
+        # and on a deck too narrow for any whole plate, the biggest piece of one
+        pick = max(free, key=lambda f: (f[0], f[2] * f[3])) if free else note.get('biggest')
+        if pick:
+            on, at, sx, sy = pick
+            note['number'] = dict(x=at.x, y=at.y, turn=a, plate=(sx, sy))
+    note.pop('biggest', None)
+    note.pop('biggest_area', None)
 
 def _stretches(p, q, ports):
     """The lengths of an edge that take a kerb: all of it, less any port's mouth that lies on it."""
     L = (q - p).length
     e = (q - p) / L
     cuts = []
-    for k in ports:
-        d = _dir(k)
-        if abs(p.dot(d) - PORT_R) < 1e-3 and abs(q.dot(d) - PORT_R) < 1e-3:
-            m = (d * PORT_R - p).dot(e)
-            cuts.append((m - MOUTH, m + MOUTH))
+    for cell, k in ports:
+        d, c = _dir(k), _cell(cell)
+        if abs((p - c).dot(d) - PORT_R) < 1e-3 and abs((q - c).dot(d) - PORT_R) < 1e-3:
+            m = (c + d * PORT_R - p).dot(e)
+            if -MOUTH < m < L + MOUTH:
+                cuts.append((m - MOUTH, m + MOUTH))
     out, at = [], 0.0
     for a_, c_ in sorted(cuts):
         if a_ > at:
@@ -1571,78 +1598,196 @@ def _stretches(p, q, ports):
         at = max(at, c_)
     if at < L:
         out.append((at, L))
-    return [(a_, c_) for a_, c_ in out if c_ - a_ > 0.25], bool(cuts)
+    return [(a_, c_) for a_, c_ in out if c_ - a_ > 0.25]
 
-FREE_DECKS = {
-    # ports; corners 0 to 5; sides cut back (side: how far from the middle); which ports the brushed way runs to;
-    # which way the plates are laid; what stands off the cut sides; finish
-    'deck-e': dict(ports=[0, 1, 2, 3, 4, 5], corners=['bite', 'wing', ('cham', 1.6), 'half', ('step', 1.2), ('cham', 0.9)],
-                   way=[1, 4, 3], grid=90, marks=('chevron', 'number'), extra=[('balcony', 0)], seed=201, grille=0.07, hatch=0.04),
-    'deck-f': dict(ports=[0, 1, 2, 3, 4, 5], corners=['big', ('step', 1.2), 'x', 'bite', 'wing', ('cham', 1.8)],
-                   way=[0, 3, 5], grid=30, marks=('lines', 'number'), extra=[('shelf', 3)], seed=202, grille=0.05, hatch=0.05),
-    'deck-g': dict(ports=[0, 2, 3, 5], corners=['big', 'x', 'x', 'wing', 'x', 'x'], cut={1: 3.9, 4: 4.25},
-                   way=[0, 3], grid=30, marks=('band', 'number'), extra=[('balcony', 's1'), ('shelf', 's4')], seed=203, grille=0.08, hatch=0.03),
-    'deck-h': dict(ports=[0, 1, 3, 4], corners=['bite', ('cham', 1.4), 'wing', ('step', 1.2), 'x', 'half'],
-                   way=[1, 4, 0], grid=90, marks=('chevron', 'number'), extra=[('shelf', 0)], seed=204, grille=0.06, hatch=0.05),
-    'deck-i': dict(ports=[0, 2, 4], corners=['wing', 'x', 'x', 'bite', ('cham', 1.6), 'big'], cut={1: 3.9},
-                   way=[0, 2, 4], grid=150, marks=('lines', 'number'), extra=[('balcony', 's1'), ('shelf', 3)], seed=205, grille=0.08, hatch=0.03),
-    'deck-j': dict(ports=[0, 1, 3], corners=['half', ('cham', 1.7), 'big', ('step', 1.2), 'x', 'x'], cut={4: 3.6},
-                   way=[1, 3, 0], grid=90, marks=('band', 'number'), extra=[('balcony', 's4')], seed=206, grille=0.07, hatch=0.04),
+def _F0(a, c, cell=0):
+    """A point given along and across the line between a large deck's two cells (direction k = 0)."""
+    d = _dir(0)
+    return d * a + Vector((-d.y, d.x)) * c
+
+def _shape(pts, frame=False):
+    """An outline's points. In a frame-given outline, a point marked 'w' is already in the deck's own x, y."""
+    return [Vector(p[1:]) if p[0] == 'w' else (_F0(*p) if frame else Vector(p)) for p in pts]
+
+def wing_pt(cell, k, rad, lat):
+    """A point out along direction k: `rad` from the cell's middle, `lat` across."""
+    d = _dir(k)
+    return _cell(cell) + d * rad + Vector((-d.y, d.x)) * lat
+
+P, W = port_pt, wing_pt
+V = lambda p: (p.x, p.y)
+PW = lambda cell, k, lat: ('w', *V(port_pt(cell, k, lat)))      # a port's point, for an outline given in the frame
+TONGUE = 1.3                # half the width of floor at a mouth: the kerbs either side then leave 2.1 clear
+# Outlines, anticlockwise, in Blender's x, y (glTF z is minus y). `frame`: given along and across the
+# k = 0 direction instead. Ports and wings are (cell, k). `hub` is where the brushed way runs from.
+SHAPED_DECKS = {
+    # ---- small: one building and one stack
+    'deck-s1': dict(size='small', ports=[(0, 0), (0, 1)], wings=[], want=(1, 1), posts=3, grid=30, finish='used', seed=301,
+                    marks=('chevron', 'number'), hub=(0.8, 2.4),          # a tight landing in the corner between two ports
+                    outline=[V(P(0, 0, -1.3)), V(P(0, 0, 1.3)), V(P(0, 1, -1.3)), V(P(0, 1, 1.3)), (-2.0, 5.146), (-3.2, 3.6),
+                             (-3.2, -0.7), (-0.9, -1.5), (3.6, -1.0)]),
+    'deck-s2': dict(size='small', ports=[(0, 2), (0, 5)], wings=[], want=(1, 1), posts=3, grid=0, finish='clean', seed=302,
+                    marks=('lines', 'number'), hub=(-3.2, -2.6),          # an L: a port at the end of each arm
+                    outline=[V(P(0, 5, -1.3)), V(P(0, 5, 1.3)), (-1.5, -0.9), (-1.5, 2.7), V(P(0, 2, -1.3)), V(P(0, 2, 1.3)),
+                             (-5.0, -1.6), (-3.6, -4.0), (2.6, -4.3)]),
+    'deck-s3': dict(size='small', ports=[(0, 3), (0, 4)], wings=[(0, 1)], want=(1, 1), posts=3, grid=90, finish='used', seed=303,
+                    marks=('band', 'number'), hub=(0, -0.6),              # a pad out on a wing, reached by its own walkway
+                    outline=[(-1.3, -5.146), (1.3, -5.146), (1.3, -2.4), (1.9, -2.4), (1.9, 1.4), (0.9, 1.4), (0.9, 4.7), (1.7, 4.7),
+                             (1.7, 8.95), (-1.7, 8.95), (-1.7, 4.7), (-0.9, 4.7), (-0.9, 1.4), (-1.9, 1.4), (-1.9, 0.405),
+                             V(P(0, 3, -1.3)), V(P(0, 3, 1.3)), (-1.557, -2.4), (-1.3, -2.4)]),
+    # ---- medium: two buildings and two stacks
+    'deck-m1': dict(size='medium', ports=[(0, 0), (0, 2), (0, 4)], wings=[(0, 1)], want=(2, 2), posts=5, grid=90, finish='used', seed=311,
+                    marks=('chevron', 'number'), hub=(0.2, -0.4),         # a long pier with a bulb at one end
+                    outline=[(-1.3, -5.146), (1.3, -5.146), (1.3, -3.4), (3.2, -3.4), (4.4, -2.0), V(P(0, 0, -1.3)), V(P(0, 0, 1.3)),
+                             (1.7, 2.7), (1.7, 9.0), (-1.3, 9.0), (-1.3, 2.9), V(P(0, 2, -1.3)), V(P(0, 2, 1.3)), (-4.6, -1.4),
+                             (-3.0, -3.4), (-1.3, -3.4)]),
+    'deck-m2': dict(size='medium', ports=[(0, 3), (0, 1), (0, 5)], wings=[(0, 0)], want=(2, 2), posts=5, grid=30, finish='clean', seed=312,
+                    marks=('lines', 'number'), hub=(0.0, 0.0), frame=True,  # a wedge running out to a point, with a jetty either side
+                    outline=[(-5.146, -2.97), (-1.2, -4.1), (0.475, -3.423), PW(0, 5, -1.3), PW(0, 5, 1.3), (2.909, -2.439),
+                             (3.5, -2.2), (5.146, -1.5), (9.0, -0.7), (9.0, 0.7), (5.146, 1.5), (3.5, 2.2), (2.909, 2.439),
+                             PW(0, 1, -1.3), PW(0, 1, 1.3), (0.475, 3.423), (-1.2, 4.1), (-5.146, 2.97)]),
+    'deck-m3': dict(size='medium', ports=[(0, 0), (0, 1), (0, 3), (0, 4)], wings=[(0, 5)], want=(2, 2), posts=5, grid=150, finish='used', seed=313,
+                    marks=('band', 'number'), hub=(1.4, 0.2),             # a slab with a bite out of it, and a pier off one side
+                    outline=[(5.942, 0), (2.971, 5.146), (-1.3, 5.146), (-1.3, 3.0), (0.057, 2.391), (-2.043, -1.246),
+                             (-5.507, 0.754), (-5.942, 0), V(P(0, 3, 1.3)), (-1.3, -5.146), (2.971, -5.146), V(P(0, 5, -1.6)),
+                             V(W(0, 5, 9.0, -1.6)), V(W(0, 5, 9.0, 1.6)), V(P(0, 5, 1.6))]),
+    'deck-m4': dict(size='medium', ports=[(0, 0), (0, 1), (0, 2), (0, 3), (0, 4), (0, 5)], wings=[], want=(2, 2), posts=5, grid=90, finish='clean', seed=314,
+                    marks=('chevron', 'number'), hub=(-1.2, 0.0),         # half a slab, and a forked jetty to the two far ports
+                    outline=[(1.3, -5.146), (1.3, -2.252), V(P(0, 5, -1.3)), V(P(0, 5, 1.3)), (2.601, 0.0), V(P(0, 0, -1.3)),
+                             V(P(0, 0, 1.3)), (1.3, 2.252), (1.3, 5.146), (-2.971, 5.146), (-5.942, 0), (-2.971, -5.146)]),
+    # ---- large: two cells as one slab, four buildings and four stacks
+    'deck-l1': dict(size='large', ports=[(0, 3), (0, 1), (1, 0), (1, 4)], wings=[], want=(4, 4), posts=8, grid=30, finish='used', seed=321,
+                    marks=('chevron', 'number'), hub=(6.6, 0.0), frame=True,   # a dumbbell: two pads and a neck across the gap
+                    outline=[(3.6, 1.5), (3.6, 3.0), PW(0, 1, -1.3), PW(0, 1, 1.3), (-1.5, 5.0), (-4.2, 3.4), (-5.146, 2.0),
+                             (-5.146, -2.0), (-4.2, -3.4), (-1.0, -4.6), (2.4, -4.0), (3.6, -2.6), (3.6, -1.5), (9.764, -1.5),
+                             (9.764, -3.0), PW(1, 4, -1.3), PW(1, 4, 1.3), (15.164, -4.6), (17.564, -2.6), (18.310, -1.6),
+                             (18.310, 1.6), (17.164, 3.2), (14.164, 4.4), (10.964, 3.8), (9.764, 2.6), (9.764, 1.5)]),
+    'deck-l2': dict(size='large', ports=[(0, 1), (0, 5), (1, 0), (1, 5)], wings=[(1, 1)], want=(4, 4), posts=8, grid=30, finish='clean', seed=322,
+                    marks=('lines', 'number'), hub=(8.0, 0.0), frame=True,     # a broad yard with a pier
+                    outline=[(-1.4, -4.5), PW(0, 5, -1.3), PW(0, 5, 1.3), (5.146, -2.9), (8.018, -2.9), (10.6, -4.2),
+                             PW(1, 5, -1.3), PW(1, 5, 1.3), (18.310, -1.6), (18.310, 1.6), (17.2, 3.2), (16.863, 3.807),
+                             (18.790, 7.144), (16.538, 8.444), (14.611, 5.107), (12.2, 4.6), (9.2, 3.4), (8.018, 2.9),
+                             (5.146, 2.9), PW(0, 1, -1.3), PW(0, 1, 1.3), (-1.4, 4.5)]),
+    'deck-l3': dict(size='large', ports=[(0, 2), (0, 4), (1, 0), (1, 1), (1, 5)], wings=[(0, 3)], want=(4, 4), posts=8, grid=30, finish='used', seed=323,
+                    marks=('band', 'number'), hub=(3.4, 0.4), frame=True,      # a pad, a long arm to a far landing, a pier behind
+                    outline=[(3.4, 1.9), (3.4, 3.6), (1.0, 4.9), PW(0, 2, -1.3), PW(0, 2, 1.3), (-5.146, 1.2), (-9.0, 1.2),
+                             (-9.0, -1.2), (-5.146, -1.2), (-4.6, -2.4), PW(0, 4, -1.3), PW(0, 4, 1.3), (0.6, -4.4),
+                             (0.6, -1.3), (11.0, -1.3), (11.0, -4.2), PW(1, 5, -1.3), PW(1, 5, 1.3), (17.4, -2.6),
+                             (17.4, -1.3), (18.310, -1.3), (18.310, 1.9), (15.762, 1.9), PW(1, 1, -1.3), PW(1, 1, 1.3),
+                             (12.759, 1.9)]),
 }
 DECK_DATA = {}
 
 def deck_plan(name):
-    """A deck's outline and where its seven footprints go. Worked out once: the model and deck-shapes.json both read it."""
+    """A deck's outline, what fits on it and where its posts go. Worked out once: the model and deck-shapes.json both read it."""
     if name in DECK_DATA:
         return DECK_DATA[name]
-    spec = FREE_DECKS[name]
-    outline = free_outline(spec)
+    spec = SHAPED_DECKS[name]
+    cache = bpy.app.driver_namespace.setdefault('nx_plan_cache', {})
+    outline = _shape(spec['outline'], spec.get('frame', False))
+    if area(outline) < 0:
+        outline = list(reversed(outline))
     pts = [(p.x, p.y) for p in outline]
+    hub = _shape([spec['hub']], spec.get('frame', False))[0]
     lanes = []
-    for k in spec['ports']:
-        d = _dir(k)
-        lanes.append(((d.x * PORT_R, d.y * PORT_R), (d.x * (PORT_R - LANE_IN), d.y * (PORT_R - LANE_IN))))
-    circles, stack, (fit, spare) = place_footings(pts, lanes, spec['seed'])
-    # each spot's own room (to the edge, the port lanes and the stack, not to the other buildings), roomiest first
-    def room(c):
-        return min([_edge_room(c[0], c[1], pts) - EDGE_ROOM, _rect_dist(c[0], c[1], *stack) - WALK_ROOM]
-                   + [_seg_dist(c[0], c[1], *a, *b_) - LANE_ROOM for a, b_ in lanes])
-    circles = sorted(circles, key=room, reverse=True)
-    rooms = [room(c) for c in circles]
-    DECK_DATA[name] = dict(spec=spec, outline=outline, pts=pts, lanes=lanes, buildings=circles, stack=stack,
-                           fit=fit, rooms=rooms, stack_spare=spare, area=area(outline), lit=[], note={})
+    for cell, k in spec['ports']:
+        d, c = _dir(k), _cell(cell)
+        a, b_ = c + d * PORT_R, c + d * (PORT_R - LANE_IN)
+        lanes.append(((a.x, a.y), (b_.x, b_.y)))
+    key = repr(('search 2', pts, spec['ports'], spec['want'], spec['seed'], spec['posts']))
+    if key not in cache:
+        # what fits: the count asked for if it can be had with every margin kept, or else the most that can
+        nb, ns = spec['want']
+        tries = [(nb - i, ns - j) for total in range(nb + ns) for i in range(total + 1) for j in (total - i,)
+                 if nb - i >= 0 and ns - j >= 0 and (nb - i) + (ns - j) > 0]
+        tries.sort(key=lambda c: (-(c[0] + c[1]), -c[1]))          # most footprints first; of equals, more stacks
+        found = None
+        for cb, cs in tries:
+            slack, circles, stacks = place_footings(pts, lanes, cb, cs, spec['seed'])
+            if slack >= 0:
+                found = (slack, circles, stacks)
+                break
+        if found is None:
+            found = (0.0, [], [])
+        # posts: under solid floor, well in from the edge, as far from each other as the shape allows
+        xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+        cand = []
+        y = min(ys)
+        while y < max(ys):
+            x = min(xs)
+            while x < max(xs):
+                if _edge_room(x, y, pts) >= POST_IN:
+                    cand.append((x, y))
+                x += 0.35
+            y += 0.35
+        cx, cy = sum(c[0] for c in cand) / len(cand), sum(c[1] for c in cand) / len(cand)
+        posts = [max(cand, key=lambda c: math.hypot(c[0] - cx, c[1] - cy))]
+        while len(posts) < spec['posts']:
+            posts.append(max(cand, key=lambda c: min(math.hypot(c[0] - p[0], c[1] - p[1]) for p in posts)
+                             - 0.25 * max(0.0, _edge_room(c[0], c[1], pts) - 1.2)))
+        ties = sorted({tuple(sorted((i, j))) for i in range(len(posts)) for j in sorted(
+            (j for j in range(len(posts)) if j != i), key=lambda j: math.hypot(posts[i][0] - posts[j][0], posts[i][1] - posts[j][1]))[:2]
+            if math.hypot(posts[i][0] - posts[j][0], posts[i][1] - posts[j][1]) <= 6.0})
+        cache[key] = (found, posts, ties)
+    (slack, circles, stacks), posts, ties = cache[key]
+    DECK_DATA[name] = dict(spec=spec, outline=outline, pts=pts, lanes=lanes, hub=hub, buildings=circles, stacks=stacks, slack=slack,
+                           posts=posts, ties=[list(t) for t in ties], area=area(outline), lit=[], note={})
     return DECK_DATA[name]
 
-def part_deck_free(name):
+def _allowed(p, spec, grow=0.0):
+    """Whether a point is somewhere this deck's floor may be (see settlement.md). `grow`: a little leeway."""
+    cells = (0, 1) if spec['size'] == 'large' else (0,)
+    for cell in cells:
+        q = p - _cell(cell)
+        rad = [q.dot(_dir(k)) for k in range(6)]
+        lat = [(-q.x * _dir(k).y + q.y * _dir(k).x) for k in range(6)]
+        if max(rad) <= PORT_R + grow:
+            return True                             # inside the cell's hexagon
+        for k in range(6):
+            if (cell, k) in spec['wings'] and PORT_R - 0.01 <= rad[k] <= WING_REACH + grow and abs(lat[k]) <= WING_HALF + grow:
+                return True                         # out on a declared wing
+            if spec['size'] == 'large' and (cell, k) in ((0, 0), (1, 3)) and PORT_R - 0.01 <= rad[k] <= PITCH / 2 + 0.01 and abs(lat[k]) <= RAD / 2 + grow:
+                return True                         # across the gap between its own two cells
+        if q.length <= REACH_CORNER + grow and all(not (rad[k] > PORT_R + grow and abs(lat[k]) < CLEAR - grow) for k in range(6)):
+            return True                             # in the corner of the cell, clear of every edge's middle
+    return False
+
+def part_deck_shaped(name):
     def build(b):
         plan = deck_plan(name)
-        spec, outline = plan['spec'], plan['outline']
+        spec, outline, pts = plan['spec'], plan['outline'], plan['pts']
         rng = random.Random(spec['seed'])
         n = len(outline)
         slab3(b, outline, -SLAB, -0.05)
         inner = offset_poly(outline, 0.3)
         plan['note'].clear()
-        plating_free(b, inner, 0.0, rng, math.radians(spec['grid']), [_dir(k) * PORT_R for k in spec['way']],
-                     spec['grille'], spec['hatch'], 0.14, spec['marks'], plan['note'])
+        ways = [(plan['hub'], _cell(cell) + _dir(k) * PORT_R) for cell, k in spec['ports']]
+        grid = math.radians(spec['grid'])
+        plating_free(b, inner, 0.0, rng, grid, ways, 0.07, 0.04, 0.14, spec['marks'], plan['note'])
         for i in range(n):
             prism(b, 'deck', [outline[i], outline[(i + 1) % n], inner[(i + 1) % n], inner[i]], -0.05, 0.0)
-        # the beam under the edge, and what hangs off it where the deck has been cut back
+        # the beam under the edge, and what hangs off it where the edge is well inside its cell
+        def deep(p):
+            return any(max((p - _cell(c)).dot(_dir(k)) for k in range(6)) < PORT_R - 0.45 for c in ((0, 1) if spec['size'] == 'large' else (0,)))
         hang = ['conduit', 'bracket', 'box', 'conduit', 'catwalk', 'box']
+        longest = None
         for i in range(n):
             p, q = outline[i], outline[(i + 1) % n]
             L = (q - p).length
-            cutback = all(max(p.dot(_dir(k)), q.dot(_dir(k))) < PORT_R - 0.45 for k in range(6))
-            extras = [(hang[i % len(hang)], rng.choice([-1, 1]))] if cutback and L > 2.2 else []
+            cutback = deep(p) and deep(q)
+            extras = [(hang[i % len(hang)], rng.choice([-1, 1]))] if cutback and L > 2.4 else []
             edge_beam_pq(b, p, q, extras, rng)
+            if cutback and L > 3.0 and (longest is None or L > longest[0]):
+                longest = (L, p, q)
         # kerb all round but for the ports' mouths; rails on most of it; one or two lit strips
         runs = []
         for i in range(n):
             p, q = outline[i], outline[(i + 1) % n]
             e = (q - p).normalized()
-            for a_, c_ in _stretches(p, q, spec['ports'])[0]:
+            for a_, c_ in _stretches(p, q, spec['ports']):
                 runs.append((c_ - a_, p + e * a_, p + e * c_, e))
-        order = sorted(range(len(runs)), key=lambda r: -runs[r][0])
-        lit = set(order[:1] + order[2:3]) if len(order) > 2 else set(order[:1])
+        order = [r for r in sorted(range(len(runs)), key=lambda r: -runs[r][0]) if runs[r][0] >= 2.6]
+        lit = set(order[:1] + order[2:3])
         plan['lit'].clear()
         for r, (L, p0, p1, e) in enumerate(runs):
             inw = Vector((-e.y, e.x))
@@ -1656,51 +1801,101 @@ def part_deck_free(name):
                 beam(b, 'steel', F @ Vector((-L / 2 + 0.45, 0.31, 0.015)), F @ Vector((L / 2 - 0.45, 0.31, 0.015)), 0.03, 0.03)
                 m = (p0 + p1) / 2 + inw * 0.27
                 plan['lit'].append(dict(x=m.x, y=m.y, turn=math.atan2(e.y, e.x), length=L - 1.0))
-        # what has been hung off the deck where it was cut back: all of it stays inside the hexagon
-        for kind, where in spec['extra']:
-            if isinstance(where, str):             # the middle of a cut side, a little off centre
-                k = int(where[1:])
-                d = _dir(k)
-                c = d * spec['cut'][k] + Vector((-d.y, d.x)) * rng.choice([-1.3, 1.3])
-                u = d
-            else:                                   # the back of a bay at corner `where`
-                u = Vector((math.cos(TAU * where / 6), math.sin(TAU * where / 6)))
-                c = u * 3.75
-            CORNER[kind](b, (c, u))
-        # joists under the slab
-        for y in (-3.3, -1.75, 1.75, 3.3):
-            beam(b, 'beam', (-2.9, y, -SLAB - 0.11), (2.9, y, -SLAB - 0.11), 0.12, 0.22)
-        tube(b, 'tube', (-3.0, 2.2, -SLAB - 0.3), (3.0, 2.2, -SLAB - 0.3), 0.05, 6)
+        # a balcony or a shelf of plant off the longest edge that looks into the deck's own cell, if it stays in the cell
+        if longest:
+            L, p, q = longest
+            e = (q - p).normalized()
+            u = Vector((e.y, -e.x))
+            c = p + e * (L * rng.choice([0.3, 0.7]))
+            tip = [c + u * 0.95 + e * s for s in (-0.8, 0.0, 0.8)]
+            if all(_allowed(t_, dict(spec, wings=[])) and deep(t_ - u * 0.3) and not _inside(t_.x, t_.y, pts) for t_ in tip):
+                CORNER['balcony' if spec['seed'] % 2 else 'shelf'](b, (c, u))
+        # joists under the slab, laid across the plates' grid wherever there is floor over them
+        jd = Vector((math.cos(grid), math.sin(grid)))
+        jn = Vector((-jd.y, jd.x))
+        under = [(p.x, p.y) for p in offset_poly(outline, 0.45)]
+        lo = min(Vector(p).dot(jn) for p in pts)
+        hi = max(Vector(p).dot(jn) for p in pts)
+        s = lo + 1.2
+        while s < hi - 0.8:
+            o = jn * s
+            for t0, t1 in chords(under, (o.x, o.y), (jd.x, jd.y)):
+                if t1 - t0 > 1.0:
+                    beam(b, 'beam', v3(o + jd * t0, -SLAB - 0.11), v3(o + jd * t1, -SLAB - 0.11), 0.12, 0.22)
+            s += 1.9
     return build
 
 def write_deck_shapes(path=None):
-    """deck-shapes.json: what the app needs to know about each deck of its own shape, in glTF axes (z is minus Blender's y)."""
+    """deck-shapes.json: what the app needs to know about each shaped deck, in glTF axes (z is minus Blender's y)."""
     import json
     path = path or os.path.join(HERE, 'deck-shapes.json')
     try:
         data = json.load(open(path))
     except Exception:
         data = {}
+    data = {k: v for k, v in data.items() if k in SHAPED_DECKS}
     r = lambda v: round(float(v), 3)
     for name, plan in DECK_DATA.items():
         if 'number' not in plan['note']:
             continue                                # planned but not built this time
-        num = plan['note']['number']
+        spec, num = plan['spec'], plan['note']['number']
+        large = spec['size'] == 'large'
         data[name] = {
-            'ports': plan['spec']['ports'],
+            'size': spec['size'], 'cells': 2 if large else 1,
+            'ports': [[c, k] for c, k in spec['ports']] if large else [k for c, k in spec['ports']],
+            'wings': [[c, k] for c, k in spec['wings']] if large else [k for c, k in spec['wings']],
             'outline': [[r(p.x), r(-p.y)] for p in plan['outline']],
+            'area': r(plan['area']),
             'buildings': [[r(x), r(-y)] for x, y in plan['buildings']],
-            'stack': {'x': r(plan['stack'][0]), 'z': r(-plan['stack'][1]), 'turn': r(plan['stack'][2] % math.pi)},
+            'stacks': [{'x': r(x), 'z': r(-y), 'turn': r(t % math.pi)} for x, y, t in plan['stacks']],
+            'posts': [[r(x), r(-y)] for x, y in plan['posts']],
+            'ties': plan['ties'],
             'lit': [{'x': r(l['x']), 'z': r(-l['y']), 'turn': r(l['turn']), 'length': r(l['length'])} for l in plan['lit']],
             'number': {'x': r(num['x']), 'z': r(-num['y']), 'turn': r(num['turn'])},
-            'area': r(plan['area']),
-            'buildingRadius': r(plan['fit']),
-            'buildingRoom': [r(v) for v in plan['rooms']],
         }
     with open(path, 'w') as f:
         json.dump(data, f, indent=1, sort_keys=True)
         f.write('\n')
     return path
+
+def part_post(level):
+    """
+    One heavy leg for a deck on this level: a footing, a bolted base plate, an H section, a head
+    plate under the slab and four knee braces, so it reads from any side.
+    """
+    def build(b):
+        rng = random.Random(600 + level)
+        h = LEVEL1 + STEP * (level - 1)
+        s = 0.34 + 0.06 * h
+        top, foot = -SLAB, -h
+        p = Vector((0, 0))
+        footing(b, p, foot, s, 0, bloom=level in (2, 5))
+        z0 = foot + 0.17
+        h_column(b, p, z0, z0 + 0.5, s, 0, 'legbloom' if level in (1, 4) else 'legsteel')
+        h_column(b, p, z0 + 0.5, top - 0.06, s, 0)
+        box(b, 'leggalv', (s * 1.7, s * 1.7, 0.06), T(0, 0, top - 0.03))
+        reach = min(0.85, (top - z0) * 0.45)
+        for a in range(4):
+            d = Vector((math.cos(a * math.pi / 2), math.sin(a * math.pi / 2)))
+            lo, hi = d * (s / 2), d * (s / 2 + reach)
+            beam(b, 'leggalv', v3(lo, top - 0.1 - reach), v3(hi, top - 0.08), 0.06, 0.1, bevel=False)
+            gusset(b, v3(lo, top - 0.1 - reach), d, s)
+            box(b, 'leggalv', (0.24, 0.24, 0.03), T(hi.x, hi.y, top - 0.065), bevel=False)
+        if level >= 3:
+            # a collar part way up, where a brace could be bolted on
+            zc = z0 + (top - z0) * 0.5
+            box(b, 'leggalv', (s * 1.15, s * 1.15, 0.2), T(0, 0, zc))
+        if level in (1, 3, 5):
+            for a in (0, 2):
+                R = T(0, 0, z0 + 0.36) @ RZ(a * math.pi / 2 + math.pi / 2)
+                box(b, 'hazard', (s * 0.98, 0.012, 0.3), R @ T(0, s / 2 + 0.004, 0), bevel=False)
+                box(b, 'black', (s * 0.98, 0.016, 0.06), R @ T(0, s / 2 + 0.004, 0), bevel=False)
+        if level in (2, 4, 5):
+            c = Vector((s * 0.5 + 0.1, 0.0)) if level != 4 else Vector((-(s * 0.5 + 0.1), 0.0))
+            tube(b, 'leggalv', v3(c, z0 + 0.2), v3(c, top - 0.5), 0.06, 8)
+            for f in (0.2, 0.6):
+                box(b, 'legsteel', (0.2, 0.2, 0.05), T(c.x, c.y, z0 + (top - z0) * f))
+    return build
 
 def part_port_gate(b):
     """A swing gate between two short posts, to close a port that has no crossing. 2.0 wide."""
@@ -2163,12 +2358,21 @@ PARTS = {
                          ([('catwalk', 1)], [('conduit', 1)], [], [('box', 1)], [], [('bracket', -1)]), '23', ('band', 'number'), 0.09, 0.04), 'used', 1024, 0.0),
     'deck-d': (part_deck(104, ('drop', 'balcony', 'step', 'plain', 'shelf', 'plain'), 1, (-2.9, -1.1), (-0.9, 0.9),
                          ([('bracket', 1)], [], [('box', -1)], [('catwalk', -1)], [('conduit', 1)], []), '31', ('chevron', 'number'), 0.1, 0.02), 'clean', 1024, 0.0),
-    'deck-e': (part_deck_free('deck-e'), 'used', 1024, 0.0),
-    'deck-f': (part_deck_free('deck-f'), 'clean', 1024, 0.0),
-    'deck-g': (part_deck_free('deck-g'), 'used', 1024, 0.0),
-    'deck-h': (part_deck_free('deck-h'), 'clean', 1024, 0.0),
-    'deck-i': (part_deck_free('deck-i'), 'used', 1024, 0.0),
-    'deck-j': (part_deck_free('deck-j'), 'clean', 1024, 0.0),
+    'deck-s1': (part_deck_shaped('deck-s1'), 'used', 1024, 0.0),
+    'deck-s2': (part_deck_shaped('deck-s2'), 'clean', 1024, 0.0),
+    'deck-s3': (part_deck_shaped('deck-s3'), 'used', 1024, 0.0),
+    'deck-m1': (part_deck_shaped('deck-m1'), 'used', 1024, 0.0),
+    'deck-m2': (part_deck_shaped('deck-m2'), 'clean', 1024, 0.0),
+    'deck-m3': (part_deck_shaped('deck-m3'), 'used', 1024, 0.0),
+    'deck-m4': (part_deck_shaped('deck-m4'), 'clean', 1024, 0.0),
+    'deck-l1': (part_deck_shaped('deck-l1'), 'used', 1024, 0.0),
+    'deck-l2': (part_deck_shaped('deck-l2'), 'clean', 1024, 0.0),
+    'deck-l3': (part_deck_shaped('deck-l3'), 'used', 1024, 0.0),
+    'post-1': (part_post(1), 'legs', 512, 0.0),
+    'post-2': (part_post(2), 'legs', 512, 0.0),
+    'post-3': (part_post(3), 'legs', 512, 0.0),
+    'post-4': (part_post(4), 'legs', 512, 0.0),
+    'post-5': (part_post(5), 'legs', 512, 0.0),
     'port-gate': (part_port_gate, 'plain', 512, 0.0),
     'legs-1': (part_legs(1), 'legs', 1024, 0.0),
     'legs-2': (part_legs(2), 'legs', 1024, 0.0),
@@ -2233,7 +2437,7 @@ def build(only=None):
         fn(b)
         made = b.flush(name, coll, finishes(finish))
         out[name] = len(made)
-    if any(name in FREE_DECKS for name in out):
+    if any(name in SHAPED_DECKS for name in out):
         out['deck-shapes.json'] = write_deck_shapes()
     return out
 

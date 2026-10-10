@@ -13,6 +13,8 @@
  */
 import { HEX_DIRS, cellKey } from './plot-move.js'
 import { hexToWorld } from './plots.js'
+import SHAPES from './deck-shapes.js'
+import { shadeOf } from './shades.js'
 
 const SIXTH = Math.PI / 3
 
@@ -97,7 +99,9 @@ export function settlementParts(plots, crossings, { deckTop, levelStep, apothem 
     const put = (part, x, z, turn = 0, at = y) => parts.push({ part, plot: plot.id, x, y: at, z, turn })
     const edges = []
 
-    for (const cell of plot.cells) {
+    // A workspace whose decks are of their own shape has them stood by `settlement-decks.js`:
+    // here it has only its stacks.
+    for (const cell of plot.shaped ? [] : plot.cells) {
       const key = cellKey(cell.q, cell.r)
       const seed = hash(`${plot.id}/${key}`)
       const here = hexToWorld(cell.q, cell.r)
@@ -154,7 +158,8 @@ export function settlementParts(plots, crossings, { deckTop, levelStep, apothem 
     stacks.forEach((stack, at) => {
       const seed = hash(`${plot.id}/stack/${at}`)
       const pick = (seed >>> 9) % 6
-      const storeys = plot.busy >= 4 ? [3, 3, 2, 3, 2, 3][pick] : plot.busy >= 2 ? [2, 2, 3, 2, 1, 2][pick] : [1, 2, 1, 2, 2, 1][pick]
+      // As high as the sessions in it, where the workspace says; otherwise by how busy it is.
+      const storeys = stack.storeys ?? (plot.busy >= 4 ? [3, 3, 2, 3, 2, 3][pick] : plot.busy >= 2 ? [2, 2, 3, 2, 1, 2][pick] : [1, 2, 1, 2, 2, 1][pick])
       const sign = at === 0 ? signOf.get(plot.id) : null
       const step = 1 + (seed % 3)
       const cos = Math.cos(stack.turn)
@@ -249,11 +254,25 @@ export function settlementPools(parts) {
   // The deck each workspace's parts stand on: the lowest thing it has is on it.
   const deckOf = new Map()
   for (const part of parts) {
-    if (/^deck-[a-z]$/.test(part.part)) deckOf.set(part.plot, part.y)
+    if (/^deck-/.test(part.part) && !/^deck-(join|fill)$/.test(part.part)) deckOf.set(part.plot, part.y)
   }
-  const pools = []
+  const raw = []
+  const pools = { push: (pool) => raw.push(pool.color === 'amber' ? { ...pool, color: shadeOf(pool.plot) } : pool) }
   for (const part of parts) {
     const deck = deckOf.get(part.plot) ?? part.y
+    // A deck of its own shape has its lit strips built in, and says where they are.
+    const shape = SHAPES[part.part]
+    if (shape) {
+      const cos = Math.cos(part.turn)
+      const sin = Math.sin(part.turn)
+      for (const lit of shape.lit) {
+        const turn = lit.turn + part.turn
+        const x = part.x + lit.x * cos + lit.z * sin
+        const z = part.z - lit.x * sin + lit.z * cos
+        pools.push({ plot: part.plot, kind: 'band', color: 'amber', x: x - Math.sin(turn) * 1.1, y: part.y + PROUD, z: z - Math.cos(turn) * 1.1, turn, width: lit.length, depth: 2.6 })
+      }
+      continue
+    }
     if (/lit$/.test(part.part)) {
       // Inboard of the edge: the strip is on the inside of the kerb and shines across the deck.
       const inx = -Math.sin(part.turn)
@@ -266,7 +285,7 @@ export function settlementPools(parts) {
       pools.push({ plot: part.plot, kind: 'round', color, x: part.x, y: deck + PROUD, z: part.z, turn: part.turn, width: 4.2, depth: 4.2 })
     }
   }
-  return pools
+  return raw
 }
 
 /**
@@ -297,7 +316,7 @@ export function settlementNumbers(parts) {
   const digits = []
   const nth = new Map()
   for (const part of parts) {
-    const plate = NUMBER_PLATE[part.part]
+    const plate = NUMBER_PLATE[part.part] || SHAPES[part.part]?.number
     if (!plate) continue
     const n = nth.get(part.plot) || 0
     nth.set(part.plot, n + 1)

@@ -3,6 +3,8 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { withCurve } from '../core/curve.js'
 import { tameSheen } from '../core/sheen.js'
+import { RESHADE, SHADES, shadeOf } from './shades.js'
+import { campusBuilding } from './campus-buildings.js'
 
 /**
  * The settlement, drawn: the kit's parts (`design/campus/settlement.md`), each one mesh with one
@@ -33,12 +35,25 @@ export function loadSettlement() {
 export const settlementReady = () => models.size > 0
 
 /** The same lift the campus's baked buildings get: see `bakedMaterial` in buildings.js. */
-function surface(source) {
+function surface(source, shaded = true) {
   const material = source.clone()
   material.metalness = 0.7
   material.emissiveIntensity = 1.7
-  // Steel in the sun must not go white: see `sheen.js`.
-  material.onBeforeCompile = (shader) => tameSheen(withCurve(shader))
+  // Steel in the sun must not go white: see `sheen.js`. And its lamps burn in the shade of the
+  // workspace it stands on, which each instance carries: see `shades.js`.
+  material.onBeforeCompile = (shader) => {
+    tameSheen(withCurve(shader))
+    // What is drawn one at a time, a walkway's pieces, has no shade to carry and stays amber.
+    if (!shaded) return
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec4 aGlow;\nvarying vec4 vGlow;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n\tvGlow = aGlow;')
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec4 vGlow;')
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>${RESHADE.replaceAll('GLOW', 'vGlow')}`)
+  }
+  // Two programs from one source: three must not take the one for the other.
+  material.customProgramCacheKey = () => `settlement-${shaded ? 'shaded' : 'plain'}`
   return material
 }
 
@@ -88,10 +103,14 @@ export class Settlement {
       this._p.set(part.x, part.y + (this.lifts.get(part.plot) || 0), part.z)
       this._q.setFromAxisAngle(this._up, part.turn)
       held.mesh.setMatrixAt(n, this._m.compose(this._p, this._q, this._s))
+      // A neon sign is its own colour; everything else takes the workspace's shade.
+      const shade = /^sign-/.test(part.part) ? null : SHADES[shadeOf(part.plot)]
+      held.glow.array.set(shade ? [...shade, 1] : [1, 1, 1, 0], n * 4)
     }
     for (const [name, held] of this.meshes) {
       held.mesh.count = at.get(name) || 0
       held.mesh.instanceMatrix.needsUpdate = true
+      held.glow.needsUpdate = true
     }
   }
 
@@ -103,12 +122,17 @@ export class Settlement {
     if (!model) return
     if (held) {
       this.group.remove(held.mesh)
+      held.mesh.geometry.dispose()
       held.mesh.material.dispose()
       held.mesh.dispose()
     }
     // Room to grow into, so a workspace arriving does not rebuild every kind of part.
     const capacity = Math.max(8, Math.ceil(count * 1.5))
-    const mesh = new THREE.InstancedMesh(model.geometry, surface(model.material), capacity)
+    // Its own copy of the model, since the shade of each instance's lamps is kept on it.
+    const geometry = model.geometry.clone()
+    const glow = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4), 4)
+    geometry.setAttribute('aGlow', glow)
+    const mesh = new THREE.InstancedMesh(geometry, surface(model.material), capacity)
     mesh.name = `settlement:${name}`
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
     mesh.castShadow = true
@@ -116,7 +140,7 @@ export class Settlement {
     // Its instances are all over the campus: the bounds of one say nothing about the rest.
     mesh.frustumCulled = false
     this.group.add(mesh)
-    this.meshes.set(name, { mesh, capacity })
+    this.meshes.set(name, { mesh, capacity, glow })
   }
 
   dispose() {
@@ -129,7 +153,7 @@ export class Settlement {
   }
 }
 
-const TINT = { amber: 0xfdb000, cyan: 0x35d6ff, magenta: 0xff3fd0 }
+const TINT = { amber: 0xfdb000, cyan: 0x35d6ff, magenta: 0xff3fd0, white: 0xffd9a0, red: 0xff4a1c, teal: 0x2ee6c6, ice: 0x8cc6ff }
 
 /**
  * The pools of light on the decks: the kit's two pictures, laid flat and added to what is
@@ -340,11 +364,12 @@ export class Walkways {
   set(pieces) {
     this.group.clear()
     for (const piece of pieces) {
-      const model = models.get(piece.part)
+      // A lamp beside the way is one of the campus's own buildings; everything else is the kit's.
+      const model = piece.campus ? campusBuilding(piece.part) : models.get(piece.part)
       if (!model) continue
       let material = this.materials.get(piece.part)
       if (!material) {
-        material = surface(model.material)
+        material = surface(model.material, false)
         this.materials.set(piece.part, material)
       }
       const mesh = new THREE.Mesh(model.geometry, material)

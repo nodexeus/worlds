@@ -23,8 +23,8 @@ import {
   PLOT_APOTHEM,
   PLOT_CELL,
 } from '../world/plots.js'
-import { CORE_CELLS, LIBRARY_CELL, translateCells } from '../world/plot-move.js'
-import { districtOf, frameDelta, landing, squareEnd, toWorld } from '../world/districts.js'
+import { CORE_CELLS, LIBRARY_CELL, inDistrict, translateCells } from '../world/plot-move.js'
+import { districtOf, frameDelta, landing, squareEnd, toFrame, toWorld } from '../world/districts.js'
 import { readLevels, settleLevels } from '../world/plot-levels.js'
 import { HEX_DIRS } from '../world/plot-move.js'
 import { causewayOf, heightOnCrossings, onSpan, spanOf } from '../world/crossing-spans.js'
@@ -36,6 +36,9 @@ import { campusBuilding, loadCampusBuildings } from '../world/campus-buildings.j
 import { DeckNumbers, LightPools, Settlement, Walkways, loadSettlement, settlementReady } from '../world/settlement.js'
 import { WALK_TOP, walkwayRoute } from '../world/walkway.js'
 import { settlementNumbers, settlementParts, settlementPools } from '../world/settlement-plan.js'
+import { mouth, placed, planDecks } from '../world/settlement-decks.js'
+import { placesOf, stackHeights } from '../world/settlement-load.js'
+import { SHADES, shadeOf } from '../world/shades.js'
 import { createPipeline, pipelineClearance, pipelineUniforms } from '../world/pipeline.js'
 import { createBuilding, buildingUniforms } from '../world/buildings.js'
 import { Ship } from '../world/ship.js'
@@ -163,6 +166,9 @@ const STAIR_GROUND = 2.85
 
 /** How much wider than its outline a deck is taken to be underfoot, to cover the seams in it. */
 const SEAM = 0.15
+
+/** Which of a platform's seven places buildings stand on, on a floor of several cells: its middle and two of the ring. */
+const FUSED_FLOOR = [0, 2, 4]
 
 /** Which of a platform's seven places its stack stands on: the last of the ring. */
 const STACK_SLOT = 6
@@ -710,6 +716,8 @@ export class Colony {
       return a[0].localeCompare(b[0])
     })
 
+    /** How many sessions each workspace has, for choosing decks that hold them. */
+    this.loads = new Map(projects.map(([name, list]) => [name, list.length]))
     this._syncPlots(projects, placeOf)
 
     // A repo that is off the map keeps its footprint in layout memory, so showing it again
@@ -747,14 +755,7 @@ export class Colony {
       list.sort((a, b) => a.createdAt - b.createdAt)
       const slotOf = plot.slotOf || (plot.slotOf = new Map())
       for (const id of [...slotOf.keys()]) if (!list.some((t) => t.id === id)) slotOf.delete(id)
-      // On a world built from the settlement kit the last place on every platform is kept
-      // for its stack, so nobody's building is given it, and one that had it moves.
-      const kept = new Set()
-      if (this.planet.plot?.kit && !placeOf.has(name)) {
-        for (let cell = 0; cell < plot.cells.length; cell++) kept.add(cell * SLOTS_PER_PLATFORM + STACK_SLOT)
-        for (const [id, slot] of slotOf) if (kept.has(slot)) slotOf.delete(id)
-      }
-      const taken = new Set([...slotOf.values(), ...kept])
+      const taken = new Set(slotOf.values())
       for (const thread of list) {
         if (slotOf.has(thread.id)) continue
         let slot = 0
@@ -781,6 +782,18 @@ export class Colony {
         }
       }
 
+      // On decks of their own shape a session is a building on a floor or a storey of a stack:
+      // see `settlement-load.js`. A stack is as high as the sessions in it.
+      const shaped = !place && plot.places?.length ? plot : null
+      if (shaped) {
+        const taken = new Set(list.map((thread) => slotOf.get(thread.id) % plot.places.length))
+        const heights = stackHeights(plot.places, taken)
+        plot.stackSpecs = []
+        plot.spots.forEach((deck, d) => deck.stacks.forEach((stack, n) => {
+          if (heights[d]?.[n]) plot.stackSpecs.push({ ...stack, storeys: heights[d][n] })
+        }))
+      }
+
       list.forEach((thread) => {
         const at = slotOf.get(thread.id)
         // On a place a building belongs to the spot, two to a platform, and whoever stands
@@ -796,7 +809,19 @@ export class Colony {
         if (status === 'waiting' || status === 'blocked' || status === 'working') active.add(plot.id)
         stats.agents++
 
-        const building = this._syncBuilding(place ? { id: home } : thread, plot, i)
+        const spotOf = shaped ? plot.places[at % plot.places.length] : null
+        if (spotOf?.kind === 'stack') {
+          // Up in a stack: no building of its own. It works at the foot of the stack.
+          const stack = plot.spots[spotOf.deck].stacks[spotOf.spot]
+          roster.push({
+            id: thread.id, thread, status, home: null, stack, site: null,
+            anchor: new THREE.Vector3(stack.x, DECK_TOP + plot.elev, stack.z),
+            known: knownIds.has(thread.id), plot: plot.id, slot: at,
+          })
+          return
+        }
+        const floor = spotOf ? plot.spots[spotOf.deck].buildings[spotOf.spot] : null
+        const building = this._syncBuilding(place ? { id: home } : thread, plot, i, floor)
         seenBuildings.add(home)
         if (place) tenants.set(home, thread.id)
 
@@ -830,7 +855,10 @@ export class Colony {
     this._syncSettlement()
     this._rebuildNavigation()
     for (const member of roster) {
-      const entry = this.buildings.get(member.home)
+      // Somebody up in a stack stands by it as they would by a building of that size.
+      const entry = member.stack
+        ? { plot: member.plot, slot: member.slot, mesh: { position: member.anchor, userData: { footprint: 1.9 } } }
+        : this.buildings.get(member.home)
       member.site = this._workSite(this.plots.get(entry.plot), entry, entry.slot)
     }
     for (const thread of roamers) {
@@ -1046,16 +1074,19 @@ export class Colony {
         if (way) causeways.push(way)
       }
     }
-    const signature = JSON.stringify([plan, causeways, walks])
+    this.gates = walks.map((walk) => walk.gate)
+    const links = style?.kit ? this._planDecks(plan) : []
+    const signature = JSON.stringify([plan, causeways, walks, links, this.plotOrder.map((plot) => plot.units?.map((unit) => [unit.deck, unit.turn]))])
     if (signature === this._crossingSignature) return
     this._crossingSignature = signature
     this.crossingPlan = plan
     this.causeways = causeways
     this.walks = walks
-    this.gates = walks.map((walk) => walk.gate)
+    this.deckLinks = links
     this.walkways.set(walks.flatMap((walk) => walk.pieces))
     this.crossingSpans = [
       ...walks.flatMap((walk) => walk.spans),
+      ...links.map((link) => spanOf({ ...link, rise: 0 }, { gap: style.gap, levelStep: style.levelStep, deckTop: DECK_TOP, elevation })),
       ...plan.map((crossing) => spanOf(crossing, { gap: style.gap, levelStep: style.levelStep, deckTop: DECK_TOP, elevation })),
       ...causeways.flatMap((way) => way.spans),
     ]
@@ -1143,13 +1174,10 @@ export class Colony {
     // And a little past each end of it: see `heightOnCrossings` for the sliver that covers.
     const carried = heightOnCrossings(this.crossingSpans, x, z, CROSSING_WALK + 0.35, CROSSING_OVERLAP)
     if (carried !== null) return carried
-    const cell = worldToHex(x, z)
-    // On a world whose decks stand apart, a cell is only decked as far as its plot's own
-    // outline goes; the strip between two workspaces is ground.
-    const plot = this.deckedCells?.get(`${cell.q},${cell.r}`)
     // A hair more than the outline: the tiles of one workspace stop just short of each
     // other, and somebody walking over that seam must not drop through it to the ground.
-    if (plot && (!plot.style?.gap || plot.containsWorld(x, z, -SEAM))) return DECK_TOP + plot.elev
+    const plot = this._floorAt(x, z, SEAM)
+    if (plot) return DECK_TOP + plot.elev
     return terrainHeight(x, z, this.planet)
   }
 
@@ -1177,14 +1205,14 @@ export class Colony {
     return PLOT_PALETTE[start]
   }
 
-  _syncBuilding(thread, plot, index) {
+  _syncBuilding(thread, plot, index, at = null) {
     let entry = this.buildings.get(thread.id)
     // Whole, always. A building that has finished rising is a building you can see all of.
     const target = 1
 
     if (!entry) {
-      const mesh = createBuilding({ seed: hashString(thread.id), accent: plot.accent, fit: this.planet.plot?.buildingRadius, set: this.planet.plot?.buildings })
-      const pos = plot.worldSlot(index)
+      const mesh = createBuilding({ seed: hashString(thread.id), accent: plot.accent, fit: this.planet.plot?.buildingRadius, set: this.planet.plot?.buildings, shade: this.planet.plot?.kit ? SHADES[shadeOf(plot.id)] : null })
+      const pos = at ? new THREE.Vector3(at.x, DECK_TOP + plot.elev, at.z) : plot.worldSlot(index)
       mesh.position.copy(pos)
       mesh.rotation.y = ((hashString(thread.id) >>> 8) % 360) * (Math.PI / 180)
       // New buildings rise from nothing rather than appearing whole.
@@ -1197,7 +1225,9 @@ export class Colony {
       // plot id and slot number is what catches a zone that was rebuilt underneath it: the
       // repo is the same and the slot is the same, but the ground moved, and a habitat left
       // behind on bare terrain takes its astronaut off the plot with it.
-      const want = plot.worldSlot(index, this._slotAt || (this._slotAt = new THREE.Vector3()))
+      const want = this._slotAt || (this._slotAt = new THREE.Vector3())
+      if (at) want.set(at.x, DECK_TOP + plot.elev, at.z)
+      else plot.worldSlot(index, want)
       if (entry.plot !== plot.id || entry.slot !== index || entry.mesh.position.distanceToSquared(want) > 1e-4) {
         entry.plot = plot.id
         entry.slot = index
@@ -1278,8 +1308,11 @@ export class Colony {
     // A stack is as much in the way as a building.
     // Long and narrow, so two rounds along its length and not one about its middle.
     for (const stack of this.stacks || []) {
+      // Its length runs along (cos, -sin) of its turn.
+      const ox = Math.cos(stack.turn)
+      const oz = -Math.sin(stack.turn)
       for (const along of [-0.75, 0.75]) {
-        obstacles.push({ x: stack.x + stack.out.x * along, z: stack.z + stack.out.z * along, r: 1.18 + TRAVEL_RADIUS, keep: 1.3 + AGENT_RADIUS })
+        obstacles.push({ x: stack.x + ox * along, z: stack.z + oz * along, r: 1.18 + TRAVEL_RADIUS, keep: 1.3 + AGENT_RADIUS })
       }
     }
 
@@ -1305,7 +1338,120 @@ export class Colony {
     const held = [shipPosition()]
     for (const deck of this._decks()) for (const cell of deck.cells) held.push(hexToWorld(cell.q, cell.r))
     this.nav.fit(extentFor(held))
-    this.nav.rebuild(obstacles, this.planet.plot?.crossings ? (x, z) => this._walkable(x, z) : null)
+    /** How far from the middle anything of the campus stands: as far as the view may be taken. */
+    this.reach = Math.max(...held.map((at) => Math.hypot(at.x, at.z))) + 12
+    // On decks of their own shape, the ways between a deck's ports are kept open: from just
+    // inside each port that is in use to just inside the next.
+    const through = []
+    const reach = PLOT_APOTHEM - (this.planet.plot?.gap || 0)
+    for (const plot of this.plotOrder) {
+      for (const unit of plot.units || []) {
+        const gated = new Set(unit.gates.map((gate) => `${gate.cell.q},${gate.cell.r}/${gate.side}`))
+        const inside = []
+        unit.cells.forEach((cell, which) => {
+          for (const side of unit.sides[which]) {
+            if (gated.has(`${cell.q},${cell.r}/${side}`)) continue
+            const at = mouth(cell, side, reach)
+            inside.push({ x: at.x - Math.sin(at.turn) * 0.8, z: at.z - Math.cos(at.turn) * 0.8 })
+          }
+        })
+        for (let n = 1; n < inside.length; n++) through.push([inside[0], inside[n]])
+        // And from a port to the foot of each stack and building, so nobody's place is cut off.
+        if (inside.length) for (const spot of [...unit.at.stacks, ...unit.at.buildings]) through.push([inside[0], spot])
+      }
+    }
+    this.nav.rebuild(obstacles, this.planet.plot?.crossings ? (x, z) => this._walkable(x, z) : null, through)
+  }
+
+  /**
+   * Choose a deck for every cell of every workspace that is not the crew's: see
+   * `settlement-decks.js`. Leaves each such plot with its `units` (each with where its own
+   * measurements fall on the ground), the `places` its sessions fill, and its outline to
+   * walk by.
+   *
+   * @returns {Array<{from: object, to: object, low: string, high: string}>} the gangways that
+   *   join a workspace's own decks to each other
+   */
+  _planDecks(plan) {
+    const doors = new Map()
+    const door = (id, from, toward) => {
+      if (!doors.has(id)) doors.set(id, [])
+      doors.get(id).push({ from, toward })
+    }
+    const owner = new Map()
+    for (const plot of this.plotOrder) for (const cell of plot.cells) owner.set(`${cell.q},${cell.r}`, plot.id)
+    for (const crossing of plan) {
+      door(owner.get(`${crossing.from.q},${crossing.from.r}`), crossing.from, crossing.to)
+      door(owner.get(`${crossing.to.q},${crossing.to.r}`), crossing.to, crossing.from)
+    }
+    for (const gate of this.gates || []) door(owner.get(`${gate.cell.q},${gate.cell.r}`), gate.cell, gate.toward)
+
+    const square = new Set(this._squareCells().map((cell) => `${cell.q},${cell.r}`))
+    const links = []
+    this.wingCells = new Map()
+    for (const plot of this.plotOrder) {
+      if (plot.crew) continue
+      if (plot.cells.length > 1) {
+        // A workspace of several cells is one floor: its hexagons joined edge to edge, which
+        // is what makes it read as one place and not as so many neighbours. On each of its
+        // platforms three buildings stand on the floor and the rest of its sessions go up a
+        // stack, toward the last place on the platform but nearer the middle.
+        plot.units = null
+        plot.setOutlines(null)
+        const spot = new THREE.Vector3()
+        plot.spots = plot.cells.map((cell, n) => {
+          const home = hexToWorld(cell.q, cell.r)
+          const buildings = FUSED_FLOOR.map((slot) => {
+            plot.worldSlot(n * SLOTS_PER_PLATFORM + slot, spot)
+            return { x: spot.x, z: spot.z }
+          })
+          plot.worldSlot(n * SLOTS_PER_PLATFORM + STACK_SLOT, spot)
+          const dx = spot.x - home.x
+          const dz = spot.z - home.z
+          const far = Math.hypot(dx, dz) || 1
+          return { buildings, stacks: [{ x: home.x + (dx / far) * STACK_OUT, z: home.z + (dz / far) * STACK_OUT, turn: Math.atan2(dx, dz) + Math.PI / 2 }] }
+        })
+        plot.places = placesOf(plot.spots.map((deck) => ({ buildings: deck.buildings.length, stacks: deck.stacks.length })))
+        continue
+      }
+      const district = districtOf(plot.id)
+      // Where a wing may reach: a cell with nothing on it that is not the square. One of the
+      // district's holes stays that way for good; any other may be taken by a newcomer one
+      // day, and then the deck beside it is chosen again, which is the price of most decks
+      // having a wing and most cells having no hole beside them.
+      const isEmpty = (cell) => {
+        const key = `${cell.q},${cell.r}`
+        return !owner.has(key) && !square.has(key) && inDistrict(toFrame(district, [cell])[0])
+      }
+      const kept = new Map((plot.units || []).map((unit) => [`${unit.cells[0].q},${unit.cells[0].r}`, unit]))
+      const planned = planDecks({ id: plot.id, cells: plot.cells, load: this.loads?.get(plot.id) || 1, doors: doors.get(plot.id) || [] }, isEmpty, kept)
+      plot.units = planned.units.map((unit) => ({ ...unit, at: placed(unit) }))
+      plot.spots = plot.units.map((unit) => ({ buildings: unit.at.buildings, stacks: unit.at.stacks }))
+      plot.places = placesOf(plot.spots.map((deck) => ({ buildings: deck.buildings.length, stacks: deck.stacks.length })))
+      plot.setOutlines(plot.units.map((unit) => unit.at.outline))
+      for (const link of planned.links) links.push({ ...link, low: plot.id, high: plot.id })
+      // Where a deck reaches past its own cells, the cell it reaches into has to know whose floor that is.
+      for (const unit of plot.units) {
+        for (const point of unit.at.outline) {
+          const cell = worldToHex(point.x, point.z)
+          const key = `${cell.q},${cell.r}`
+          if (owner.get(key) === plot.id) continue
+          if (!this.wingCells.has(key)) this.wingCells.set(key, new Set())
+          this.wingCells.get(key).add(plot)
+        }
+      }
+    }
+    return links
+  }
+
+  /** The workspace whose floor (x, z) is on, taking each deck `wide` wider than its outline, or null. */
+  _floorAt(x, z, wide = 0) {
+    const cell = worldToHex(x, z)
+    const key = `${cell.q},${cell.r}`
+    const plot = this.deckedCells?.get(key)
+    if (plot && (!plot.style?.gap || plot.containsWorld(x, z, -wide))) return plot
+    for (const other of this.wingCells?.get(key) || []) if (other.containsWorld(x, z, -wide)) return other
+    return null
   }
 
   /**
@@ -1343,9 +1489,22 @@ export class Colony {
     if (!route) return null
     const level = this.plots.get(cell.name)?.level || 1
     const top = DECK_TOP + level * style.levelStep
+    // Lamps down the way, on alternate sides, so it can be found and followed after dark.
+    const lamps = []
+    route.pieces.forEach((piece, n) => {
+      if (piece.part !== 'walk' || n % 3 !== 1) return
+      const side = (n / 3) % 2 < 1 ? 1 : -1
+      lamps.push({
+        part: 'beacon', campus: true, y: 0, turn: piece.turn,
+        x: piece.x + Math.cos(piece.turn) * 1.9 * side + Math.sin(piece.turn) * 1.3,
+        z: piece.z - Math.sin(piece.turn) * 1.9 * side + Math.cos(piece.turn) * 1.3,
+      })
+    })
     return {
+      lamps,
       // A hair under the square's own deck where they overlap, so the two do not flicker.
       pieces: [
+        ...lamps,
         ...route.pieces.map((piece) => ({ ...piece, y: -0.02 })),
         { part: 'stair-ground', x: foot.x, y: 0, z: foot.z, turn: heading },
       ],
@@ -1380,35 +1539,68 @@ export class Colony {
     }
     const spot = new THREE.Vector3()
     this.stacks = []
+    const reach = PLOT_APOTHEM - style.gap
+    const shapedParts = []
     const parts = settlementParts(
       this.plotOrder.map((plot) => {
         const count = busy.get(plot.id) || 0
-        // A stack on every platform: toward the last place on it, but nearer the middle than
-        // a building stands, since a frame is wider than a building and one stood at a
-        // building's place hangs over the edge.
-        // A crew's workspace has its two buildings a platform and one stack, on the first.
+        if (plot.units?.length) {
+          // Decks of their own shape: the deck itself, a post under it wherever it says, and
+          // a gate across every port with nothing at it. Its stacks are as high as their sessions.
+          const y = DECK_TOP + plot.elev
+          const post = `post-${Math.max(1, Math.min(5, plot.level))}`
+          for (const unit of plot.units) {
+            shapedParts.push({ part: unit.deck, plot: plot.id, x: unit.at.x, y, z: unit.at.z, turn: unit.at.turn })
+            unit.at.posts.forEach((at, n) => shapedParts.push({ part: post, plot: plot.id, x: at.x, y, z: at.z, turn: ((n * 5 + unit.turn) % 4) * (Math.PI / 2) }))
+            for (const gate of unit.gates) {
+              const at = mouth(gate.cell, gate.side, reach)
+              shapedParts.push({ part: 'port-gate', plot: plot.id, x: at.x, y, z: at.z, turn: at.turn })
+            }
+          }
+          for (const stack of plot.stackSpecs || []) this.stacks.push(stack)
+          return { id: plot.id, cells: plot.cells, level: plot.level, busy: count, shaped: true, stacks: plot.stackSpecs || [] }
+        }
+        if (!plot.crew && plot.places?.length) {
+          // Several cells, one floor: hexagons joined up, with stacks as high as their sessions.
+          for (const stack of plot.stackSpecs || []) this.stacks.push(stack)
+          return { id: plot.id, cells: plot.cells, level: plot.level, busy: count, stacks: plot.stackSpecs || [] }
+        }
+        // A crew's workspace keeps its hexagons, its two buildings a platform, and one stack,
+        // on its first platform: toward the last place on it, but nearer the middle than a
+        // building stands, since a frame is wider than a building.
         const stacks = []
-        const platforms = plot.crew ? 1 : plot.cells.length
-        for (let cell = 0; count > 0 && cell < platforms; cell++) {
-          plot.worldSlot(cell * SLOTS_PER_PLATFORM + STACK_SLOT, spot)
-          const home = hexToWorld(plot.cells[cell].q, plot.cells[cell].r)
+        if (count > 0) {
+          plot.worldSlot(STACK_SLOT, spot)
+          const home = hexToWorld(plot.cells[0].q, plot.cells[0].r)
           const dx = spot.x - home.x
           const dz = spot.z - home.z
           const far = Math.hypot(dx, dz) || 1
-          // Its length points out from the middle of the platform, so it is no wider across than
-          // a building would be there and leaves the ways on and off either side of it open.
-          const stack = { x: home.x + (dx / far) * STACK_OUT, z: home.z + (dz / far) * STACK_OUT, turn: Math.atan2(dx, dz) + Math.PI / 2, out: { x: dx / far, z: dz / far } }
+          // Its length points out from the middle of the platform, so it leaves the ways on
+          // and off either side of it open.
+          const stack = { x: home.x + (dx / far) * STACK_OUT, z: home.z + (dz / far) * STACK_OUT, turn: Math.atan2(dx, dz) + Math.PI / 2 }
           stacks.push(stack)
           this.stacks.push(stack)
         }
         return { id: plot.id, cells: plot.cells, level: plot.level, busy: count, stacks }
       }),
-      // Where a walkway's stairs arrive is an opening in the edge, like a crossing.
-      [...(this.crossingPlan || []), ...(this.gates || []).map((gate) => ({ from: gate.cell, to: gate.toward, rise: 9 }))],
-      { deckTop: DECK_TOP, levelStep: style.levelStep, apothem: PLOT_APOTHEM - style.gap }
+      // Where a walkway's stairs arrive is an opening in the edge, like a crossing; and a
+      // workspace's own decks are joined by gangways.
+      [
+        ...(this.crossingPlan || []),
+        ...(this.deckLinks || []).map((link) => ({ ...link, rise: 0 })),
+        ...(this.gates || []).map((gate) => ({ from: gate.cell, to: gate.toward, rise: 9 })),
+      ],
+      { deckTop: DECK_TOP, levelStep: style.levelStep, apothem: reach }
     )
+    parts.push(...shapedParts)
     this.settlement.set(parts)
-    this.lightPools.set(settlementPools(parts))
+    this.lightPools.set([
+      ...settlementPools(parts),
+      // And a pool on the boards under each lamp down a walkway.
+      ...(this.walks || []).flatMap((walk) => walk.lamps.map((lamp) => ({
+        plot: '', kind: 'round', color: 'amber', x: lamp.x, y: WALK_TOP + 0.03, z: lamp.z, turn: 0, width: 7, depth: 7,
+      }))),
+    ])
     this.deckNumbers.set(settlementNumbers(parts))
   }
 
@@ -1432,7 +1624,9 @@ export class Colony {
     }
     const cell = worldToHex(x, z)
     const deck = this.deckedCells?.get(`${cell.q},${cell.r}`)
-    if (deck) return deck.standsOn(x, z, 0.2)
+    if (deck?.standsOn(x, z, 0.2)) return true
+    for (const other of this.wingCells?.get(`${cell.q},${cell.r}`) || []) if (other.standsOn(x, z, 0.2)) return true
+    if (deck) return false
     // Where every workspace stands on stilts the open ground leads nowhere: the only ways up
     // are the walkways. Left walkable, it is also a plain a hundred platforms wide that a
     // search for a route floods before it finds the stairs, and gives up in.

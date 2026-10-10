@@ -12,7 +12,7 @@
 import { NodeIO } from '@gltf-transform/core'
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions'
 import { dedup, mergeDocuments, prune, textureCompress, unpartition } from '@gltf-transform/functions'
-import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
@@ -27,6 +27,20 @@ const [DIR, OUT] = process.argv.slice(2)
 if (!DIR || !OUT) {
   console.error('usage: build-settlement.mjs <design dir> <out.glb> [--force]')
   process.exit(1)
+}
+
+// What the game has to know about the decks that are not hexagons (their outlines, their
+// ports, where things stand on them) is written by the Blender build as data, and is turned
+// here into a module the game imports. Done before anything else, since it is quick and the
+// packing below is skipped when the models have not changed.
+const SHAPES = join(DIR, 'deck-shapes.json')
+if (existsSync(SHAPES)) {
+  const shapes = JSON.parse(readFileSync(SHAPES, 'utf8'))
+  const here = dirname(fileURLToPath(import.meta.url))
+  writeFileSync(
+    join(here, '..', 'src', 'world', 'deck-shapes.js'),
+    `// Written by tools/build-settlement.mjs from design/campus/deck-shapes.json. Do not edit.\nexport default ${JSON.stringify(shapes, null, 1)}\n`
+  )
 }
 
 const sources = (existsSync(DIR) ? readdirSync(DIR) : [])

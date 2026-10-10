@@ -155,8 +155,39 @@ export class Navigation {
    * @param {Array<{x: number, z: number, r: number, keep?: number}>} obstacles
    * @param {((x: number, z: number) => boolean) | null} [walkable]
    */
-  rebuild(obstacles, walkable = null) {
+  rebuild(obstacles, walkable = null, through = []) {
     this.blocked.fill(0)
+    // Ways that have to stay open whatever stands on them: see below. Found on the floor as
+    // it is with nothing on it, before anything is.
+    const open = []
+    if (walkable && through.length) {
+      const n = this.size
+      for (let iz = 0; iz < n; iz++) {
+        const wz = this.toWorld(iz)
+        for (let ix = 0; ix < n; ix++) if (!walkable(this.toWorld(ix), wz)) this.blocked[iz * n + ix] = 1
+      }
+      this._floor = this.blocked.slice()
+      for (const [from, to] of through) {
+        // Both ends are on the one deck, so a search that has not found its way in a few
+        // thousand cells is not going to: there are hundreds of these and each must be quick.
+        const path = this.findPath(from.x, from.z, to.x, to.z, 3000)
+        if (!path) continue
+        let x = from.x
+        let z = from.z
+        for (const next of path) {
+          const far = Math.hypot(next.x - x, next.z - z)
+          for (let t = 0; t <= far; t += this.cell * 0.5) {
+            const px = x + ((next.x - x) * t) / (far || 1)
+            const pz = z + ((next.z - z) * t) / (far || 1)
+            // A cell and the one beside it, so the way is wide enough to be found again.
+            for (const [ox, oz] of [[0, 0], [this.cell, 0], [0, this.cell]]) open.push(this.toCell(pz + oz) * n + this.toCell(px + ox))
+          }
+          x = next.x
+          z = next.z
+        }
+      }
+      this.blocked.fill(0)
+    } else this._floor = null
     const { size, cell } = this
     this.solids = obstacles.filter((o) => o.keep > 0)
     // Bucket them. A solid lands in every bucket its keep circle touches, so a point only
@@ -199,7 +230,14 @@ export class Navigation {
         }
       }
     }
-    if (walkable) {
+    if (this._floor) {
+      // The floor was worked out above; it is not asked about twice.
+      for (let i = 0; i < this.blocked.length; i++) if (this._floor[i]) this.blocked[i] = 1
+      // And the ways through are opened again where something was stood on them. A deck can
+      // be narrow enough that what stands on it reaches from rail to rail, and a way that
+      // clips the corner of a stack is better than a workspace nobody can get past.
+      for (const i of open) if (i >= 0 && i < this.blocked.length && !this._floor[i]) this.blocked[i] = 0
+    } else if (walkable) {
       for (let iz = 0; iz < size; iz++) {
         const wz = this.toWorld(iz)
         const row = iz * size
@@ -434,7 +472,7 @@ export class Navigation {
    * A route from one world point to another, as world-space waypoints, or `null` if there
    * is no way through. The returned path excludes the start and ends exactly on the goal.
    */
-  findPath(sx, sz, tx, tz) {
+  findPath(sx, sz, tx, tz, limit = MAX_EXPANSIONS) {
     const start = this.nearestFree(sx, sz)
     const goal = this.nearestFree(tx, tz)
     if (!start || !goal) return null
@@ -477,7 +515,7 @@ export class Navigation {
         found = true
         break
       }
-      if (++expansions > MAX_EXPANSIONS) break
+      if (++expansions > limit) break
 
       const cx = current % size
       const cz = (current - cx) / size

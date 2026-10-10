@@ -1,3 +1,4 @@
+import { onOutlines } from './outline.js'
 import { tameSheen } from '../core/sheen.js'
 import * as THREE from 'three'
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js'
@@ -159,7 +160,7 @@ export function allocateCells(projects, previous = new Map(), { ragged = false }
  * Whether a cell is left empty by a district that is laid out raggedly: about one in five, by
  * the cell alone, so the same ones every time. Never the origin, where the first workspace goes.
  */
-function isHole(cell) {
+export function isHole(cell) {
   if (cell.q === 0 && cell.r === 0) return false
   return hashString(`hole/${cell.q},${cell.r}`) % 5 === 0
 }
@@ -838,7 +839,16 @@ export class Plot {
     return this.localCenters.some((c, i) => onTile(x - c.x, z - c.z, APOTHEM, this.insets?.[i], radius))
   }
 
+  /**
+   * Give the workspace floors of its own shape, as outlines on the ground, in place of its
+   * hexagons: what is on it and what is not is then read off these. See `settlement-decks.js`.
+   */
+  setOutlines(outlines) {
+    this.outlines = outlines?.length ? outlines : null
+  }
+
   containsWorld(x, z, radius = 0) {
+    if (this.outlines) return onOutlines(this.outlines, x, z, radius)
     return this.containsLocal(x - this.center.x, z - this.center.z, radius)
   }
 
@@ -850,6 +860,7 @@ export class Plot {
    * a margin off them would cut one deck into as many islands as it has tiles.
    */
   standsOn(x, z, margin = 0) {
+    if (this.outlines) return onOutlines(this.outlines, x, z, margin)
     return onDeck(x - this.center.x, z - this.center.z, APOTHEM, this.localCenters, this.insets, margin)
   }
 

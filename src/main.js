@@ -1031,6 +1031,7 @@ function applyThreads(list) {
   if (firstSeen) queueSave()
 
   const stats = colony.setThreads(list, archivedSet, hiddenSet, known, drawn.places)
+  rig.worldLimit = colony.reach
   hud.setStats(stats)
   chimeForNewWaiting(list, archivedSet, hiddenSet)
 

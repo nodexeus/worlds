@@ -219,10 +219,13 @@ test('light falls on the deck beside a lit edge and round a module standing on i
   const pools = settlementPools(parts)
   assert.equal(pools.filter((pool) => pool.kind === 'band').length, named(parts, /lit$/).length)
   // Only what stands on a deck lights it: the storeys above light nothing below.
-  assert.equal(pools.filter((pool) => pool.kind === 'round' && pool.color === 'amber').length, 1)
+  // In the workspace's own shade of light, whatever that is.
+  const own = pools.filter((pool) => pool.color !== 'cyan' && pool.color !== 'magenta')
+  assert.equal(new Set(own.map((pool) => pool.color)).size, 1)
+  assert.equal(own.filter((pool) => pool.kind === 'round').length, 1)
   const thrown = named(parts, /^sign-[a-d]$/).map((sign) => (/[ab]$/.test(sign.part) ? 'cyan' : 'magenta'))
   assert.equal(thrown.length, 1)
-  assert.deepEqual(pools.filter((pool) => pool.color !== 'amber').map((pool) => pool.color), thrown)
+  assert.deepEqual(pools.filter((pool) => pool.color === 'cyan' || pool.color === 'magenta').map((pool) => pool.color), thrown)
   for (const pool of pools) assert.ok(pool.y > DECK && pool.y < DECK + 0.1, 'just proud of the deck')
 })
 
