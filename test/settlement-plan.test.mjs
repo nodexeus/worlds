@@ -280,3 +280,44 @@ test('a leg that comes down over a canal reaches its bed: a longer leg where the
   // Anything that is not a leg is left alone.
   assert.deepEqual(reachDown('deck-a', 1.7, step), { part: 'deck-a', stretch: 1 })
 })
+
+import { settlementRuns } from '../src/world/settlement-plan.js'
+
+test('cables, pipes and strings of lights are hung between stacks that stand near each other, from roof to roof, and not between every pair', () => {
+  const frame = (plot, x, z, y) => ({ part: 'mod-cabin', plot, x: x + 0.1, y, z: z - 0.05, turn: 0 })
+  // A scatter of two- and three-storey stacks on decks at two heights.
+  const parts = []
+  for (let n = 0; n < 40; n++) {
+    const x = (n % 8) * 9 + ((n * 37) % 5)
+    const z = Math.floor(n / 8) * 9 + ((n * 53) % 4)
+    const deck = n % 3 ? 3.15 : 4.5
+    parts.push(frame(`p${n}`, x, z, deck))
+    if (n % 2) parts.push(frame(`p${n}`, x, z, deck + 2.3))
+  }
+  const runs = settlementRuns(parts)
+  assert.ok(runs.length > 8, `some are hung: ${runs.length}`)
+  assert.ok(runs.length < 60, 'not every pair')
+  assert.ok(new Set(runs.map((run) => run.part)).size >= 3, 'of more than one kind')
+  const ends = new Map()
+  for (const run of runs) {
+    assert.match(run.part, /^run-(cable|cable-b|lights|lights-b|pipe)$/)
+    const length = run.span * 6
+    const range = /lights/.test(run.part) ? [3.6, 12] : [3, 15]
+    assert.ok(length >= range[0] - 1e-9 && length <= range[1] + 1e-9, `${run.part} is drawn to ${length.toFixed(1)}`)
+    // Where its far end comes to: along its heading, pitched up or down.
+    const flat = Math.cos(run.pitch) * length
+    const far = { x: run.x + Math.sin(run.turn) * flat, y: run.y - Math.sin(run.pitch) * length, z: run.z + Math.cos(run.turn) * flat }
+    const near = (p) => parts.some((f) => Math.hypot(f.x - p.x, f.z - p.z) < 1.4 && Math.abs(f.y + 2.2 - p.y) < 1e-6)
+    assert.ok(near(run) && near(far), 'both ends are made fast at a roof, at its edge')
+    assert.ok(Math.abs(run.pitch) < 0.5, 'none is hung steeply')
+    if (run.part === 'run-pipe') assert.ok(Math.abs(run.pitch) < 0.05, 'a pipe is rigid and runs level')
+    for (const p of [run, far]) {
+      const stack = parts.find((f) => Math.hypot(f.x - p.x, f.z - p.z) < 1.4)
+      const key = `${stack.x},${stack.z}`
+      ends.set(key, (ends.get(key) || 0) + 1)
+    }
+  }
+  assert.ok(Math.max(...ends.values()) <= 2, 'no stack is made a maypole')
+  assert.deepEqual(settlementRuns(parts), runs, 'the same every time')
+  assert.deepEqual(settlementRuns([frame('a', 0, 0, 3)]), [], 'one stack alone has nothing to be tied to')
+})

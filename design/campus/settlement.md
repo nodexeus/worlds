@@ -225,6 +225,34 @@ large deck), `outline` (the floor's outline in order, closed implicitly), `area`
 (pairs of indices into `posts`), `lit` (the middle of each lit strip, its `turn` with the deck on the
 strip's own -z side, and its `length`), `number` (`x`, `z`, `turn`).
 
+## Runs between stacks
+
+Cables, a string of lights and a bundle of pipes, hung from one stack to another (NODEX-339). Each is
+one mesh. Origin at one end, where it is made fast. The run goes along +z for exactly 6.0, to the
+other end at (0, 0, 6). Sag hangs down, toward -y. Turn it about y, pitch it so the far end meets its
+point, and scale it along z to the span.
+
+| Part | What it is | Lowest point (y) at scale 1 | Across (x) | Triangles | Bytes | Maps | Scale along z |
+|---|---|---|---|---|---|---|---|
+| run-cable | three slack black cables side by side, sags 0.40, 0.55 and 0.78 | -0.81, at the middle | 0.22 | 324 | 126892 | 256 | 0.5 to 2.5 |
+| run-cable-b | two cables, sags 0.60 and 0.95, their low points either side of the middle | -0.98, at z = 3.5 | 0.22 | 224 | 94820 | 256 | 0.5 to 2.5 |
+| run-lights | one thin cable, sag 0.45, with ten small lamps at uneven gaps, two of them out | -0.58, at the middle | 0.12 | 380 | 127064 | 512 | 0.6 to 2.0 |
+| run-lights-b | a cable of sag 0.70 with nine lamps, one out, and a second cable beside it | -0.85, at the middle | 0.13 | 440 | 235068 | 512 | 0.6 to 2.0 |
+| run-pipe | three straight pipes one above another, bores 0.14, 0.10 and 0.07, two clamps and a flange | -0.12 (top at 0.40) | 0.24 | 280 | 82812 | 256 | 0.5 to 2.5 |
+
+- The sag does not change with the scale along z: it is a depth, in the part's own y, whatever the
+  span. Pitching the part tips the sag with it. Keep whatever is under a run clear of its lowest
+  point by the figure above, measured square to the line between its two ends.
+- Lamps are six-sided beads 0.11 to 0.13 across. Stretched they become lozenges: at 2.0 times they
+  are 0.26 long and still read as lamps, at 2.5 times they read as short tubes. Squeezed below 0.6
+  times they crowd. The gaps between lamps are 0.35 to 0.8 at scale 1 and stretch with the run.
+- The lamps are in the emission map in the kit's amber, as every other lamp of the kit is. The ones
+  that are out are dark glass with no glow.
+- The pipes' clamps (0.07 long), collars and flange stretch with the run; at 2.5 times a clamp is
+  0.18 long, which still reads as a clamp. The pipe bundle is rigid: do not hang it where it would
+  cross a walking area below head height, and it looks wrong pitched steeply.
+- The `-b` parts are second versions for variety, so two runs side by side do not match.
+
 ### port-gate
 
 A swing gate between two short posts, to close a port that has no crossing. Origin at the edge mid

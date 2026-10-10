@@ -75,6 +75,8 @@ export class Settlement {
     this._p = new THREE.Vector3()
     this._s = new THREE.Vector3(1, 1, 1)
     this._up = new THREE.Vector3(0, 1, 0)
+    this._across = new THREE.Vector3(1, 0, 0)
+    this._tip = new THREE.Quaternion()
   }
 
   /**
@@ -131,8 +133,10 @@ export class Settlement {
       at.set(part.part, n + 1)
       this._p.set(part.x, part.y + (this.lifts.get(part.plot) || 0), part.z)
       this._q.setFromAxisAngle(this._up, part.turn)
-      // Drawn out downward from the deck, where it has further to reach: see `reachDown`.
-      this._s.set(1, part.stretch || 1, 1)
+      // A run hung between two stacks is tipped to meet its far end: see `settlementRuns`.
+      if (part.pitch) this._q.multiply(this._tip.setFromAxisAngle(this._across, part.pitch))
+      // Drawn out downward from the deck, where it has further to reach (see `reachDown`), or along its length to its span.
+      this._s.set(1, part.stretch || 1, part.span || 1)
       held.mesh.setMatrixAt(n, this._m.compose(this._p, this._q, this._s))
       // A neon sign is its own colour; everything else takes the workspace's shade.
       const shade = /^sign-/.test(part.part) ? null : SHADES[shadeOf(part.plot)]

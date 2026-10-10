@@ -388,3 +388,88 @@ export function underLamps(plot, unit) {
   }
   return lamps
 }
+
+/** How long a run is made, and how far it can be drawn or squeezed: see "Runs between stacks" in the kit's notes. */
+const RUN = 6
+const RUN_REACH = { lights: [3.6, 12], other: [3, 15] }
+/** How far from the middle of a stack a run is made fast: the edge of its frame. */
+const RUN_OUT = 1.2
+/** How high a module's roof is above the floor it stands on. */
+const ROOF_HIGH = 2.2
+
+/**
+ * What is hung between stacks: cables, a string of lights, a bundle of pipes.
+ *
+ * A line is made fast at a roof: of a module alone on its deck, or of any storey of a stack.
+ * Stacks near enough to each other are tied, some of them and not all, each end at whichever
+ * roof its own name picks, so the lines cross the campus at every height. None goes to a stack
+ * that already has two, none passes through a third stack, none comes down to where anybody
+ * walks on the higher of its two decks, and a pipe, being rigid, only where it can run level.
+ *
+ * @param {Placed[]} parts  the settlement's parts; only its modules are read
+ * @returns {Array<Placed & {pitch: number, span: number}>} `pitch` tips the far end up (negative) or down, `span` draws it along its length
+ */
+export function settlementRuns(parts) {
+  const stacks = new Map()
+  for (const part of parts) {
+    if (!/^mod-/.test(part.part)) continue
+    // The storeys of one stack stand a hand's width off each other: whatever is within a pace is the same stack.
+    let stack = [...stacks.values()].find((other) => other.plot === part.plot && Math.hypot(other.x - part.x, other.z - part.z) < 0.9)
+    if (!stack) {
+      stack = { key: `${part.x.toFixed(2)},${part.z.toFixed(2)}`, plot: part.plot, x: part.x, z: part.z, deck: part.y, tops: [], runs: 0 }
+      stacks.set(stack.key, stack)
+    }
+    stack.deck = Math.min(stack.deck, part.y)
+    stack.tops.push(part.y + ROOF_HIGH)
+  }
+  const all = [...stacks.values()].sort((a, b) => (a.key < b.key ? -1 : 1))
+  for (const stack of all) stack.tops.sort((a, b) => a - b)
+  const pairs = []
+  for (let i = 0; i < all.length; i++) {
+    for (let j = i + 1; j < all.length; j++) {
+      const far = Math.hypot(all[j].x - all[i].x, all[j].z - all[i].z) - RUN_OUT * 2
+      if (far >= RUN_REACH.other[0] && far <= RUN_REACH.other[1]) pairs.push({ a: all[i], b: all[j], far })
+    }
+  }
+  // Nearest first, so what is tied is what stands together.
+  pairs.sort((p, q) => p.far - q.far || (p.a.key + p.b.key < q.a.key + q.b.key ? -1 : 1))
+  const runs = []
+  for (const { a, b, far } of pairs) {
+    if (a.runs >= 2 || b.runs >= 2) continue
+    const roll = hash(`${a.key}/${b.key}/run`)
+    if (roll % 5 >= 3) continue
+    // Above the heads of whoever is on the higher deck, sag and all.
+    const floor = Math.max(a.deck, b.deck) + ROOF_HIGH - 0.05
+    const pickTop = (stack, n) => {
+      const high = stack.tops.filter((top) => top >= floor)
+      return high.length ? high[n % high.length] : null
+    }
+    const ya = pickTop(a, roll >>> 4)
+    const yb = pickTop(b, roll >>> 9)
+    if (ya == null || yb == null) continue
+    const ux = (b.x - a.x) / (far + RUN_OUT * 2)
+    const uz = (b.z - a.z) / (far + RUN_OUT * 2)
+    // Not through another stack on the way.
+    const through = all.some((other) => {
+      if (other === a || other === b) return false
+      const along = (other.x - a.x) * ux + (other.z - a.z) * uz
+      const across = Math.abs((other.x - a.x) * -uz + (other.z - a.z) * ux)
+      return along > 0 && along < far + RUN_OUT * 2 && across < 2.2
+    })
+    if (through) continue
+    const rise = yb - ya
+    const length = Math.hypot(far, rise)
+    const pitch = -Math.atan2(rise, far)
+    if (Math.abs(pitch) > 0.45 || length > RUN_REACH.other[1]) continue
+    const lit = length >= RUN_REACH.lights[0] && length <= RUN_REACH.lights[1]
+    const kind = (roll >>> 14) % 10
+    let part
+    if (Math.abs(rise) < 0.01 && far < 9 && kind === 0) part = 'run-pipe'
+    else if (lit && kind < 6) part = kind % 2 ? 'run-lights' : 'run-lights-b'
+    else part = kind % 2 ? 'run-cable' : 'run-cable-b'
+    a.runs++
+    b.runs++
+    runs.push({ part, plot: a.plot, x: a.x + ux * RUN_OUT, y: ya, z: a.z + uz * RUN_OUT, turn: Math.atan2(ux, uz), pitch, span: length / RUN })
+  }
+  return runs
+}

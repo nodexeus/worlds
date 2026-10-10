@@ -1950,6 +1950,87 @@ def part_post(level):
                 box(b, 'legsteel', (0.2, 0.2, 0.05), T(c.x, c.y, z0 + (top - z0) * f))
     return build
 
+# ---------------------------------------------------------------------- runs between stacks
+# Slack cables, a string of lights and a bundle of pipes, hung from one stack to another. Each is
+# made 6.0 long from its own origin (one end, where it is made fast) toward glTF +z, which is
+# Blender -y, with any sag hanging down. The app turns one, pitches it and stretches it along its
+# length to reach, so nothing here has detail that a stretch of 0.5 to 2.5 times would spoil.
+RUN = 6.0
+
+def sweep(b, mat, pts, r, sides=4):
+    """One tube through a row of points, as a single skin: no joint or cap between its lengths."""
+    bm = b.bm(mat, False)
+    rings = []
+    n = len(pts)
+    for i, p in enumerate(pts):
+        d = (pts[min(i + 1, n - 1)] - pts[max(i - 1, 0)]).normalized()
+        side = d.cross(Vector((0, 0, 1)))
+        side = side.normalized() if side.length > 1e-4 else Vector((1, 0, 0))
+        up = side.cross(d)
+        rings.append([bm.verts.new(p + (side * math.cos(TAU * k / sides) + up * math.sin(TAU * k / sides)) * r) for k in range(sides)])
+    for a, c in zip(rings, rings[1:]):
+        for k in range(sides):
+            bm.faces.new((a[k], a[(k + 1) % sides], c[(k + 1) % sides], c[k]))
+    bm.faces.new(list(reversed(rings[0])))
+    bm.faces.new(rings[-1])
+
+def slack(sag, skew=1.0, x=0.0, lift=(0.0, 0.0), seg=12):
+    """The points of a line hung between the two ends: `sag` deep at its lowest, which `skew` moves off the middle."""
+    pts = []
+    for i in range(seg + 1):
+        f = i / seg
+        g = f ** skew
+        pts.append(Vector((x, -RUN * f, lift[0] + (lift[1] - lift[0]) * f - sag * 4 * g * (1 - g))))
+    return pts
+
+def part_run_cable(lines):
+    def build(b):
+        for sag, skew, x, lift, r in lines:
+            sweep(b, 'grillebar', slack(sag, skew, x, lift), r)
+        for y in (0.0, -RUN):                       # the shackle each end is made fast by
+            box(b, 'leggalv', (0.22, 0.06, 0.1), T(0, y, 0.0), bevel=False)
+    return build
+
+def part_run_lights(sag, seed, dead, r_lamp, second=None):
+    def build(b):
+        rng = random.Random(seed)
+        pts = slack(sag, 1.0, 0.0, (0.0, 0.0), 14)
+        sweep(b, 'grillebar', pts, 0.012)
+        if second:
+            sweep(b, 'grillebar', slack(second, 1.25, 0.05, (0.03, -0.02), 10), 0.016)
+        # lamps at uneven gaps along it, a couple of them out
+        at, spots = rng.uniform(0.3, 0.6), []
+        while at < RUN - 0.3:
+            spots.append(at)
+            at += rng.uniform(0.35, 0.8)
+        out = set(rng.sample(range(len(spots)), dead))
+        for i, s in enumerate(spots):
+            f = s / RUN
+            c = Vector((0, -s, -sag * 4 * f * (1 - f) - r_lamp - 0.03))
+            mat = 'dim' if i in out else 'light'
+            # a lamp is a small six-sided bead: stretched along the run it is still a lamp
+            bm = b.bm(mat, False)
+            ring = [bm.verts.new(c + Vector((math.cos(TAU * k / 6) * r_lamp, 0, math.sin(TAU * k / 6) * r_lamp))) for k in range(6)]
+            ends = [bm.verts.new(c + Vector((0, e * r_lamp, 0))) for e in (-1, 1)]
+            for k in range(6):
+                bm.faces.new((ring[k], ring[(k + 1) % 6], ends[1]))
+                bm.faces.new((ring[(k + 1) % 6], ring[k], ends[0]))
+            box(b, 'grillebar', (0.03, 0.03, 0.05), T(c.x, c.y, c.z + r_lamp + 0.015), bevel=False)
+        for y in (0.0, -RUN):
+            box(b, 'leggalv', (0.12, 0.05, 0.08), T(0, y, 0.0), bevel=False)
+    return build
+
+def part_run_pipe(b):
+    # three pipes of different bore, one above another; the middle one has gone to rust
+    for z, r, sides, mat in ((0.0, 0.07, 8, 'leggalv'), (0.15, 0.05, 6, 'rustpart'), (0.27, 0.034, 6, 'steel')):
+        sweep(b, mat, [Vector((0, 0, z)), Vector((0, -RUN, z))], r, sides)
+        for y in (-0.06, -RUN + 0.06):              # a collar where each pipe goes into what it is fixed to
+            sweep(b, 'steel', [Vector((0, y + 0.06, z)), Vector((0, y - 0.06, z))], r + 0.022, sides)
+    for y in (-1.4, -4.3):                          # clamps holding the three together
+        box(b, 'black', (0.2, 0.07, 0.46), T(0, y, 0.12), bevel=False)
+        box(b, 'leggalv', (0.24, 0.03, 0.05), T(0, y, 0.37), bevel=False)
+    sweep(b, 'leggalv', [Vector((0, -2.9, 0.0)), Vector((0, -2.97, 0.0))], 0.115, 8)   # one flange, on the big pipe
+
 def part_port_gate(b):
     """A swing gate between two short posts, to close a port that has no crossing. 2.0 wide."""
     y = 0.13
@@ -2437,6 +2518,12 @@ PARTS = {
     'post-4': (part_post(4), 'legs', 512, 0.0),
     'post-5': (part_post(5), 'legs', 512, 0.0),
     'port-gate': (part_port_gate, 'plain', 512, 0.0),
+    # sag at the middle, where its low point is, how far to one side, the height of each end, thickness
+    'run-cable': (part_run_cable([(0.55, 1.0, -0.06, (0.0, 0.0), 0.022), (0.78, 1.0, 0.05, (0.02, -0.02), 0.028), (0.4, 1.0, 0.0, (-0.03, 0.03), 0.016)]), 'plain', 256, 0.0),
+    'run-cable-b': (part_run_cable([(0.95, 1.3, 0.04, (0.0, 0.0), 0.026), (0.6, 0.8, -0.05, (0.03, 0.0), 0.018)]), 'plain', 256, 0.0),
+    'run-lights': (part_run_lights(0.45, 71, 2, 0.055), 'plain', 512, 0.0),
+    'run-lights-b': (part_run_lights(0.7, 72, 1, 0.065, second=0.5), 'plain', 512, 0.0),
+    'run-pipe': (part_run_pipe, 'plain', 256, 0.0),
     'legs-1': (part_legs(1), 'legs', 1024, 0.0),
     'legs-2': (part_legs(2), 'legs', 1024, 0.0),
     'legs-3': (part_legs(3), 'legs', 1024, 0.0),

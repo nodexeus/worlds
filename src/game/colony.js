@@ -35,7 +35,7 @@ import { loadGate } from '../world/gate.js'
 import { campusBuilding, loadCampusBuildings } from '../world/campus-buildings.js'
 import { DeckNumbers, LightPools, Settlement, Walkways, loadSettlement, settlementReady } from '../world/settlement.js'
 import { WALK_TOP, walkwayRoute, walkwayStrips } from '../world/walkway.js'
-import { reachDown, settlementNumbers, settlementParts, settlementPools, underLamps } from '../world/settlement-plan.js'
+import { reachDown, settlementNumbers, settlementParts, settlementPools, settlementRuns, underLamps } from '../world/settlement-plan.js'
 import { mouth, placed, planDecks } from '../world/settlement-decks.js'
 import { placesOf, stackHeights } from '../world/settlement-load.js'
 import { SHADES, shadeOf } from '../world/shades.js'
@@ -1652,6 +1652,8 @@ export class Colony {
       { deckTop: DECK_TOP, levelStep: style.levelStep, apothem: reach }
     )
     parts.push(...shapedParts)
+    // Cables, pipes and strings of lights from stack to stack.
+    parts.push(...settlementRuns(parts))
     // A leg that comes down over a canal goes on down to its bed. A single post is asked about
     // where it stands; a set of four, anywhere under its platform.
     for (const part of parts) {
