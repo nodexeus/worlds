@@ -35,6 +35,8 @@ SIZES = {
     "deck-a": 1024, "deck-b": 1024, "deck-c": 1024, "deck-d": 1024,
     "deck-s1": 1024, "deck-s2": 1024, "deck-s3": 1024, "deck-m1": 1024, "deck-m2": 1024, "deck-m3": 1024, "deck-m4": 1024,
     "deck-l1": 1024, "deck-l2": 1024, "deck-l3": 1024,
+    "deck-s4": 1024, "deck-s5": 1024, "deck-s6": 1024, "deck-m5": 1024, "deck-m6": 1024, "deck-m7": 1024, "deck-m8": 1024,
+    "deck-m9": 1024, "deck-m10": 1024, "deck-m11": 1024,
     "mod-cabin": 1024, "mod-drum": 1024, "mod-shed": 1024, "mod-tank": 1024, "stair-2": 1024,
     "legs-1": 1024, "legs-2": 1024, "legs-3": 1024, "legs-4": 1024, "legs-5": 1024,
 }

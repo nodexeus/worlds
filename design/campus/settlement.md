@@ -104,7 +104,7 @@ hexagon, clear of a notch.
 
 ## Decks of their own shape
 
-Ten decks in three sizes. Origin at the centre of the deck's (first) cell on the walking surface. Any
+Twenty decks in three sizes: six small and eleven medium on one cell, three large on two. Origin at the centre of the deck's (first) cell on the walking surface. Any
 multiple of 60 degrees of turn; no mirroring. Kerbs, rails, lit strips and edge beams are part of the
 model: they take no edge parts and no leg sets. `deck-shapes.json` carries each one's outline, ports,
 wings, footprints, posts, lit strips and number place, and is written by `build_settlement.py` from the
@@ -122,7 +122,8 @@ What every one of them keeps to:
   centre and 1.7 either side of the direction. Use a deck only at a turn where each wing points at a
   cell that stays empty.
 - In every other direction there is no floor beyond 5.146 within 1.7 either side. Bolt heads in the
-  slab's face stand 0.03 past it, and on `deck-s2` the end of a beam under the deck stands 0.10 past it.
+  slab's face stand 0.03 past it, and on `deck-s2` and `deck-m6` the end of a beam under the deck stands
+  0.10 to 0.12 past it.
 - Elsewhere the floor stays inside its cell's hexagon or within 7.0 of the cell centre toward a corner.
   A large deck's floor also crosses the gap between its own two cells, up to 5.94 wide.
 
@@ -135,6 +136,16 @@ What every one of them keeps to:
 | deck-m2 | medium | a wedge running out to a point, a jetty either side | 81.2 | 1 3 5 | 0 | 2 + 1 | 5 | 7336 | 3090388 |
 | deck-m3 | medium | a slab with a bite out of it and a pier off one side | 83.5 | 0 1 3 4 | 5 | 0 + 2 | 5 | 7833 | 3179268 |
 | deck-m4 | medium | half a slab and a forked jetty to the two far ports | 77.2 | 0 1 2 3 4 5 | none | 0 + 1 | 5 | 5774 | 2978312 |
+| deck-s4 | small | an S: a strip between two ports, a pad hung off each side | 43.9 | 0 3 | none | 0 + 1 | 3 | 4912 | 2920132 |
+| deck-s5 | small | a spine with a branch one side and a pad the other | 48.4 | 1 2 4 | none | 0 + 1 | 3 | 5726 | 3118020 |
+| deck-s6 | small | a blunt block on two ports, one arm reaching for a third | 46.8 | 0 2 3 | none | 0 + 1 | 3 | 4667 | 3040816 |
+| deck-m5 | medium | a cleaver: a broad blade and a handle to the third port | 73.7 | 0 1 3 | none | 1 + 1 | 5 | 6444 | 3227844 |
+| deck-m6 | medium | a slab with a long slot cut in from one side | 82.9 | 0 2 3 | none | 0 + 1 | 5 | 6614 | 2998220 |
+| deck-m7 | medium | one side sliced off on the slant, two corners stepped out | 75.5 | 1 3 5 | none | 1 + 2 | 5 | 5451 | 3144676 |
+| deck-m8 | medium | a T: a bar across three ports and a broad stem to the fourth | 75.5 | 0 1 2 4 | none | 0 + 1 | 5 | 5755 | 3005476 |
+| deck-m9 | medium | a hammer: its top planed off, a pier out over the next cell | 85.2 | 0 3 4 5 | 2 | 0 + 2 | 5 | 6745 | 3151552 |
+| deck-m10 | medium | a slab with a wedge taken out to its middle | 77.5 | 0 1 2 3 4 | none | 0 + 1 | 5 | 5237 | 2984008 |
+| deck-m11 | medium | a butterfly: slotted from below, trimmed corners, a pier above | 88.5 | 0 2 3 5 | 1 | 0 + 2 | 5 | 7109 | 3161588 |
 | deck-l1 | large | a dumbbell: two pads and a neck across the gap | 158.0 | (0,1) (0,3) (1,0) (1,4) | none | 2 + 4 | 8 | 12055 | 3366212 |
 | deck-l2 | large | a broad yard with a pier | 166.9 | (0,1) (0,5) (1,0) (1,5) | (1,1) | 3 + 3 | 8 | 11296 | 3247980 |
 | deck-l3 | large | a pad, a long arm to a far landing, a pier behind | 148.2 | (0,2) (0,4) (1,0) (1,1) (1,5) | (0,3) | 0 + 4 | 8 | 12451 | 3295804 |
@@ -147,7 +158,8 @@ The footprints given keep every margin: a building is a circle of radius 1.6, a 
 3.56 by 2.36; 0.3 from the edge, 0.8 between any two, and outside each port's lane (1.0 either side
 of its centre line for 2.0 inward). "Fits" in the table is what a search found with all of that kept,
 most footprints first and stacks before buildings. It is a search, not a proof: a count one higher
-may exist on some decks.
+may exist on some decks. `deck-s6`, `deck-m5`, `deck-m8` and `deck-m10` were asked for
+buildings before stacks, though still a stack where one fits; `deck-m9` takes a stack over two buildings.
 
 ### Posts
 
@@ -187,6 +199,22 @@ Same sheet, size and convention as the hexagon decks (digit height 0.97).
 | deck-l3 | (2.72, -1.95) | 30 degrees | 1.56 x 1.56 |
 
 On `deck-s3` and `deck-l3` the place is the largest piece of plate there is, not a whole plate.
+
+The later single-cell decks (the plate each number lies on is in `deck-shapes.json` only by its place):
+
+| Part | Centre (x, z) | Turn about Y |
+|---|---|---|
+| deck-s4 | (0.90, 1.32) | 30 degrees |
+| deck-s5 | (1.02, 1.10) | 90 degrees |
+| deck-s6 | (0.01, -0.16) | 30 degrees |
+| deck-m5 | (0.04, -2.01) | 0 degrees |
+| deck-m6 | (-0.27, -0.77) | 90 degrees |
+| deck-m7 | (-0.49, -1.39) | 150 degrees |
+| deck-m8 | (-1.42, -1.74) | 90 degrees |
+| deck-m9 | (0.65, 1.99) | 150 degrees |
+| deck-m10 | (3.18, -1.36) | 30 degrees |
+| deck-m11 | (2.51, -2.18) | 90 degrees |
+
 
 ### deck-shapes.json
 

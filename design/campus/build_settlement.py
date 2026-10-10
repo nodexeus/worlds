@@ -1655,6 +1655,51 @@ SHAPED_DECKS = {
                     marks=('chevron', 'number'), hub=(-1.2, 0.0),         # half a slab, and a forked jetty to the two far ports
                     outline=[(1.3, -5.146), (1.3, -2.252), V(P(0, 5, -1.3)), V(P(0, 5, 1.3)), (2.601, 0.0), V(P(0, 0, -1.3)),
                              V(P(0, 0, 1.3)), (1.3, 2.252), (1.3, 5.146), (-2.971, 5.146), (-5.942, 0), (-2.971, -5.146)]),
+    # ---- more single-cell shapes, so a campus does not show the same few over and over
+    'deck-s4': dict(size='small', ports=[(0, 0), (0, 3)], wings=[], want=(0, 1), posts=3, grid=30, finish='clean', seed=304,
+                    marks=('lines', 'number'), hub=(0.0, 0.0), frame=True,   # an S: a strip between two ports, a pad hung off each side
+                    outline=[(-5.146, -1.3), (-3.4, -2.9), (1.9, -2.9), (1.9, -1.3), (5.146, -1.3), (5.146, 2.9), (0.6, 2.9),
+                             (0.6, 1.3), (-5.146, 1.3)]),
+    'deck-s5': dict(size='small', ports=[(0, 1), (0, 2), (0, 4)], wings=[], want=(0, 1), posts=3, grid=90, finish='used', seed=305,
+                    marks=('chevron', 'number'), hub=(0.0, 0.6),             # a spine with a branch one side and a pad the other
+                    outline=[(-1.3, -5.146), (1.3, -5.146), (1.3, -2.8), (3.4, -2.8), (4.3, -1.9), (4.3, 1.4), (1.3, 1.4), (1.3, 5.146),
+                             (-1.3, 5.146), (-1.3, 2.252), V(P(0, 2, -1.3)), V(P(0, 2, 1.3)), (-1.3, -0.751)]),
+    'deck-s6': dict(prefer='buildings', size='small', ports=[(0, 0), (0, 2), (0, 3)], wings=[], want=(1, 1), posts=3, grid=30, finish='used', seed=306,
+                    marks=('band', 'number'), hub=(-1.6, 0.0),               # a blunt block on two ports with one arm reaching for a third
+                    outline=[V(P(0, 3, 1.3)), (-0.6, -2.6), (1.1, -2.0), (1.1, -0.866), V(P(0, 0, -1.3)), V(P(0, 0, 1.3)), (1.1, 2.136),
+                             (-1.0, 3.0), V(P(0, 2, -1.3)), V(P(0, 2, 1.3)), (-5.942, 0), V(P(0, 3, -1.3))]),
+    'deck-m5': dict(prefer='buildings', size='medium', ports=[(0, 0), (0, 1), (0, 3)], wings=[], want=(2, 2), posts=5, grid=0, finish='used', seed=315,
+                    marks=('chevron', 'number'), hub=(1.0, 0.5),             # a cleaver: a broad blade and a handle to the third port
+                    outline=[V(P(0, 3, 1.3)), (-1.2, -2.194), (-1.2, -4.6), (2.6, -4.6), (2.6, -3.4), (4.1, -3.0), (4.9, -1.0),
+                             V(P(0, 0, -1.3)), V(P(0, 0, 1.3)), (2.971, 5.146), (-1.3, 5.146), (-3.4, 3.9), (-3.9, 2.6),
+                             (-3.9, -0.750), V(P(0, 3, -1.3))]),
+    'deck-m6': dict(size='medium', ports=[(0, 0), (0, 2), (0, 3)], wings=[], want=(2, 2), posts=5, grid=90, finish='clean', seed=316,
+                    marks=('lines', 'number'), hub=(-1.6, 1.0),              # a slab with a long slot cut in from one side
+                    outline=[V(P(0, 3, 1.3)), (-2.971, -5.146), (2.971, -5.146), (4.55, -2.4), (0.2, -2.4), (0.2, -0.6), (5.59, -0.6),
+                             (5.942, 0), V(P(0, 0, 1.3)), (2.971, 5.146), (-2.971, 5.146), V(P(0, 2, 1.3)), (-5.942, 0),
+                             V(P(0, 3, -1.3))]),
+    'deck-m7': dict(size='medium', ports=[(0, 1), (0, 3), (0, 5)], wings=[], want=(2, 2), posts=5, grid=150, finish='used', seed=317,
+                    marks=('band', 'number'), hub=(0.4, -0.4),               # one side sliced off on the slant, two corners stepped out
+                    outline=[V(P(0, 5, -1.3)), V(P(0, 5, 1.3)), (2.0, 5.146), (-1.3, 5.146), (-1.3, 2.6), (-4.4, 2.6), (-5.942, 0),
+                             V(P(0, 3, 1.3)), (-1.6, -3.699), (-1.6, -5.146), (2.971, -5.146)]),
+    'deck-m8': dict(prefer='buildings', size='medium', ports=[(0, 0), (0, 1), (0, 2), (0, 4)], wings=[], want=(2, 2), posts=5, grid=90, finish='clean', seed=318,
+                    marks=('chevron', 'number'), hub=(0.0, 2.4),             # a T: a bar across three ports and a broad stem to the fourth
+                    outline=[(-2.9, -5.146), (2.9, -5.146), (2.9, 0.3), (5.6, 0.3), V(P(0, 0, -1.3)), V(P(0, 0, 1.3)), (2.971, 5.146), (-2.971, 5.146),
+                             V(P(0, 2, 1.3)), (-5.942, 0), (-2.9, -0.5)]),
+    'deck-m9': dict(prefer='stack', size='medium', ports=[(0, 0), (0, 3), (0, 4), (0, 5)], wings=[(0, 2)], want=(2, 2), posts=5, grid=150, finish='used', seed=319,
+                    marks=('lines', 'number'), hub=(1.0, -1.0),              # a hammer: its top planed off, a pier out over the next cell
+                    outline=[V(P(0, 3, 1.3)), (-2.971, -5.146), (2.971, -5.146), V(P(0, 5, 1.3)), V(P(0, 0, -1.3)), V(P(0, 0, 1.3)), (2.0, 2.6), (-0.4, 1.6),
+                             V(P(0, 2, -1.6)), V(W(0, 2, 9.0, -1.6)), V(W(0, 2, 9.0, 1.6)), V(P(0, 2, 1.6)), (-5.942, 0),
+                             V(P(0, 3, -1.3))]),
+    'deck-m10': dict(prefer='buildings', size='medium', ports=[(0, 0), (0, 1), (0, 2), (0, 3), (0, 4)], wings=[], want=(2, 2), posts=5, grid=30, finish='clean', seed=320,
+                     marks=('band', 'number'), hub=(-1.0, 1.0),              # a slab with a wedge taken out to its middle
+                     outline=[(-2.971, -5.146), (1.3, -5.146), (0.9, -0.9), (5.5, -0.75), (5.942, 0), (2.971, 5.146), (-1.6, 5.146),
+                              (-3.6, 4.057), (-5.942, 0)]),
+    'deck-m11': dict(size='medium', ports=[(0, 0), (0, 2), (0, 3), (0, 5)], wings=[(0, 1)], want=(2, 2), posts=5, grid=90, finish='used', seed=324,
+                     marks=('chevron', 'number'), hub=(0.0, 1.6),            # a butterfly: slotted from below, trimmed at the corners, a pier above
+                     outline=[V(P(0, 3, 1.3)), (-2.971, -5.146), (-1.6, -5.146), (-1.0, -1.6), (1.0, -1.6), (1.6, -5.146),
+                              (2.971, -5.146), V(P(0, 5, 1.3)), V(P(0, 0, -1.3)), V(P(0, 0, 1.3)), (1.7, 5.146), (1.7, 8.4),
+                              (-1.5, 8.4), (-1.5, 5.146), V(P(0, 2, -1.3)), V(P(0, 2, 1.3)), V(P(0, 3, -1.3))]),
     # ---- large: two cells as one slab, four buildings and four stacks
     'deck-l1': dict(size='large', ports=[(0, 3), (0, 1), (1, 0), (1, 4)], wings=[], want=(4, 4), posts=8, grid=30, finish='used', seed=321,
                     marks=('chevron', 'number'), hub=(6.6, 0.0), frame=True,   # a dumbbell: two pads and a neck across the gap
@@ -1694,13 +1739,21 @@ def deck_plan(name):
         d, c = _dir(k), _cell(cell)
         a, b_ = c + d * PORT_R, c + d * (PORT_R - LANE_IN)
         lanes.append(((a.x, a.y), (b_.x, b_.y)))
-    key = repr(('search 2', pts, spec['ports'], spec['want'], spec['seed'], spec['posts']))
+    key = repr(('search 2', pts, spec['ports'], spec['want'], spec['seed'], spec['posts'])) + spec.get('prefer', '') * 2
     if key not in cache:
         # what fits: the count asked for if it can be had with every margin kept, or else the most that can
         nb, ns = spec['want']
         tries = [(nb - i, ns - j) for total in range(nb + ns) for i in range(total + 1) for j in (total - i,)
                  if nb - i >= 0 and ns - j >= 0 and (nb - i) + (ns - j) > 0]
-        tries.sort(key=lambda c: (-(c[0] + c[1]), -c[1]))          # most footprints first; of equals, more stacks
+        # most footprints first; of equals, more stacks. A deck that asks for buildings gets more of those
+        # instead, but still a stack where one fits, since a stack is where most sessions live
+        if spec.get('prefer') == 'stack':
+            # where two buildings fit but a stack and a building do not, the stack alone: it holds more
+            tries.sort(key=lambda c: (-(c[0] + 3 * c[1]), -(c[0] + c[1])))
+        elif spec.get('prefer') == 'buildings':
+            tries.sort(key=lambda c: (-(c[0] + c[1]), -(c[1] > 0), -c[0]))
+        else:
+            tries.sort(key=lambda c: (-(c[0] + c[1]), -c[1]))
         found = None
         for cb, cs in tries:
             slack, circles, stacks = place_footings(pts, lanes, cb, cs, spec['seed'])
@@ -2365,6 +2418,16 @@ PARTS = {
     'deck-m2': (part_deck_shaped('deck-m2'), 'clean', 1024, 0.0),
     'deck-m3': (part_deck_shaped('deck-m3'), 'used', 1024, 0.0),
     'deck-m4': (part_deck_shaped('deck-m4'), 'clean', 1024, 0.0),
+    'deck-s4': (part_deck_shaped('deck-s4'), 'clean', 1024, 0.0),
+    'deck-s5': (part_deck_shaped('deck-s5'), 'used', 1024, 0.0),
+    'deck-s6': (part_deck_shaped('deck-s6'), 'used', 1024, 0.0),
+    'deck-m5': (part_deck_shaped('deck-m5'), 'used', 1024, 0.0),
+    'deck-m6': (part_deck_shaped('deck-m6'), 'clean', 1024, 0.0),
+    'deck-m7': (part_deck_shaped('deck-m7'), 'used', 1024, 0.0),
+    'deck-m8': (part_deck_shaped('deck-m8'), 'clean', 1024, 0.0),
+    'deck-m9': (part_deck_shaped('deck-m9'), 'used', 1024, 0.0),
+    'deck-m10': (part_deck_shaped('deck-m10'), 'clean', 1024, 0.0),
+    'deck-m11': (part_deck_shaped('deck-m11'), 'used', 1024, 0.0),
     'deck-l1': (part_deck_shaped('deck-l1'), 'used', 1024, 0.0),
     'deck-l2': (part_deck_shaped('deck-l2'), 'clean', 1024, 0.0),
     'deck-l3': (part_deck_shaped('deck-l3'), 'used', 1024, 0.0),
