@@ -122,3 +122,38 @@ export function walkwayRoute(from, to, heading, name) {
 
 /** How high the top of the boardwalk is above the ground: the square's own height. */
 export const WALK_TOP = 0.45
+
+/** How far from the middle of the boards a strip of light runs: just inside the rail. */
+const STRIP_EDGE = 0.72
+
+/**
+ * The light a walkway carries: a strip set into the boards down each edge, so the way can be
+ * seen and followed after dark from anywhere, and a faint wash of the same light across the
+ * boards between them.
+ *
+ * It is a colour nothing else on the campus burns in, so the way reads as the way. A strip is
+ * as long as the piece it is set in, and here and there one has died.
+ *
+ * @param {Array<{x: number, z: number, ux: number, uz: number, half: number, y0: number, rise: number}>} spans
+ * @param {string} name  whose walkway, so each has its own dead strips
+ * @returns {Array<object>} pools for `LightPools`
+ */
+export function walkwayStrips(spans, name) {
+  const lights = []
+  spans.forEach((span, n) => {
+    if (span.rise) return
+    const turn = Math.atan2(-span.uz, span.ux)
+    const y = span.y0 + 0.03
+    let lit = 0
+    for (const side of [1, -1]) {
+      if (hash(`${name}/strip/${n}/${side}`) % 9 === 0) continue
+      lit++
+      lights.push({
+        plot: '', kind: 'band', color: 'cyan', turn, y, width: span.half * 2, depth: 0.16, gain: 3,
+        x: span.x - span.uz * STRIP_EDGE * side, z: span.z + span.ux * STRIP_EDGE * side,
+      })
+    }
+    if (lit) lights.push({ plot: '', kind: 'round', color: 'cyan', turn, x: span.x, y, z: span.z, width: span.half * 3, depth: 2.2, gain: 0.5 * lit })
+  })
+  return lights
+}

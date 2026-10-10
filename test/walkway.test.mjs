@@ -66,3 +66,24 @@ test('two places too near for a bend to fit between them get no route, and the c
   // Nor when the end is so far to one side that a leg would have to run backward.
   assert.equal(walkwayRoute({ x: 0, z: 0 }, { x: 40, z: 4 }, 0, 'local'), null)
 })
+
+test('a walkway is edged with strips of light: one down each side of every level stretch, in a colour of its own, a few of them dead', async () => {
+  const { walkwayStrips } = await import('../src/world/walkway.js')
+  const spans = Array.from({ length: 40 }, (_, n) => ({ x: n * 2.76, z: 0, ux: 1, uz: 0, half: 1.38, y0: 0.45, rise: 0 }))
+  spans.push({ x: 112, z: 0, ux: 1, uz: 0, half: 2, y0: 0.45, rise: 3 })
+  const lights = walkwayStrips(spans, 'local')
+  const strips = lights.filter((l) => l.kind === 'band')
+  assert.ok(strips.every((s) => s.color === 'cyan'), 'no other light on the campus is this colour')
+  assert.ok(strips.every((s) => Math.abs(Math.abs(s.z) - 0.72) < 1e-9), 'at the edges of the boards')
+  assert.ok(strips.every((s) => Math.abs(s.width - 2.76) < 1e-9 && s.depth < 0.3), 'as long as the piece and thin')
+  assert.ok(strips.every((s) => s.x < 111), 'none on the stairs')
+  assert.ok(strips.length < 80 && strips.length > 60, `a few are dead, most are lit: ${strips.length} of 80`)
+  assert.ok(strips.some((s) => s.z > 0) && strips.some((s) => s.z < 0))
+  assert.deepEqual(walkwayStrips(spans, 'local'), lights, 'the same every time')
+  // Along the way whichever way it runs: a strip beside a stretch running along z lies along z.
+  const turned = walkwayStrips([{ x: 0, z: 0, ux: 0, uz: 1, half: 1.38, y0: 0.45, rise: 0 }], 'b').filter((l) => l.kind === 'band')
+  for (const s of turned) {
+    assert.ok(Math.abs(Math.abs(s.x) - 0.72) < 1e-9 && Math.abs(s.z) < 1e-9)
+    assert.ok(Math.abs(Math.abs(Math.sin(s.turn)) - 1) < 1e-9, 'its length along z')
+  }
+})

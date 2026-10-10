@@ -34,7 +34,7 @@ import { loadModels } from '../world/kit.js'
 import { loadGate } from '../world/gate.js'
 import { campusBuilding, loadCampusBuildings } from '../world/campus-buildings.js'
 import { DeckNumbers, LightPools, Settlement, Walkways, loadSettlement, settlementReady } from '../world/settlement.js'
-import { WALK_TOP, walkwayRoute } from '../world/walkway.js'
+import { WALK_TOP, walkwayRoute, walkwayStrips } from '../world/walkway.js'
 import { reachDown, settlementNumbers, settlementParts, settlementPools } from '../world/settlement-plan.js'
 import { mouth, placed, planDecks } from '../world/settlement-decks.js'
 import { placesOf, stackHeights } from '../world/settlement-load.js'
@@ -163,6 +163,8 @@ const CROSSING_OVERLAP = 0.6
 
 /** How long the kit's stairs from the ground are, foot to the edge they climb to. */
 const STAIR_GROUND = 2.85
+/** What a walkway's lamps burn: the cold blue of the strips in its boards, and of nothing else. */
+const WALK_SHADE = [0.21, 0.84, 1.0]
 
 /** How much wider than its outline a deck is taken to be underfoot, to cover the seams in it. */
 const SEAM = 0.15
@@ -190,7 +192,7 @@ export class Colony {
     this.camera = camera
     this.renderer = renderer
 
-    this.planet = PLANETS[settings.get('planet')] || PLANETS.moon
+    this.planet = PLANETS[settings.get('planet')] || PLANETS.campus
     this._applyPlanetTint()
     this.sky = new Sky(scene, settings, renderer)
     this.sky.setPlanet(this.planet)
@@ -1522,8 +1524,9 @@ export class Colony {
       terrainHeight(span.x, span.z, this.planet),
       terrainHeight(span.x - span.ux * span.half, span.z - span.uz * span.half, this.planet),
       terrainHeight(span.x + span.ux * span.half, span.z + span.uz * span.half, this.planet)))
-    // Lamps down the way, so it can be found and followed after dark. Put up by whoever got
-    // round to it: now two pieces apart and now four, on whichever side, and the odd one missing.
+    // Lamps down the way as well as the strips in its boards (see `walkwayStrips`), burning the
+    // same colour. Put up by whoever got round to it: now two pieces apart and now four, on
+    // whichever side, and the odd one missing.
     // Each stands on the boards at their edge, and what it lights is the boards round its foot.
     const lamps = []
     let due = 1 + (hashString(`${district}/lamp`) % 2)
@@ -1538,10 +1541,12 @@ export class Colony {
       const z = piece.z - Math.sin(piece.turn) * 0.85 * side + Math.cos(piece.turn) * along
       // Now and then one was never put up, and there is a longer dark stretch.
       if ((roll >>> 11) % 7 === 0) return
-      lamps.push({ part: 'beacon', campus: true, x, y, z, turn: piece.turn + (roll % 4), lit: true, along: piece.turn })
+      lamps.push({ part: 'beacon', campus: true, shade: WALK_SHADE, x, y, z, turn: piece.turn + (roll % 4), lit: true, along: piece.turn })
     })
+    const spans = route.spans.map((span, n) => ({ ...span, y0: span.y0 + lift[n] }))
     return {
       lamps,
+      strips: walkwayStrips(spans, district),
       // A hair under the square's own deck where they overlap, so the two do not flicker.
       pieces: [
         ...lamps,
@@ -1549,7 +1554,7 @@ export class Colony {
         { part: 'stair-ground', x: foot.x, y: 0, z: foot.z, turn: heading },
       ],
       spans: [
-        ...route.spans.map((span, n) => ({ ...span, y0: span.y0 + lift[n] })),
+        ...spans,
         { x: foot.x - toward.x * (STAIR_GROUND / 2), z: foot.z - toward.z * (STAIR_GROUND / 2), ux: -toward.x, uz: -toward.z, half: STAIR_GROUND / 2, y0: WALK_TOP, rise: top - WALK_TOP },
       ],
       gate: { cell: { q: cell.q, r: cell.r }, toward: { q: toward.q, r: toward.r } },
@@ -1654,8 +1659,9 @@ export class Colony {
       // Under each lamp down a walkway that is lit: a pool round its foot, the same on every
       // side of it, and no wider than the boards it stands on.
       ...(this.walks || []).flatMap((walk) => walk.lamps.filter((lamp) => lamp.lit).map((lamp) => ({
-        plot: '', kind: 'round', color: 'amber', x: lamp.x, y: lamp.y + 0.05, z: lamp.z, turn: lamp.along, width: 3.4, depth: 6.5,
+        plot: '', kind: 'round', color: 'cyan', x: lamp.x, y: lamp.y + 0.05, z: lamp.z, turn: lamp.along, width: 3, depth: 5, gain: 0.9,
       }))),
+      ...(this.walks || []).flatMap((walk) => walk.strips),
     ])
     this.deckNumbers.set(settlementNumbers(parts))
   }

@@ -35,7 +35,7 @@ export function loadSettlement() {
 export const settlementReady = () => models.size > 0
 
 /** The same lift the campus's baked buildings get: see `bakedMaterial` in buildings.js. */
-function surface(source, shaded = true) {
+function surface(source, shaded = true, shade = null) {
   const material = source.clone()
   material.metalness = 0.7
   material.emissiveIntensity = 1.7
@@ -44,7 +44,11 @@ function surface(source, shaded = true) {
   material.onBeforeCompile = (shader) => {
     tameSheen(withCurve(shader))
     // What is drawn one at a time, a walkway's pieces, has no shade to carry and stays amber.
-    if (!shaded) return
+    if (!shaded) {
+      // Unless it is given one of its own: a walkway's lamps burn the colour of its strips.
+      if (shade) shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>${RESHADE.replaceAll('GLOW', `vec4(${shade.map((v) => v.toFixed(3)).join(', ')}, 1.0)`)}`)
+      return
+    }
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec4 aGlow;\nvarying vec4 vGlow;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n\tvGlow = aGlow;')
@@ -53,7 +57,7 @@ function surface(source, shaded = true) {
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>${RESHADE.replaceAll('GLOW', 'vGlow')}`)
   }
   // Two programs from one source: three must not take the one for the other.
-  material.customProgramCacheKey = () => `settlement-${shaded ? 'shaded' : 'plain'}`
+  material.customProgramCacheKey = () => `settlement-${shaded ? 'shaded' : shade ? shade.join('-') : 'plain'}`
   return material
 }
 
@@ -238,7 +242,7 @@ export class LightPools {
       this._q.setFromAxisAngle(this._up, pool.turn)
       this._s.set(pool.width, 1, pool.depth)
       held.mesh.setMatrixAt(n, this._m.compose(this._p, this._q, this._s))
-      held.mesh.setColorAt(n, this._c.setHex(TINT[pool.color] ?? TINT.amber).multiplyScalar(this.strength * (pool.color === 'amber' ? 0.5 : 0.7)))
+      held.mesh.setColorAt(n, this._c.setHex(TINT[pool.color] ?? TINT.amber).multiplyScalar(this.strength * (pool.color === 'amber' ? 0.5 : 0.7) * (pool.gain || 1)))
     }
     for (const [kind, held] of this.kinds) {
       if (!held.mesh) continue
@@ -369,10 +373,11 @@ export class Walkways {
       // A lamp beside the way is one of the campus's own buildings; everything else is the kit's.
       const model = piece.campus ? campusBuilding(piece.part) : models.get(piece.part)
       if (!model) continue
-      let material = this.materials.get(piece.part)
+      const key = piece.shade ? `${piece.part}/${piece.shade}` : piece.part
+      let material = this.materials.get(key)
       if (!material) {
-        material = surface(model.material, false)
-        this.materials.set(piece.part, material)
+        material = surface(model.material, false, piece.shade || null)
+        this.materials.set(key, material)
       }
       const mesh = new THREE.Mesh(model.geometry, material)
       mesh.position.set(piece.x, piece.y, piece.z)
