@@ -1522,18 +1522,23 @@ export class Colony {
       terrainHeight(span.x, span.z, this.planet),
       terrainHeight(span.x - span.ux * span.half, span.z - span.uz * span.half, this.planet),
       terrainHeight(span.x + span.ux * span.half, span.z + span.uz * span.half, this.planet)))
-    // Lamps down the way, on alternate sides, so it can be found and followed after dark.
+    // Lamps down the way, so it can be found and followed after dark. Put up by whoever got
+    // round to it: now two pieces apart and now four, on whichever side, and the odd one missing.
+    // Each stands on the boards at their edge, and what it lights is the boards round its foot.
     const lamps = []
+    let due = 1 + (hashString(`${district}/lamp`) % 2)
     route.pieces.forEach((piece, n) => {
-      if (piece.part !== 'walk' || n % 2 !== 1) return
-      const side = (n >> 1) % 2 ? 1 : -1
-      lamps.push({
-        part: 'beacon', campus: true, y: 0, turn: piece.turn,
-        // Close in beside the rail, and the pool it throws is on the boards beside it.
-        x: piece.x + Math.cos(piece.turn) * 1.45 * side + Math.sin(piece.turn) * 1.3,
-        z: piece.z - Math.sin(piece.turn) * 1.45 * side + Math.cos(piece.turn) * 1.3,
-        on: { x: piece.x + Math.sin(piece.turn) * 1.3, z: piece.z + Math.cos(piece.turn) * 1.3 },
-      })
+      if (piece.part !== 'walk' || n < due) return
+      const roll = hashString(`${district}/lamp/${n}`)
+      due = n + 2 + (roll % 3)
+      const side = roll & 8 ? 1 : -1
+      const along = 0.6 + ((roll >>> 5) % 16) / 10
+      const y = lift[n] + WALK_TOP - 0.02
+      const x = piece.x + Math.cos(piece.turn) * 0.85 * side + Math.sin(piece.turn) * along
+      const z = piece.z - Math.sin(piece.turn) * 0.85 * side + Math.cos(piece.turn) * along
+      // Now and then one was never put up, and there is a longer dark stretch.
+      if ((roll >>> 11) % 7 === 0) return
+      lamps.push({ part: 'beacon', campus: true, x, y, z, turn: piece.turn + (roll % 4), lit: true, along: piece.turn })
     })
     return {
       lamps,
@@ -1632,15 +1637,11 @@ export class Colony {
     this.lightPools.set([
       ...settlementPools(parts),
       // And a pool on the boards under each lamp down a walkway.
-      // Down a walkway: a faint ribbon of light along the boards the whole way, so it can be
-      // followed after dark, and a brighter pool on them by each lamp.
-      ...(this.walks || []).flatMap((walk) => [
-        ...walk.spans.map((span) => ({
-          plot: '', kind: 'band', color: 'amber', x: span.x, y: span.y0 + span.rise / 2 + 0.04, z: span.z,
-          turn: Math.atan2(span.ux, span.uz) + Math.PI / 2, width: 2.4, depth: span.half * 2 + 0.6,
-        })),
-        ...walk.lamps.map((lamp) => ({ plot: '', kind: 'round', color: 'amber', x: lamp.on.x, y: WALK_TOP + 0.05, z: lamp.on.z, turn: 0, width: 5.5, depth: 5.5 })),
-      ]),
+      // Under each lamp down a walkway that is lit: a pool round its foot, the same on every
+      // side of it, and no wider than the boards it stands on.
+      ...(this.walks || []).flatMap((walk) => walk.lamps.filter((lamp) => lamp.lit).map((lamp) => ({
+        plot: '', kind: 'round', color: 'amber', x: lamp.x, y: lamp.y + 0.05, z: lamp.z, turn: lamp.along, width: 3.4, depth: 6.5,
+      }))),
     ])
     this.deckNumbers.set(settlementNumbers(parts))
   }
