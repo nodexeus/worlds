@@ -15,7 +15,7 @@ const passes = (n, spec) => {
 test('a pass crosses the whole world: it starts and ends out past the edge of the ground', () => {
   for (const pass of passes(200)) {
     const end = { x: pass.from.x + pass.heading.x * pass.length, z: pass.from.z + pass.heading.z * pass.length }
-    assert.ok(Math.hypot(pass.from.x, pass.from.z) > 360 && Math.hypot(end.x, end.z) > 360)
+    assert.ok(Math.hypot(pass.from.x, pass.from.z) > 170 && Math.hypot(end.x, end.z) > 170)
     assert.ok(Math.abs(Math.hypot(pass.heading.x, pass.heading.z) - 1) < 1e-9)
   }
 })
@@ -25,8 +25,7 @@ test('it flies over the campus, over the buildings and under the camera', () => 
     // Nearest it comes to the middle of the world: within sight of it, never far off to one side.
     const along = -(pass.from.x * pass.heading.x + pass.from.z * pass.heading.z)
     const nearest = Math.hypot(pass.from.x + pass.heading.x * along, pass.from.z + pass.heading.z * along)
-    // The ground is some 720 across now, and a campus with two districts fills the middle 300 of it.
-    assert.ok(nearest < 100, `a pass ${nearest.toFixed(0)} from the middle`)
+    assert.ok(nearest < 45, `a pass ${nearest.toFixed(0)} from the middle`)
     assert.ok(pass.height >= 15 && pass.height <= 23)
     assert.ok(pass.speed >= 16 && pass.speed <= 24)
   }

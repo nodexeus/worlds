@@ -1,3 +1,4 @@
+import { tameSheen } from '../core/sheen.js'
 import * as THREE from 'three'
 import { atlasTexture, hasPart, kitReady, kitUsesVertexColors, part } from './kit.js'
 import { withCurve } from '../core/curve.js'
@@ -33,7 +34,9 @@ const DRONES = { count: 3 }
  * How far out the foundry floor's square canal runs. On a plate seam (a multiple of sixteen),
  * and known to the coolant lines too, which keep to the ground inside it.
  */
-const FOUNDRY_CANAL = 240
+const FOUNDRY_CANAL = 96
+/** And how far apart the canals beyond it are: the floor is crossed by a grid of them, without end. */
+const FOUNDRY_CANAL_EVERY = 192
 
 /** How far apart the campus world's levels stand. */
 const CAMPUS_LEVEL_STEP = 1.35
@@ -648,7 +651,24 @@ export const PLANETS = {
 /** Display order for the picker: home first, then outward, then the pretty ones. */
 export const PLANET_ORDER = ['campus', 'moon', 'mars', 'terra', 'beach', 'ocean', 'jungle', 'desert', 'tundra', 'autumn', 'sakura', 'volcanic', 'sky']
 
-export const GROUND_SIZE = 720
+export let GROUND_SIZE = 340
+/** The smallest the ground ever is, and the step it grows by. */
+const GROUND_LEAST = 340
+const GROUND_STEP = 170
+
+/**
+ * How big the ground has to be for a campus that reaches `reach` from the middle: never
+ * smaller than it always was, with room beyond the outermost workspace, in steps. The world
+ * has no fixed size: a campus of hundreds of workspaces gets the ground to stand on.
+ */
+export function groundFor(reach) {
+  return Math.max(GROUND_LEAST, Math.ceil(((reach + 70) * 2) / GROUND_STEP) * GROUND_STEP)
+}
+
+/** Make the ground this big. Whatever is built on it has to be built again afterwards. */
+export function setGroundSize(size) {
+  GROUND_SIZE = size
+}
 /** Everything inside this radius is the buildable colony, and is kept nearly flat. */
 export const COLONY_RADIUS = 46
 const DETAIL_SEGMENTS = { low: 72, medium: 128, high: 190 }
@@ -679,7 +699,8 @@ export const SKY_MAX_CELLS = 96
  * mottling for free rather than costing a texture fetch.
  */
 export function createTerrain(planet, detail, seed = 1337) {
-  const segments = DETAIL_SEGMENTS[detail] || DETAIL_SEGMENTS.medium
+  // As fine as it was however big the ground is, up to a point: a canal is only a few units wide.
+  const segments = Math.min(640, Math.round((DETAIL_SEGMENTS[detail] || DETAIL_SEGMENTS.medium) * (GROUND_SIZE / GROUND_LEAST)))
   const geo = new THREE.PlaneGeometry(GROUND_SIZE, GROUND_SIZE, segments, segments)
   geo.rotateX(-Math.PI / 2)
 
@@ -730,7 +751,8 @@ export function createTerrain(planet, detail, seed = 1337) {
     // Darken the far field so the eye settles on the colony and the hills read as a
     // silhouette rather than as more ground competing with the plots for attention.
     // Gentler than it was: a bright little world should stay bright to its edges.
-    c.multiplyScalar(1 - THREE.MathUtils.smoothstep(dist, COLONY_RADIUS * 0.8, GROUND_SIZE * 0.36) * 0.55)
+    // Measured in from the edge, so a ground that has grown is dark at its rim and not under the campus.
+    c.multiplyScalar(1 - THREE.MathUtils.smoothstep(dist, GROUND_SIZE / 2 - 133, GROUND_SIZE / 2 - 48) * 0.55)
     colors[i * 3] = c.r
     colors[i * 3 + 1] = c.g
     colors[i * 3 + 2] = c.b
@@ -839,10 +861,12 @@ function foundryMaterial(geo) {
     roughness: 1,
     // As with the decks: under a dark sky a pure mirror has nothing to show.
     metalness: 0.7,
-    envMapIntensity: 0.7,
+    envMapIntensity: 0.45,
   })
   mat.onBeforeCompile = (shader) => {
     withCurve(shader)
+    // A floor this wide catching the sun is a sheet of glare: it is held well below a lamp.
+    tameSheen(shader, 0.16)
     shader.uniforms.uTime = terrainUniforms.uTime
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\n varying vec2 vFloorXZ;')
@@ -980,12 +1004,16 @@ const FOUNDRY_CHANNEL = { ring: FOUNDRY_CANAL, half: 2.3, bank: 1.5, depth: 1.7 
 /** How fully (x, z) is inside a channel: 0 on the floor, 1 on a channel's bed. */
 function foundryChannel(x, z) {
   const { ring, half, bank } = FOUNDRY_CHANNEL
-  const ax = Math.abs(x)
-  const az = Math.abs(z)
-  const reach = Math.max(ax, az)
-  let nearest = Math.abs(reach - ring)
-  // Past the ring, the spokes: straight out along each axis.
-  if (reach > ring) nearest = Math.min(nearest, ax, az)
+  // A grid of them: the first `ring` out from the middle on every side, and one every
+  // `FOUNDRY_CANAL_EVERY` after that, for as far as the floor goes. A campus is not held
+  // inside them: it grows across them, and they run under its decks.
+  const to = (v) => {
+    const a = Math.abs(v)
+    if (a < ring) return ring - a
+    const m = (a - ring) % FOUNDRY_CANAL_EVERY
+    return Math.min(m, FOUNDRY_CANAL_EVERY - m)
+  }
+  const nearest = Math.min(to(x), to(z))
   return 1 - THREE.MathUtils.smoothstep(nearest, half, half + bank)
 }
 
@@ -1039,6 +1067,8 @@ function makeIslets(planet, seed) {
 // ── scatter ───────────────────────────────────────────────────────────────────────────
 
 const SCATTER_BUDGET = 2400
+/** How far out the scatter reached on the ground as it first was. */
+const SCATTER_REACH = 159
 
 /**
  * What grows on a world, and how it is planted.
@@ -1230,7 +1260,11 @@ export function createScatter(planet, density, keepClear = [], seed = 4242, insi
   group.name = 'scatter'
   // Islands have much less usable ground. Concentrate a smaller budget into groves.
   const share = (planet.shape === 'island' ? 0.5 : 1) * (SCATTER_SHARE[planet.scatter] ?? 1)
-  const count = Math.round(SCATTER_BUDGET * THREE.MathUtils.clamp(density, 0, 1) * share)
+  // Spread over the whole of the ground, however big it has grown, as thickly as it always
+  // was: the budget is for the ground as it first was, and goes up with the area, to a limit.
+  const reach = GROUND_SIZE / 2 - 11
+  const spread = Math.min(6, (reach * reach) / (SCATTER_REACH * SCATTER_REACH))
+  const count = Math.round(SCATTER_BUDGET * THREE.MathUtils.clamp(density, 0, 1) * share * spread)
   if (count <= 0 || planet.scatter === 'none') return group
 
   const rand = mulberry(seed)
@@ -1302,7 +1336,9 @@ export function createScatter(planet, density, keepClear = [], seed = 4242, insi
     // actually look at is the ring just outside the plots, and a strict area-uniform spread
     // leaves it thinner than the far field it is competing with.
     const a = rand() * Math.PI * 2
-    let d = 9 + Math.pow(rand(), 0.58) * 150
+    // On the ground as it first was, that lean; on one that has grown, evenly, since the
+    // campus is then all over it and no one part of it is the part you look at.
+    let d = 9 + Math.pow(rand(), spread > 1 ? 0.5 : 0.58) * (reach - 9)
     let x = Math.cos(a) * d
     let z = Math.sin(a) * d
     // Mixed groups read as vegetation; isolated tiny trees read as scattered props.

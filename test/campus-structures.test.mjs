@@ -77,3 +77,24 @@ test('the Library leaves a way round it on a platform that stands apart from its
   // On a world whose platforms touch there is ground all round, and nothing to give up.
   assert.equal(walkRadius(4.6, PLOT_APOTHEM, 0), 4.6)
 })
+
+test('the ground has no fixed size: it is as big as the campus needs, and never smaller than it was', async () => {
+  const { groundFor } = await import('../src/world/planet.js')
+  assert.equal(groundFor(0), 340)
+  assert.equal(groundFor(90), 340)
+  // A campus reaching 165 out, as one with two districts does, and one of hundreds of workspaces.
+  assert.ok(groundFor(165) >= (165 + 70) * 2)
+  assert.ok(groundFor(900) >= 1940)
+  assert.equal(groundFor(165) % 170, 0, 'in steps, so it is not laid again for every newcomer')
+})
+
+test('the canals are a grid without end, and the campus is not inside them', async () => {
+  const { onCanal, PLANETS } = await import('../src/world/planet.js')
+  const campus = Object.values(PLANETS).find((planet) => planet.shape === 'foundry')
+  // The first is 96 out on every side; then one every 192, on both axes, as far as you like.
+  for (const at of [96, 288, 480, 1056]) {
+    assert.equal(onCanal(at, 37, campus), true, `a canal at x = ${at}`)
+    assert.equal(onCanal(-41, -at, campus), true)
+  }
+  for (const at of [0, 40, 150, 200, 380, 960]) assert.equal(onCanal(at, 12, campus), false, `floor at x = ${at}`)
+})

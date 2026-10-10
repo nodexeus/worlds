@@ -109,7 +109,7 @@ const VERT_MOVE = /* glsl */ `
   vTint = aTint;
   // Where this blade stands, in the world — the wave and the gusts are functions of place.
   vec3 base = ( modelMatrix * vec4( instanceMatrix[ 3 ].xyz, 1.0 ) ).xyz;
-  vFade = smoothstep( ${glslFloat(COLONY_RADIUS * 0.8)}, ${glslFloat(GROUND_SIZE * 0.36)}, length( base.xz ) );
+  vFade = smoothstep( ${glslFloat(GROUND_SIZE / 2 - 133)}, ${glslFloat(GROUND_SIZE / 2 - 48)}, length( base.xz ) );
 
   float h = length( instanceMatrix[ 1 ].xyz );
   // Squared so the root stays planted and the bend is a curve rather than a hinge.

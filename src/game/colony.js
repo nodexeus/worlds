@@ -1,6 +1,6 @@
 import { SceneryReflections } from '../world/reflections.js'
 import * as THREE from 'three'
-import { onCanal, terrainUniforms, PLANETS, createTerrain, createScatter, terrainHeight } from '../world/planet.js'
+import { GROUND_SIZE, groundFor, setGroundSize, onCanal, terrainUniforms, PLANETS, createTerrain, createScatter, terrainHeight } from '../world/planet.js'
 import { createWater } from '../world/water.js'
 import { Fauna } from '../world/fauna.js'
 import { BuildingSurfaces } from '../world/building-surfaces.js'
@@ -437,6 +437,7 @@ export class Colony {
     }
     const detail = this.settings.get('groundDetail')
     this.water = createWater({
+      size: GROUND_SIZE,
       planet: this.planet,
       heightAt: (x, z) => terrainHeight(x, z, this.planet),
       quality: detail === 'high' ? 'high' : detail === 'low' ? 'low' : 'medium',
@@ -777,7 +778,7 @@ export class Colony {
         }
         // And is never bare: its first building stands whether or not anybody is at it.
         if (!list.length) {
-          this._syncBuilding({ id: placeBuilding(name, 0) }, plot, placeSlot(0))
+          this._syncBuilding({ id: placeBuilding(name, 0) }, plot, placeSlot(0), plot.crewSpots?.[0])
           seenBuildings.add(placeBuilding(name, 0))
         }
       }
@@ -820,7 +821,8 @@ export class Colony {
           })
           return
         }
-        const floor = spotOf ? plot.spots[spotOf.deck].buildings[spotOf.spot] : null
+        const floor = spotOf ? plot.spots[spotOf.deck].buildings[spotOf.spot]
+          : place && plot.crewSpots ? plot.crewSpots[spot % plot.crewSpots.length] : null
         const building = this._syncBuilding(place ? { id: home } : thread, plot, i, floor)
         seenBuildings.add(home)
         if (place) tenants.set(home, thread.id)
@@ -1340,6 +1342,13 @@ export class Colony {
     this.nav.fit(extentFor(held))
     /** How far from the middle anything of the campus stands: as far as the view may be taken. */
     this.reach = Math.max(...held.map((at) => Math.hypot(at.x, at.z))) + 12
+    // And the ground is as big as the campus needs: it grows, and is laid again when it does.
+    const ground = groundFor(this.reach)
+    if (ground > GROUND_SIZE) {
+      setGroundSize(ground)
+      this._buildTerrain()
+      this._buildPipeline?.()
+    }
     // On decks of their own shape, the ways between a deck's ports are kept open: from just
     // inside each port that is in use to just inside the next.
     const through = []
@@ -1390,7 +1399,14 @@ export class Colony {
     const links = []
     this.wingCells = new Map()
     for (const plot of this.plotOrder) {
-      if (plot.crew) continue
+      // The crew's workspaces are shaped like anybody's. One of several cells keeps its
+      // hexagons and its two buildings a platform, as before.
+      if (plot.crew && plot.cells.length > 1) {
+        plot.units = null
+        plot.crewSpots = null
+        plot.setOutlines(null)
+        continue
+      }
       if (plot.cells.length > 1) {
         // A workspace of several cells is one floor: its hexagons joined edge to edge, which
         // is what makes it read as one place and not as so many neighbours. On each of its
@@ -1427,7 +1443,17 @@ export class Colony {
       const planned = planDecks({ id: plot.id, cells: plot.cells, load: this.loads?.get(plot.id) || 1, doors: doors.get(plot.id) || [] }, isEmpty, kept)
       plot.units = planned.units.map((unit) => ({ ...unit, at: placed(unit) }))
       plot.spots = plot.units.map((unit) => ({ buildings: unit.at.buildings, stacks: unit.at.stacks }))
-      plot.places = placesOf(plot.spots.map((deck) => ({ buildings: deck.buildings.length, stacks: deck.stacks.length })))
+      if (plot.crew) {
+        // A crew's workspace has a building for each agent on it, two at most, and one when
+        // nobody is: on the deck's places for buildings first, then where a stack would go.
+        // A stack stands on whatever place for one is left over, when somebody is there.
+        const [deck] = plot.spots
+        plot.crewSpots = [...deck.buildings, ...deck.stacks]
+        const load = this.loads?.get(plot.id) || 0
+        const spare = deck.stacks.slice(Math.max(0, Math.max(1, Math.min(2, load)) - deck.buildings.length))
+        plot.stackSpecs = load > 0 ? spare.slice(0, 1) : []
+        plot.places = null
+      } else plot.places = placesOf(plot.spots.map((deck) => ({ buildings: deck.buildings.length, stacks: deck.stacks.length })))
       plot.setOutlines(plot.units.map((unit) => unit.at.outline))
       for (const link of planned.links) links.push({ ...link, low: plot.id, high: plot.id })
       // Where a deck reaches past its own cells, the cell it reaches into has to know whose floor that is.
@@ -1489,15 +1515,24 @@ export class Colony {
     if (!route) return null
     const level = this.plots.get(cell.name)?.level || 1
     const top = DECK_TOP + level * style.levelStep
+    // The floor is not quite level, least of all beside a canal, and a walkway laid dead flat
+    // sinks into it there. Each piece stands on the highest ground under it; over a canal
+    // it carries straight on across.
+    const lift = route.spans.map((span) => Math.max(0,
+      terrainHeight(span.x, span.z, this.planet),
+      terrainHeight(span.x - span.ux * span.half, span.z - span.uz * span.half, this.planet),
+      terrainHeight(span.x + span.ux * span.half, span.z + span.uz * span.half, this.planet)))
     // Lamps down the way, on alternate sides, so it can be found and followed after dark.
     const lamps = []
     route.pieces.forEach((piece, n) => {
-      if (piece.part !== 'walk' || n % 3 !== 1) return
-      const side = (n / 3) % 2 < 1 ? 1 : -1
+      if (piece.part !== 'walk' || n % 2 !== 1) return
+      const side = (n >> 1) % 2 ? 1 : -1
       lamps.push({
         part: 'beacon', campus: true, y: 0, turn: piece.turn,
-        x: piece.x + Math.cos(piece.turn) * 1.9 * side + Math.sin(piece.turn) * 1.3,
-        z: piece.z - Math.sin(piece.turn) * 1.9 * side + Math.cos(piece.turn) * 1.3,
+        // Close in beside the rail, and the pool it throws is on the boards beside it.
+        x: piece.x + Math.cos(piece.turn) * 1.45 * side + Math.sin(piece.turn) * 1.3,
+        z: piece.z - Math.sin(piece.turn) * 1.45 * side + Math.cos(piece.turn) * 1.3,
+        on: { x: piece.x + Math.sin(piece.turn) * 1.3, z: piece.z + Math.cos(piece.turn) * 1.3 },
       })
     })
     return {
@@ -1505,11 +1540,11 @@ export class Colony {
       // A hair under the square's own deck where they overlap, so the two do not flicker.
       pieces: [
         ...lamps,
-        ...route.pieces.map((piece) => ({ ...piece, y: -0.02 })),
+        ...route.pieces.map((piece, n) => ({ ...piece, y: lift[n] - 0.02 })),
         { part: 'stair-ground', x: foot.x, y: 0, z: foot.z, turn: heading },
       ],
       spans: [
-        ...route.spans,
+        ...route.spans.map((span, n) => ({ ...span, y0: span.y0 + lift[n] })),
         { x: foot.x - toward.x * (STAIR_GROUND / 2), z: foot.z - toward.z * (STAIR_GROUND / 2), ux: -toward.x, uz: -toward.z, half: STAIR_GROUND / 2, y0: WALK_TOP, rise: top - WALK_TOP },
       ],
       gate: { cell: { q: cell.q, r: cell.r }, toward: { q: toward.q, r: toward.r } },
@@ -1597,9 +1632,15 @@ export class Colony {
     this.lightPools.set([
       ...settlementPools(parts),
       // And a pool on the boards under each lamp down a walkway.
-      ...(this.walks || []).flatMap((walk) => walk.lamps.map((lamp) => ({
-        plot: '', kind: 'round', color: 'amber', x: lamp.x, y: WALK_TOP + 0.03, z: lamp.z, turn: 0, width: 7, depth: 7,
-      }))),
+      // Down a walkway: a faint ribbon of light along the boards the whole way, so it can be
+      // followed after dark, and a brighter pool on them by each lamp.
+      ...(this.walks || []).flatMap((walk) => [
+        ...walk.spans.map((span) => ({
+          plot: '', kind: 'band', color: 'amber', x: span.x, y: span.y0 + span.rise / 2 + 0.04, z: span.z,
+          turn: Math.atan2(span.ux, span.uz) + Math.PI / 2, width: 2.4, depth: span.half * 2 + 0.6,
+        })),
+        ...walk.lamps.map((lamp) => ({ plot: '', kind: 'round', color: 'amber', x: lamp.on.x, y: WALK_TOP + 0.05, z: lamp.on.z, turn: 0, width: 5.5, depth: 5.5 })),
+      ]),
     ])
     this.deckNumbers.set(settlementNumbers(parts))
   }

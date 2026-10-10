@@ -19,7 +19,7 @@ import { GROUND_SIZE, mulberry } from './planet.js'
 const MOST = 3
 
 /** How far out a pass starts and ends: past the edge of the ground, and well into the fog. */
-const REACH = GROUND_SIZE * 0.72
+const reach = () => GROUND_SIZE * 0.72
 
 /**
  * Plan one pass.
@@ -38,8 +38,8 @@ export function planPass(rand, spec = {}) {
   // that stays out by the edge is in the fog the whole way and nobody sees it.
   const bearing = rand() * Math.PI * 2
   const heading = { x: Math.cos(bearing), z: Math.sin(bearing) }
-  const side = (rand() - 0.5) * 2 * REACH * 0.16
-  const from = { x: -heading.x * REACH - heading.z * side, z: -heading.z * REACH + heading.x * side }
+  const side = (rand() - 0.5) * 2 * reach() * 0.16
+  const from = { x: -heading.x * reach() - heading.z * side, z: -heading.z * reach() + heading.x * side }
   const count = Math.min(MOST, fewest + Math.floor(rand() * (most - fewest + 1)))
   const craft = []
   for (let i = 0; i < count; i++) {
@@ -50,7 +50,7 @@ export function planPass(rand, spec = {}) {
   }
   // As high as another world's birds fly: over the tallest thing built, and under the camera at
   // its usual distance. Higher, and it is only there for someone zoomed all the way out.
-  return { from, heading, length: REACH * 2, height: 15 + rand() * 8, speed: 16 + rand() * 8, craft }
+  return { from, heading, length: reach() * 2, height: 15 + rand() * 8, speed: 16 + rand() * 8, craft }
 }
 
 export class Traffic {
