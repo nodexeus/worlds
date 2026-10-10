@@ -114,3 +114,15 @@ test('there is no sliver between a deck and its crossing where the ground is nei
   assert.ok(exact > 0, 'the sliver is real: measured end to end, the crossing and the decks do not meet')
 })
 
+
+test('a span narrower than the rest is walked no wider than it is: nobody is carried in the air beside the boards', async () => {
+  const { onSpan: on, heightOnCrossings: height } = await import('../src/world/crossing-spans.js')
+  const boards = { x: 0, z: 0, ux: 1, uz: 0, half: 5, y0: 0.45, rise: 0, wide: 0.55 }
+  const gangway = { ...boards, wide: undefined }
+  assert.equal(on(gangway, 0, 1, 1.05), true, 'a span with no width of its own is as wide as asked')
+  assert.equal(on(boards, 0, 0.5, 1.05), true)
+  assert.equal(on(boards, 0, 0.7, 1.05), false, 'past where anyone should stand')
+  assert.equal(height([boards], 0, 0.75, 1.4, 0), 0.45, 'still on the boards: held up')
+  assert.equal(height([boards], 0, 0.9, 1.4, 0), null, 'off the boards: not held up')
+  assert.equal(height([gangway], 0, 1.3, 1.4, 0), 0.45)
+})

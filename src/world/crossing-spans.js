@@ -44,12 +44,14 @@ export function spanOf(crossing, { gap, levelStep, deckTop, elevation }) {
 
 /**
  * Whether (x, z) is on the crossing, within `halfWidth` of its centre line and no more than
- * `overlap` past either end.
+ * `overlap` past either end. A span that says how `wide` it is to walk (half its width, as
+ * the boards of a walkway on the ground do) is never taken for wider, give or take `slack`.
  *
  * @param {Span} span
  * @returns {boolean}
  */
-export function onSpan(span, x, z, halfWidth, overlap = 0) {
+export function onSpan(span, x, z, halfWidth, overlap = 0, slack = 0) {
+  if (span.wide != null) halfWidth = Math.min(halfWidth, span.wide + slack)
   const dx = x - span.x
   const dz = z - span.z
   const along = dx * span.ux + dz * span.uz
@@ -84,9 +86,12 @@ export function heightOnSpan(span, x, z) {
  * @param {number} overlap
  * @returns {number | null}
  */
+/** How far past where a narrow span is walked somebody is still standing on it: out to its kerb. */
+const STAND_SLACK = 0.25
+
 export function heightOnCrossings(spans, x, z, halfWidth, overlap) {
   for (const span of spans) {
-    if (onSpan(span, x, z, halfWidth, overlap)) return heightOnSpan(span, x, z)
+    if (onSpan(span, x, z, halfWidth, overlap, STAND_SLACK)) return heightOnSpan(span, x, z)
   }
   return null
 }

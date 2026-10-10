@@ -153,6 +153,8 @@ const LEVEL_KIND = '\u0000kind'
 const LAYOUT_RAGGED = 'ragged-1'
 /** How much of a crossing's width the crew use: clear of the rails on either side. */
 const CROSSING_WALK = 1.05
+/** How far from the middle of a walkway on the ground anyone walks: inside its kerbs, body and all. */
+const BOARDS_WALK = 0.55
 /**
  * How far round a crossing's mouth nobody may be given a place to stand. Somebody parked in
  * a mouth is in everybody else's way, and there is only the one way through.
@@ -1543,7 +1545,8 @@ export class Colony {
       if ((roll >>> 11) % 7 === 0) return
       lamps.push({ part: 'beacon', campus: true, shade: WALK_SHADE, x, y, z, turn: piece.turn + (roll % 4), lit: true, along: piece.turn })
     })
-    const spans = route.spans.map((span, n) => ({ ...span, y0: span.y0 + lift[n] }))
+    // Walked down the middle of its boards, which are 1.6 across between kerbs.
+    const spans = route.spans.map((span, n) => ({ ...span, y0: span.y0 + lift[n], wide: BOARDS_WALK }))
     return {
       lamps,
       strips: walkwayStrips(spans, district),
@@ -1655,12 +1658,7 @@ export class Colony {
     this.settlement.set(parts)
     this.lightPools.set([
       ...settlementPools(parts),
-      // And a pool on the boards under each lamp down a walkway.
-      // Under each lamp down a walkway that is lit: a pool round its foot, the same on every
-      // side of it, and no wider than the boards it stands on.
-      ...(this.walks || []).flatMap((walk) => walk.lamps.filter((lamp) => lamp.lit).map((lamp) => ({
-        plot: '', kind: 'round', color: 'cyan', x: lamp.x, y: lamp.y + 0.05, z: lamp.z, turn: lamp.along, width: 3, depth: 5, gain: 0.9,
-      }))),
+      // The strips of light down the edges of each walkway. Its lamps light nothing but themselves.
       ...(this.walks || []).flatMap((walk) => walk.strips),
     ])
     this.deckNumbers.set(settlementNumbers(parts))

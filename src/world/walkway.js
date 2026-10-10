@@ -128,8 +128,8 @@ const STRIP_EDGE = 0.72
 
 /**
  * The light a walkway carries: a strip set into the boards down each edge, so the way can be
- * seen and followed after dark from anywhere, and a faint wash of the same light across the
- * boards between them.
+ * seen and followed after dark from anywhere. Lines of light and nothing else: no glow is
+ * painted on the boards between them.
  *
  * It is a colour nothing else on the campus burns in, so the way reads as the way. A strip is
  * as long as the piece it is set in, and here and there one has died.
@@ -144,16 +144,13 @@ export function walkwayStrips(spans, name) {
     if (span.rise) return
     const turn = Math.atan2(-span.uz, span.ux)
     const y = span.y0 + 0.03
-    let lit = 0
     for (const side of [1, -1]) {
       if (hash(`${name}/strip/${n}/${side}`) % 9 === 0) continue
-      lit++
       lights.push({
-        plot: '', kind: 'band', color: 'cyan', turn, y, width: span.half * 2, depth: 0.16, gain: 3,
+        plot: '', kind: 'band', color: 'cyan', turn, y, width: span.half * 2, depth: 0.2, gain: 3.5,
         x: span.x - span.uz * STRIP_EDGE * side, z: span.z + span.ux * STRIP_EDGE * side,
       })
     }
-    if (lit) lights.push({ plot: '', kind: 'round', color: 'cyan', turn, x: span.x, y, z: span.z, width: span.half * 3, depth: 2.2, gain: 0.5 * lit })
   })
   return lights
 }
