@@ -35,7 +35,7 @@ import { loadGate } from '../world/gate.js'
 import { campusBuilding, loadCampusBuildings } from '../world/campus-buildings.js'
 import { DeckNumbers, LightPools, Settlement, Walkways, loadSettlement, settlementReady } from '../world/settlement.js'
 import { WALK_TOP, walkwayRoute } from '../world/walkway.js'
-import { settlementNumbers, settlementParts, settlementPools } from '../world/settlement-plan.js'
+import { reachDown, settlementNumbers, settlementParts, settlementPools } from '../world/settlement-plan.js'
 import { mouth, placed, planDecks } from '../world/settlement-decks.js'
 import { placesOf, stackHeights } from '../world/settlement-load.js'
 import { SHADES, shadeOf } from '../world/shades.js'
@@ -1633,6 +1633,20 @@ export class Colony {
       { deckTop: DECK_TOP, levelStep: style.levelStep, apothem: reach }
     )
     parts.push(...shapedParts)
+    // A leg that comes down over a canal goes on down to its bed. A single post is asked about
+    // where it stands; a set of four, anywhere under its platform.
+    for (const part of parts) {
+      const set = /^legs-/.test(part.part)
+      if (!set && !/^post-/.test(part.part)) continue
+      let drop = -terrainHeight(part.x, part.z, this.planet)
+      if (set) {
+        for (let k = 0; k < 8; k++) {
+          const a = (k * Math.PI) / 4
+          drop = Math.max(drop, -terrainHeight(part.x + Math.cos(a) * 4, part.z + Math.sin(a) * 4, this.planet))
+        }
+      }
+      Object.assign(part, reachDown(part.part, drop, style.levelStep))
+    }
     this.settlement.set(parts)
     this.lightPools.set([
       ...settlementPools(parts),

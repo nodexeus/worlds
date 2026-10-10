@@ -102,6 +102,8 @@ export class Settlement {
       at.set(part.part, n + 1)
       this._p.set(part.x, part.y + (this.lifts.get(part.plot) || 0), part.z)
       this._q.setFromAxisAngle(this._up, part.turn)
+      // Drawn out downward from the deck, where it has further to reach: see `reachDown`.
+      this._s.set(1, part.stretch || 1, 1)
       held.mesh.setMatrixAt(n, this._m.compose(this._p, this._q, this._s))
       // A neon sign is its own colour; everything else takes the workspace's shade.
       const shade = /^sign-/.test(part.part) ? null : SHADES[shadeOf(part.plot)]

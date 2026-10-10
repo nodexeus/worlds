@@ -338,3 +338,29 @@ export function settlementNumbers(parts) {
   }
   return digits
 }
+
+/**
+ * The leg to stand where the ground is `drop` lower than the floor: over a canal.
+ *
+ * A leg made for the floor stops in the air there. So a longer one is used, made for a deck
+ * as many levels higher as it takes to reach, its foot in the bed; and where there is none
+ * long enough, the longest is drawn out the rest of the way.
+ *
+ * @param {string} part   `post-N` or `legs-N`, for a deck on level N
+ * @param {number} drop   how far below the floor the ground is there
+ * @param {number} levelStep
+ * @returns {{part: string, stretch: number}} `stretch` is how much longer it is drawn, downward from the deck
+ */
+export function reachDown(part, drop, levelStep) {
+  const made = /^(post|legs)-(\d)$/.exec(part)
+  if (!made || !(drop > 0.05)) return { part, stretch: 1 }
+  const level = Number(made[2])
+  const length = (n) => LEVEL_ONE + (n - 1) * levelStep
+  const need = length(level) + drop
+  let use = level
+  while (use < 5 && length(use) < need) use++
+  return { part: `${made[1]}-${use}`, stretch: Math.max(1, need / length(use)) }
+}
+
+/** How high the lowest deck stands above the floor: the length of the shortest leg. */
+const LEVEL_ONE = 1.8

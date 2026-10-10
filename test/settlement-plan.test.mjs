@@ -260,3 +260,23 @@ test('a number lies on its deck, its two digits side by side along the way it re
   const [turned] = settlementNumbers([{ ...deck, turn: Math.PI / 3 }])
   assert.ok(Math.abs(turned.turn - (Math.PI / 6 + Math.PI / 3)) < 1e-9)
 })
+
+import { reachDown } from '../src/world/settlement-plan.js'
+
+test('a leg that comes down over a canal reaches its bed: a longer leg where there is one, a stretched one where there is not', () => {
+  const step = 1.35
+  // On the floor, nothing changes.
+  assert.deepEqual(reachDown('post-2', 0, step), { part: 'post-2', stretch: 1 })
+  // Over a canal 1.7 deep, a leg two levels longer is long enough, and its foot is in the bed.
+  assert.deepEqual(reachDown('post-1', 1.7, step), { part: 'post-3', stretch: 1 })
+  assert.deepEqual(reachDown('legs-3', 1.7, step), { part: 'legs-5', stretch: 1 })
+  // The longest there are have nothing longer: they are drawn out to reach.
+  const tall = reachDown('post-5', 1.7, step)
+  assert.equal(tall.part, 'post-5')
+  assert.ok(Math.abs(tall.stretch - (7.2 + 1.7) / 7.2) < 1e-9)
+  const four = reachDown('post-4', 1.7, step)
+  assert.equal(four.part, 'post-5')
+  assert.ok(four.stretch > 1 && four.stretch < 1.1, 'one level longer and a little drawn out')
+  // Anything that is not a leg is left alone.
+  assert.deepEqual(reachDown('deck-a', 1.7, step), { part: 'deck-a', stretch: 1 })
+})
