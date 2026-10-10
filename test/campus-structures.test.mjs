@@ -88,13 +88,36 @@ test('the ground has no fixed size: it is as big as the campus needs, and never 
   assert.equal(groundFor(165) % 170, 0, 'in steps, so it is not laid again for every newcomer')
 })
 
-test('the canals are a grid without end, and the campus is not inside them', async () => {
+test('the canals wander: no two the same distance apart, each with steps sideways and stretches missing, and they go on for ever', async () => {
   const { onCanal, PLANETS } = await import('../src/world/planet.js')
   const campus = Object.values(PLANETS).find((planet) => planet.shape === 'foundry')
-  // The first is 96 out on every side; then one every 192, on both axes, as far as you like.
-  for (const at of [96, 288, 480, 1056]) {
-    assert.equal(onCanal(at, 37, campus), true, `a canal at x = ${at}`)
-    assert.equal(onCanal(-41, -at, campus), true)
+  // Walk a long way across the floor along several lines and note where canals are crossed.
+  const crossings = (z) => {
+    const at = []
+    let was = false
+    for (let x = -3000; x <= 3000; x += 1) {
+      const on = onCanal(x, z, campus)
+      if (on && !was) at.push(x)
+      was = on
+    }
+    return at
   }
-  for (const at of [0, 40, 150, 200, 380, 960]) assert.equal(onCanal(at, 12, campus), false, `floor at x = ${at}`)
+  const first = crossings(7)
+  assert.ok(first.length >= 20, `${first.length} canals crossed in 6000`)
+  // Not on a grid: the gaps between them are of many different sizes.
+  const gaps = first.slice(1).map((x, n) => x - first[n])
+  assert.ok(new Set(gaps.map((gap) => Math.round(gap / 16))).size >= 8, `gaps: ${gaps.slice(0, 12).join(' ')}`)
+  // Not straight for ever: followed a long way along, a canal is somewhere else or gone.
+  const far = crossings(1900)
+  const moved = first.filter((x) => !far.some((other) => Math.abs(other - x) < 4)).length
+  assert.ok(moved > first.length / 2, `${moved} of ${first.length} are not where they were`)
+  assert.notEqual(far.length, 0)
+  // But on the plate seams, as the floor is laid, and the same every time it is asked.
+  assert.deepEqual(crossings(7), first)
+  // And they do not ring the middle: there is floor to be had in every direction a long way out.
+  for (const [x, z] of [[900, 40], [-1200, 300], [70, -1500], [20, 2000]]) {
+    let open = 0
+    for (let n = 0; n < 60; n++) if (!onCanal(x + n * 7, z + n * 3, campus)) open++
+    assert.ok(open > 45)
+  }
 })

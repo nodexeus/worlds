@@ -30,13 +30,6 @@ import { FOUNDRY_TEXTURE_SCALE, foundryFloorSurface } from './surfaces.js'
 
 const DRONES = { count: 3 }
 
-/**
- * How far out the foundry floor's square canal runs. On a plate seam (a multiple of sixteen),
- * and known to the coolant lines too, which keep to the ground inside it.
- */
-const FOUNDRY_CANAL = 96
-/** And how far apart the canals beyond it are: the floor is crossed by a grid of them, without end. */
-const FOUNDRY_CANAL_EVERY = 192
 
 /** How far apart the campus world's levels stand. */
 const CAMPUS_LEVEL_STEP = 1.35
@@ -69,8 +62,8 @@ export const PLANETS = {
     // A laid floor, not a landscape: no craters and barely any relief.
     craters: 0,
     roughness: 0.12,
-    // Coolant comes in by canal: a square channel well out from the campus (`FOUNDRY_CANAL`),
-    // and four more running on from it to the horizon.
+    // Coolant comes in by canal: channels that wander over the floor (`canalsAlong`),
+    // stepping sideways and breaking off as they go.
     shape: 'foundry',
     water: {
       level: -0.75,
@@ -88,7 +81,8 @@ export const PLANETS = {
     // Glass coolant lines cross the floor too, on their way from somewhere to somewhere else:
     // they pass the campus, `margin` clear of its outermost deck, and do not go round it. The
     // seed is what their wandering is drawn from. See pipeline.js.
-    pipeline: { margin: 16, seed: 0x71be, canal: FOUNDRY_CANAL },
+    // No ring of canal to keep inside any more: the lines cross a canal where they meet one.
+    pipeline: { margin: 16, seed: 0x71be },
     scatter: 'foundry',
     companion: { name: 'Anode', color: 0x2a2a30, size: 2.0, glow: 0x56565e },
     dust: 0,
@@ -999,22 +993,72 @@ function sampleHeight(x, z, field, planet) {
  * where one that runs across it comes out as a saw edge. The channels lie on the plate seams,
  * midway between conduits.
  */
-const FOUNDRY_CHANNEL = { ring: FOUNDRY_CANAL, half: 2.3, bank: 1.5, depth: 1.7 }
+const FOUNDRY_CHANNEL = { half: 2.3, bank: 1.5, depth: 1.7 }
 
 /** How fully (x, z) is inside a channel: 0 on the floor, 1 on a channel's bed. */
 function foundryChannel(x, z) {
-  const { ring, half, bank } = FOUNDRY_CHANNEL
-  // A grid of them: the first `ring` out from the middle on every side, and one every
-  // `FOUNDRY_CANAL_EVERY` after that, for as far as the floor goes. A campus is not held
-  // inside them: it grows across them, and they run under its decks.
-  const to = (v) => {
-    const a = Math.abs(v)
-    if (a < ring) return ring - a
-    const m = (a - ring) % FOUNDRY_CANAL_EVERY
-    return Math.min(m, FOUNDRY_CANAL_EVERY - m)
-  }
-  const nearest = Math.min(to(x), to(z))
+  const { half, bank } = FOUNDRY_CHANNEL
+  const nearest = Math.min(canalsAlong(x, z, 0x51), canalsAlong(z, x, 0xa7))
   return 1 - THREE.MathUtils.smoothstep(nearest, half, half + bank)
+}
+
+/** A whole number from two whole numbers and a seed, the same every time. */
+function canalHash(a, b, seed) {
+  let h = (Math.imul(a, 0x27d4eb2d) ^ Math.imul(b, 0x165667b1) ^ seed) >>> 0
+  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b) >>> 0
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35) >>> 0
+  return (h ^ (h >>> 16)) >>> 0
+}
+
+/** How wide the strip of floor is that a canal wanders about in, and how long each straight run of it is, at most. */
+const CANAL_STRIP = 176
+const CANAL_RUN = 208
+
+/**
+ * How far (across, along) is from the nearest canal of those that run the `along` way.
+ *
+ * Nobody planned these. The floor is in strips, and most strips have a canal somewhere in
+ * them, never in the same place twice; some have none. A canal runs straight for a while,
+ * then steps sideways by a plate or three and carries on, and here and there it simply
+ * stops, and starts again further on or not at all. They keep to the plate seams and run
+ * square to the floor, because the floor is laid that way and a channel cut across it would
+ * be a saw edge; everything else about them is as it fell out.
+ *
+ * It is all read off the position, so the canals go on for as far as the floor does.
+ */
+function canalsAlong(across, along, seed) {
+  let nearest = Infinity
+  const strip = Math.floor(across / CANAL_STRIP)
+  for (let k = strip - 1; k <= strip + 1; k++) {
+    // One strip in five has no canal at all. Never the two either side of the middle, so
+    // that a small campus has one within sight.
+    if (k !== 0 && k !== -1 && canalHash(k, 0, seed) % 5 === 0) continue
+    // Where in its strip, on a seam; and where its runs begin and how long they are.
+    const base = k * CANAL_STRIP + 32 + (canalHash(k, 1, seed) % 8) * 16
+    const run = CANAL_RUN - (canalHash(k, 2, seed) % 5) * 16
+    const phase = canalHash(k, 3, seed) % run
+    const at = (j) => base + ((canalHash(k, j * 2 + 11, seed) % 5) - 2) * 16
+    // One run in six is missing: the canal stops, and the next run starts cold.
+    const there = (j) => canalHash(k, j * 2 + 12, seed) % 6 !== 0
+    const j = Math.floor((along + phase) / run)
+    for (let n = j - 1; n <= j + 1; n++) {
+      if (!there(n)) continue
+      const from = n * run - phase
+      const to = from + run
+      const here = at(n)
+      // The run itself.
+      const off = along < from ? from - along : along > to ? along - to : 0
+      nearest = Math.min(nearest, Math.hypot(across - here, off))
+      // And the step sideways to the next run, where there is one.
+      if (!there(n + 1)) continue
+      const next = at(n + 1)
+      const lo = Math.min(here, next)
+      const hi = Math.max(here, next)
+      const side = across < lo ? lo - across : across > hi ? across - hi : 0
+      nearest = Math.min(nearest, Math.hypot(side, along - to))
+    }
+  }
+  return nearest
 }
 
 /**
