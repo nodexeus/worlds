@@ -5,7 +5,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { SHIP_CELL, componentsOf, isConnected, moveIsValid, planMove, translateCells } from '../src/world/plot-move.js'
+import { POOL_RINGS, SHIP_CELL, componentsOf, isConnected, moveIsValid, planMove, translateCells } from '../src/world/plot-move.js'
 
 const layout = (zones) => new Map(Object.entries(zones))
 
@@ -35,9 +35,13 @@ test('a zone never collides with itself — the identity move is valid', () => {
   assert.equal(moveIsValid(zones, 'a', 0, 0), true)
 })
 
-test('the ship\'s cell is refused even when nothing else claims it', () => {
-  const zones = layout({ a: [{ q: 0, r: 0 }, { q: 0, r: 1 }] })
-  assert.equal(moveIsValid(zones, 'a', SHIP_CELL.q, SHIP_CELL.r - 1), false)
+test('ground on the square\'s side of a district is refused even when nothing else claims it', () => {
+  const zones = layout({ a: [{ q: 0, r: 0 }], b: [{ q: 1, r: 0 }] })
+  // One step from its neighbour, so nothing but the ground itself is against it.
+  assert.equal(moveIsValid(zones, 'a', 0, 1), true)
+  const far = layout({ a: [{ q: -3, r: 0 }], b: [{ q: -2, r: 0 }] })
+  assert.equal(moveIsValid(far, 'a', -1, 1), false)
+  assert.equal(moveIsValid(far, 'a', 0, 1), true)
 })
 
 test('a move that splits the colony into islands is refused', () => {
@@ -53,16 +57,15 @@ test('a move to a free neighbouring cell is accepted', () => {
 
 test('a move past the allocator\'s pool is refused — it would lose its ground next pass', () => {
   const zones = layout({ a: [{ q: 0, r: 0 }] })
-  assert.equal(moveIsValid(zones, 'a', 12, 0), false)
-  assert.equal(moveIsValid(zones, 'a', 11, 0), true)
+  assert.equal(moveIsValid(zones, 'a', POOL_RINGS, 0), false)
+  assert.equal(moveIsValid(zones, 'a', POOL_RINGS - 1, 0), true)
 })
 
 // ── connectivity ──────────────────────────────────────────────────────────────
 
-test('the ship bridges two zones without counting as one', () => {
-  // Both cells neighbour the ship and nothing else: whole through it, split without it.
-  const bridged = layout({ a: [{ q: -2, r: 0 }], b: [{ q: -2, r: 2 }] })
-  assert.equal(isConnected(bridged), true)
+test('two zones with open ground between them are not one colony: nothing in a district bridges them', () => {
+  const apart = layout({ a: [{ q: -2, r: 0 }], b: [{ q: -2, r: 2 }] })
+  assert.equal(isConnected(apart), false)
 })
 
 // ── carrying a zone out from between its neighbours ───────────────────────────
@@ -150,3 +153,12 @@ test('a drop into open ground is refused rather than dragging the colony over to
 function hexStep(a, b) {
   return (Math.abs(a.q - b.q) + Math.abs(a.q + a.r - b.q - b.r) + Math.abs(a.r - b.r)) / 2
 }
+
+test('a campus of a thousand workspaces places every one of them: none is left off the map for want of room', async () => {
+  const { allocateCells } = await import('../src/world/plots.js')
+  const projects = Array.from({ length: 1000 }, (_, n) => ({ id: `p${n}`, name: `p${n}`, want: 1, cells: 1, count: 1 }))
+  const cells = allocateCells(projects, new Map(), { ragged: true })
+  const placed = projects.filter((project) => cells.get(project.id)?.length)
+  assert.equal(placed.length, 1000)
+  assert.equal(new Set(placed.flatMap((project) => cells.get(project.id).map((c) => `${c.q},${c.r}`))).size >= 1000, true, 'each on ground of its own')
+})

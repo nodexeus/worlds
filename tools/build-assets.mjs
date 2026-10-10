@@ -37,6 +37,8 @@ const STEPS = [
   ['tools/build-gate.mjs', 'design/campus/nodexeus-gate.glb', 'public/assets/gate.glb'],
   // The campus's own buildings, likewise.
   ['tools/build-buildings.mjs', 'design/campus', 'public/assets/campus/buildings.glb'],
+  // And the parts its workspaces are built from.
+  ['tools/build-settlement.mjs', 'design/campus', 'public/assets/campus/settlement.glb'],
   ['tools/build-crew.mjs'],
 ]
 

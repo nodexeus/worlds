@@ -1,3 +1,4 @@
+import { tameSheen } from '../core/sheen.js'
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { bendPoint } from '../core/curve.js'
@@ -119,6 +120,8 @@ export class Library {
     // The same lift the campus buildings get: see `bakedMaterial` in buildings.js.
     material.metalness = 0.7
     material.emissiveIntensity = 1.7
+    // Steel in the sun must not go white: see `sheen.js`.
+    material.onBeforeCompile = (shader) => tameSheen(shader)
     this.model = new THREE.Mesh(model.geometry, material)
     this.model.castShadow = true
     this.model.receiveShadow = true

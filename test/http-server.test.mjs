@@ -65,3 +65,40 @@ test('malformed and escaping static paths fail without crashing the server', asy
     assert.equal((await fetch(url)).status, 200)
   })
 })
+
+test('a model file is checked for a newer copy every time, and only a file named by its contents is kept for good', async () => {
+  const dist = await fs.mkdtemp(path.join(os.tmpdir(), 'worlds-cache-'))
+  await fs.mkdir(path.join(dist, 'assets', 'campus'), { recursive: true })
+  await fs.writeFile(path.join(dist, 'index.html'), '<!doctype html>')
+  await fs.writeFile(path.join(dist, 'assets', 'index-Bq3xK9aZ.js'), 'export {}')
+  await fs.writeFile(path.join(dist, 'assets', 'campus', 'settlement.glb'), 'first')
+  const server = createAppServer({ distDir: dist })
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const base = `http://127.0.0.1:${server.address().port}`
+  try {
+    // Built by Vite with a hash of its contents in its name: it can never change under that name.
+    const bundle = await fetch(`${base}/assets/index-Bq3xK9aZ.js`)
+    assert.match(bundle.headers.get('cache-control'), /immutable/)
+
+    // Packed under a fixed name and replaced in place: the browser must ask each time.
+    const first = await fetch(`${base}/assets/campus/settlement.glb`)
+    assert.equal(first.headers.get('cache-control'), 'no-cache')
+    const tag = first.headers.get('etag')
+    assert.ok(tag)
+    assert.equal(await first.text(), 'first')
+
+    // Unchanged, it is not sent again.
+    const same = await fetch(`${base}/assets/campus/settlement.glb`, { headers: { 'If-None-Match': tag } })
+    assert.equal(same.status, 304)
+
+    // Replaced, it is.
+    await fs.writeFile(path.join(dist, 'assets', 'campus', 'settlement.glb'), 'second, and longer')
+    const next = await fetch(`${base}/assets/campus/settlement.glb`, { headers: { 'If-None-Match': tag } })
+    assert.equal(next.status, 200)
+    assert.equal(await next.text(), 'second, and longer')
+    assert.notEqual(next.headers.get('etag'), tag)
+  } finally {
+    await new Promise((resolve) => server.close(resolve))
+    await fs.rm(dist, { recursive: true, force: true })
+  }
+})

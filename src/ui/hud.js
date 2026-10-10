@@ -185,8 +185,9 @@ export class Hud {
     )
     body.appendChild(perf)
 
-    // World.
+    // World: a choice only when there is more than one to choose.
     const world = group('Planet')
+    if (PLANETS_ORDER.length < 2) world.style.display = 'none'
     const planets = document.createElement('div')
     planets.className = 'planets'
     for (const id of PLANETS_ORDER) {
@@ -481,7 +482,7 @@ export class Hud {
     on('#btn-home', 'click', () => this.actions.resetView?.())
     on('#btn-next', 'click', () => this.actions.focusStatus?.('waiting'))
     on('#btn-orbit', 'click', () => this.setOrbit(this.actions.toggleOrbit?.()))
-    on('#btn-planet', 'click', () => this.actions.cyclePlanet?.())
+    this.$('#btn-planet')?.addEventListener('click', () => this.actions.cyclePlanet?.())
     on('#btn-time', 'click', () => this.actions.cycleTime?.())
     on('#btn-sound', 'click', () => this.settings.set('sound', !this.settings.get('sound')))
     on('#btn-open', 'click', () => this.actions.openThread?.())
@@ -1152,8 +1153,7 @@ const TEMPLATE = `
   <button class="btn icon" id="btn-next" title="Next bot waiting on you (N)">${ICON.next}</button>
   <div class="sep"></div>
   <button class="btn icon" id="btn-orbit" title="Orbit mode — explore your campus (O)" aria-pressed="false">${ICON.orbit}</button>
-  <button class="btn icon" id="btn-planet" title="Change planet (G)">${ICON.globe}</button>
-  <button class="btn icon" id="btn-time" title="Change the time of day (L)">${ICON.sun}</button>
+${PLANETS_ORDER.length > 1 ? `  <button class="btn icon" id="btn-planet" title="Change planet (G)">${ICON.globe}</button>\n` : ''}  <button class="btn icon" id="btn-time" title="Change the time of day (L)">${ICON.sun}</button>
   <div class="sep"></div>
   <button class="btn icon" id="btn-sound" title="Mute (M)" aria-pressed="true">${ICON.sound}</button>
 </div>
@@ -1209,8 +1209,7 @@ const TEMPLATE = `
         <div class="k"><span>Archive</span><kbd>A</kbd></div>
         <div class="k"><span>New conversation</span><kbd>C</kbd></div>
         <div class="k"><span>Orbit mode</span><kbd>O</kbd></div>
-        <div class="k"><span>Change planet</span><kbd>G</kbd></div>
-        <div class="k"><span>Time of day</span><kbd>L</kbd></div>
+${PLANETS_ORDER.length > 1 ? `        <div class="k"><span>Change planet</span><kbd>G</kbd></div>\n` : ''}        <div class="k"><span>Time of day</span><kbd>L</kbd></div>
         <div class="k"><span>Mute</span><kbd>M</kbd></div>
         <div class="k"><span>Deselect</span><kbd>Esc</kbd></div>
         <div class="k"><span>This sheet</span><kbd>?</kbd></div>

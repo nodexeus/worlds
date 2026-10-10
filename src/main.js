@@ -8,11 +8,12 @@ import { Colony, STATUS_LABEL, STATUS_ORDER, statusFor, transcriptProgress } fro
 import { Hud } from './ui/hud.js'
 import { installCrew } from './crew/index.js'
 import { agentIdOf, crewWorld, isCrew } from './crew/world.js'
-import { PLANETS } from './world/planet.js'
+import { PLANETS, PLANET_ORDER } from './world/planet.js'
 import { DECK_TOP, PLOT_CELL, hexToWorld, worldToHex } from './world/plots.js'
 import { planMove } from './world/plot-move.js'
 import { loadKit } from './world/kit.js'
 import { loadCampusBuildings } from './world/campus-buildings.js'
+import { loadSettlement } from './world/settlement.js'
 import { crewRig, loadCrew } from './agents/crew.js'
 import { TIMES } from './world/sky.js'
 import { CURVE_FULL, bendPoint, installWorldCurve, setCurveView } from './core/curve.js'
@@ -122,7 +123,8 @@ const actions = {
   },
 
   cyclePlanet: () => {
-    const ids = Object.keys(PLANETS)
+    const ids = PLANET_ORDER
+    if (ids.length < 2) return
     const next = ids[(ids.indexOf(settings.get('planet')) + 1) % ids.length]
     settings.set('planet', next)
     hud.hint(`${PLANETS[next].name} — ${PLANETS[next].blurb}`)
@@ -800,7 +802,8 @@ window.addEventListener('pointermove', (e) => {
   // The plan, not just a yes/no: a drop that strands a zone is allowed, and what comes back
   // says where everything ends up. Kept so the drop applies exactly what the ghost was drawn
   // against rather than recomputing against a layout a poll may have moved on.
-  drag.plan = planMove(colony.visibleLayout(), drag.name, dq, dr)
+  const carry = colony.carryOf(drag.name, dq, dr)
+  drag.plan = planMove(colony.visibleLayout(drag.name), drag.name, carry.dq, carry.dr)
   drag.valid = Boolean(drag.plan)
   placeGhost()
 })
@@ -1029,6 +1032,7 @@ function applyThreads(list) {
   if (firstSeen) queueSave()
 
   const stats = colony.setThreads(list, archivedSet, hiddenSet, known, drawn.places)
+  rig.worldLimit = colony.reach
   hud.setStats(stats)
   chimeForNewWaiting(list, archivedSet, hiddenSet)
 
@@ -1170,6 +1174,8 @@ async function boot() {
     settle(loadCrew()),
     // Not fatal: a building with no model of its own is drawn from the kit.
     settle(loadCampusBuildings()),
+    // Nor is this: until the kit arrives the decks are simply not drawn.
+    settle(loadSettlement()),
   ])
   if (kitError || crewError) {
     hud.toast('Could not load the model assets — run `npm run assets`', 'err')

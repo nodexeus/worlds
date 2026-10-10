@@ -24,28 +24,39 @@ const CELL = 0.5
 /** Half-width of the navigable square. Comfortably contains the colony and the landing pad. */
 const HALF = 56
 /** Give up rather than stall the frame if a search goes pathological. */
-const MAX_EXPANSIONS = 24000
+const MAX_EXPANSIONS = 120000
 
 const SQRT2 = Math.SQRT2
 /** Scratch for the solid queries, so the frame loop allocates nothing. */
 const _near = []
 
+/** The map grows in steps of this, so a campus gaining a workspace seldom means a new map. */
+const EXTENT_STEP = 32
+/** How far past the outermost thing the map reaches, so there is room to walk round it. */
+const EXTENT_MARGIN = 20
+
+/**
+ * How big the map has to be to hold everything at `points`: half its width, never less than
+ * the size it always was, in steps.
+ *
+ * The map used to be one fixed square about the middle of the campus. A campus with a
+ * district either side of the square puts workspaces well outside that, and what is off the
+ * map cannot be walked to: the crew stood about on the ground by the gate.
+ *
+ * @param {Array<{x: number, z: number}>} points
+ * @returns {number}
+ */
+export function extentFor(points) {
+  let far = 0
+  for (const point of points) far = Math.max(far, Math.abs(point.x), Math.abs(point.z))
+  if (far + EXTENT_MARGIN <= HALF) return HALF
+  return Math.ceil((far + EXTENT_MARGIN) / EXTENT_STEP) * EXTENT_STEP
+}
+
 export class Navigation {
   constructor() {
     this.cell = CELL
-    this.half = HALF
-    this.size = Math.ceil((HALF * 2) / CELL)
-    const n = this.size * this.size
-
-    this.blocked = new Uint8Array(n)
-    this.gScore = new Float32Array(n)
-    this.parent = new Int32Array(n)
-    this.stamp = new Int32Array(n) // which search last touched this node
-    this.closed = new Uint8Array(n)
-
-    this.heap = new Int32Array(n)
-    this.heapKey = new Float32Array(n)
-    this.heapSize = 0
+    this._size(HALF)
 
     this.generation = 0
     /** Bumped on every rebuild; agents use it to notice their path is stale. */
@@ -61,6 +72,35 @@ export class Navigation {
     /** The solids bucketed on a coarse grid, so a query only looks at its neighbourhood. */
     this._solidBuckets = new Map()
     this._bucket = 4
+  }
+
+  /** Lay out the map and the search's scratch for a square `half` to a side from the middle. */
+  _size(half) {
+    this.half = half
+    this.size = Math.ceil((half * 2) / CELL)
+    const n = this.size * this.size
+
+    this.blocked = new Uint8Array(n)
+    this.gScore = new Float32Array(n)
+    this.parent = new Int32Array(n)
+    this.stamp = new Int32Array(n) // which search last touched this node
+    this.closed = new Uint8Array(n)
+
+    this.heap = new Int32Array(n)
+    this.heapKey = new Float32Array(n)
+    this.heapSize = 0
+    // Every stamp is zero again, so the count of searches starts again with them.
+    this.generation = 0
+  }
+
+  /**
+   * Make the map big enough to hold a campus `half` across from its middle: see `extentFor`.
+   * Nothing happens when it already is that size. A map that changes size is empty until the
+   * next `rebuild`, which whoever calls this does next.
+   */
+  fit(half) {
+    if (half === this.half) return
+    this._size(half)
   }
 
   _bucketKey(bx, bz) {
@@ -115,8 +155,39 @@ export class Navigation {
    * @param {Array<{x: number, z: number, r: number, keep?: number}>} obstacles
    * @param {((x: number, z: number) => boolean) | null} [walkable]
    */
-  rebuild(obstacles, walkable = null) {
+  rebuild(obstacles, walkable = null, through = []) {
     this.blocked.fill(0)
+    // Ways that have to stay open whatever stands on them: see below. Found on the floor as
+    // it is with nothing on it, before anything is.
+    const open = []
+    if (walkable && through.length) {
+      const n = this.size
+      for (let iz = 0; iz < n; iz++) {
+        const wz = this.toWorld(iz)
+        for (let ix = 0; ix < n; ix++) if (!walkable(this.toWorld(ix), wz)) this.blocked[iz * n + ix] = 1
+      }
+      this._floor = this.blocked.slice()
+      for (const [from, to] of through) {
+        // Both ends are on the one deck, so a search that has not found its way in a few
+        // thousand cells is not going to: there are hundreds of these and each must be quick.
+        const path = this.findPath(from.x, from.z, to.x, to.z, 3000)
+        if (!path) continue
+        let x = from.x
+        let z = from.z
+        for (const next of path) {
+          const far = Math.hypot(next.x - x, next.z - z)
+          for (let t = 0; t <= far; t += this.cell * 0.5) {
+            const px = x + ((next.x - x) * t) / (far || 1)
+            const pz = z + ((next.z - z) * t) / (far || 1)
+            // A cell and the one beside it, so the way is wide enough to be found again.
+            for (const [ox, oz] of [[0, 0], [this.cell, 0], [0, this.cell]]) open.push(this.toCell(pz + oz) * n + this.toCell(px + ox))
+          }
+          x = next.x
+          z = next.z
+        }
+      }
+      this.blocked.fill(0)
+    } else this._floor = null
     const { size, cell } = this
     this.solids = obstacles.filter((o) => o.keep > 0)
     // Bucket them. A solid lands in every bucket its keep circle touches, so a point only
@@ -159,7 +230,14 @@ export class Navigation {
         }
       }
     }
-    if (walkable) {
+    if (this._floor) {
+      // The floor was worked out above; it is not asked about twice.
+      for (let i = 0; i < this.blocked.length; i++) if (this._floor[i]) this.blocked[i] = 1
+      // And the ways through are opened again where something was stood on them. A deck can
+      // be narrow enough that what stands on it reaches from rail to rail, and a way that
+      // clips the corner of a stack is better than a workspace nobody can get past.
+      for (const i of open) if (i >= 0 && i < this.blocked.length && !this._floor[i]) this.blocked[i] = 0
+    } else if (walkable) {
       for (let iz = 0; iz < size; iz++) {
         const wz = this.toWorld(iz)
         const row = iz * size
@@ -394,7 +472,7 @@ export class Navigation {
    * A route from one world point to another, as world-space waypoints, or `null` if there
    * is no way through. The returned path excludes the start and ends exactly on the goal.
    */
-  findPath(sx, sz, tx, tz) {
+  findPath(sx, sz, tx, tz, limit = MAX_EXPANSIONS) {
     const start = this.nearestFree(sx, sz)
     const goal = this.nearestFree(tx, tz)
     if (!start || !goal) return null
@@ -437,7 +515,7 @@ export class Navigation {
         found = true
         break
       }
-      if (++expansions > MAX_EXPANSIONS) break
+      if (++expansions > limit) break
 
       const cx = current % size
       const cz = (current - cx) / size

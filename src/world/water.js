@@ -354,7 +354,8 @@ const FRAGMENT_EMISSIVE = /* glsl */ `
 export function createWater({ planet, heightAt, size = 340, segments, quality = 'medium' } = {}) {
   if (!planet?.water) return null
   const cfg = { ...DEFAULTS, ...planet.water }
-  let segs = segments || SEGMENTS[quality] || SEGMENTS.medium
+  // As fine however big it is, up to a point: a canal is only a few units wide.
+  let segs = segments || Math.min(640, Math.round((SEGMENTS[quality] || SEGMENTS.medium) * (size / 340)))
 
   const uniforms = {
     uTime: { value: 0 },

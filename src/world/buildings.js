@@ -1,3 +1,5 @@
+import { RESHADE } from './shades.js'
+import { tameSheen } from '../core/sheen.js'
 import * as THREE from 'three'
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js'
 import { mulberry } from './planet.js'
@@ -447,6 +449,8 @@ function decorateBaked(material, uniforms) {
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms)
     withCurve(shader)
+    // Steel in the sun must not go white: see `sheen.js`.
+    tameSheen(shader)
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
@@ -471,7 +475,8 @@ function decorateBaked(material, uniforms) {
          uniform float uMaxY;
          uniform float uMinY;
          uniform vec3 uAccent;
-         uniform float uNight;`
+         uniform float uNight;
+         uniform vec4 uGlow;`
       )
       .replace(
         '#include <clipping_planes_fragment>',
@@ -482,6 +487,7 @@ function decorateBaked(material, uniforms) {
       .replace(
         '#include <emissivemap_fragment>',
         `#include <emissivemap_fragment>
+         // In the shade of the workspace it stands on: see shades.js.${RESHADE.replaceAll('GLOW', 'uGlow')}
          // Lit by day, so the amber reads as light and not paint, and brighter after dark.
          totalEmissiveRadiance *= 1.0 + uNight * 1.2;
          // The construction line, gone by the time the building is all but up: a thread's
@@ -558,7 +564,7 @@ function depthMaterial(uniforms) {
  * `fit` is the largest radius the finished building may reach on the ground; a world whose
  * decks are tighter than usual passes a smaller one.
  */
-export function createBuilding({ seed = 1, accent = 0xc96442, kind = null, fit = BUILDING_RADIUS, set = null } = {}) {
+export function createBuilding({ seed = 1, accent = 0xc96442, kind = null, fit = BUILDING_RADIUS, set = null, shade = null } = {}) {
   const rand = mulberry(seed)
   const chosen = kind && KINDS[kind] ? kind : KIND_IDS[Math.floor(rand() * KIND_IDS.length)]
 
@@ -614,6 +620,8 @@ export function createBuilding({ seed = 1, accent = 0xc96442, kind = null, fit =
     uMaxY: { value: height },
     uMinY: { value: geo.boundingBox.min.y },
     uAccent: { value: new THREE.Color(accent) },
+    // The shade its lamps burn in, and how far from the amber they were made: see shades.js.
+    uGlow: { value: new THREE.Vector4(...(shade || [1, 1, 1]), shade ? 1 : 0) },
     uNight: buildingUniforms.uNight,
     uTime: buildingUniforms.uTime,
     uPlanetTint: buildingUniforms.uPlanetTint,

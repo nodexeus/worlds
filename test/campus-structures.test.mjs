@@ -4,29 +4,29 @@ import { LIBRARY_CELL, CORE_CELLS, fits, componentsOf, isConnected, planMove } f
 
 const zones = entries => new Map(Object.entries(entries))
 
-test('the Library reserves its cell against direct and planned workspace moves', () => {
-  const layout = zones({ work: [{ q: 0, r: 0 }] })
-  assert.equal(fits(layout, 'work', LIBRARY_CELL.q, LIBRARY_CELL.r), false)
-  assert.equal(planMove(layout, 'work', LIBRARY_CELL.q, LIBRARY_CELL.r), null)
+test('the gate and the Library stand outside every district: no workspace is given their ground or can be carried onto it', async () => {
+  const { toFrame } = await import('../src/world/districts.js')
+  const { inDistrict } = await import('../src/world/plot-move.js')
   assert.equal(CORE_CELLS.length, 2)
+  for (const district of ['local', 'crew']) {
+    for (const cell of toFrame(district, [...CORE_CELLS])) {
+      assert.equal(inDistrict(cell), false)
+      const layout = zones({ work: [{ q: 0, r: 0 }] })
+      assert.equal(fits(layout, 'work', cell.q, cell.r), false)
+      assert.equal(planMove(layout, 'work', cell.q, cell.r), null)
+    }
+  }
 })
 
-test('core campus ground connects workspaces without becoming a workspace', () => {
-  const layout = zones({ west: [{ q: -3, r: 1 }], east: [{ q: -1, r: 2 }] })
-  assert.equal(isConnected(layout), true)
-  assert.deepEqual([...componentsOf(layout)[0]].sort(), ['east', 'west'])
-})
-
-test('allocation protects both core structures and relocates a legacy occupant', async () => {
+test('a workspace remembered on ground that is no longer a district\'s is moved, and the rest stay put', async () => {
   const { allocateCells } = await import('../src/world/plots.js')
-  const previous = zones({ legacy: [LIBRARY_CELL], stable: [{ q: 0, r: 0 }] })
+  const { inDistrict } = await import('../src/world/plot-move.js')
+  const previous = zones({ legacy: [{ q: -5, r: 0 }], stable: [{ q: 0, r: 0 }] })
   const projects = [{ id: 'legacy', size: 7 }, { id: 'stable', size: 7 }, { id: 'new', size: 20 }]
   const allocated = allocateCells(projects, previous)
-  for (const cells of allocated.values()) {
-    for (const cell of cells) assert.ok(!CORE_CELLS.some(core => core.q === cell.q && core.r === cell.r))
-  }
+  for (const cells of allocated.values()) for (const cell of cells) assert.ok(inDistrict(cell))
   assert.deepEqual(allocated.get('stable')[0], { q: 0, r: 0 })
-  assert.deepEqual(previous.get('legacy'), [LIBRARY_CELL], 'saved input is not mutated')
+  assert.deepEqual(previous.get('legacy'), [{ q: -5, r: 0 }], 'saved input is not mutated')
   assert.equal(isConnected(allocated), true)
   assert.deepEqual(allocateCells(projects, allocated), allocated, 'later polls keep the migrated layout')
 })
@@ -76,4 +76,48 @@ test('the Library leaves a way round it on a platform that stands apart from its
   assert.ok(blocked > 3, 'and the hall is still something to walk round')
   // On a world whose platforms touch there is ground all round, and nothing to give up.
   assert.equal(walkRadius(4.6, PLOT_APOTHEM, 0), 4.6)
+})
+
+test('the ground has no fixed size: it is as big as the campus needs, and never smaller than it was', async () => {
+  const { groundFor } = await import('../src/world/planet.js')
+  assert.equal(groundFor(0), 340)
+  assert.equal(groundFor(90), 340)
+  // A campus reaching 165 out, as one with two districts does, and one of hundreds of workspaces.
+  assert.ok(groundFor(165) >= (165 + 70) * 2)
+  assert.ok(groundFor(900) >= 1940)
+  assert.equal(groundFor(165) % 170, 0, 'in steps, so it is not laid again for every newcomer')
+})
+
+test('the canals wander: no two the same distance apart, each with steps sideways and stretches missing, and they go on for ever', async () => {
+  const { onCanal, PLANETS } = await import('../src/world/planet.js')
+  const campus = Object.values(PLANETS).find((planet) => planet.shape === 'foundry')
+  // Walk a long way across the floor along several lines and note where canals are crossed.
+  const crossings = (z) => {
+    const at = []
+    let was = false
+    for (let x = -3000; x <= 3000; x += 1) {
+      const on = onCanal(x, z, campus)
+      if (on && !was) at.push(x)
+      was = on
+    }
+    return at
+  }
+  const first = crossings(7)
+  assert.ok(first.length >= 20, `${first.length} canals crossed in 6000`)
+  // Not on a grid: the gaps between them are of many different sizes.
+  const gaps = first.slice(1).map((x, n) => x - first[n])
+  assert.ok(new Set(gaps.map((gap) => Math.round(gap / 16))).size >= 8, `gaps: ${gaps.slice(0, 12).join(' ')}`)
+  // Not straight for ever: followed a long way along, a canal is somewhere else or gone.
+  const far = crossings(1900)
+  const moved = first.filter((x) => !far.some((other) => Math.abs(other - x) < 4)).length
+  assert.ok(moved > first.length / 2, `${moved} of ${first.length} are not where they were`)
+  assert.notEqual(far.length, 0)
+  // But on the plate seams, as the floor is laid, and the same every time it is asked.
+  assert.deepEqual(crossings(7), first)
+  // And they do not ring the middle: there is floor to be had in every direction a long way out.
+  for (const [x, z] of [[900, 40], [-1200, 300], [70, -1500], [20, 2000]]) {
+    let open = 0
+    for (let n = 0; n < 60; n++) if (!onCanal(x + n * 7, z + n * 3, campus)) open++
+    assert.ok(open > 45)
+  }
 })

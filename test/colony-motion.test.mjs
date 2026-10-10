@@ -88,3 +88,12 @@ test('roof slope deflects a parcel sideways and a wall reflects horizontal trave
   assert.ok(wall.x < 0 && wall.vx < 0)
   assert.ok(wall.y < 1)
 })
+
+test('a long walk is given time in proportion: nobody gives up half way to a far district', async () => {
+  const { walkBudget } = await import('../src/agents/walk-budget.js')
+  assert.equal(walkBudget(0), 45, 'a short one has what it always had')
+  // From the gate to the far side of a district is some 150 units as the crow flies and
+  // more than twice that by the walkway; at a walk of 2.1 a second that is over two minutes.
+  assert.ok(walkBudget(150) > (150 * 2.5) / 2.1, `${walkBudget(150)} seconds for 150 units`)
+  assert.ok(walkBudget(300) > walkBudget(150))
+})

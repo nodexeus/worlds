@@ -51,9 +51,27 @@ export class Crossings {
    * @param {number} world.levelStep  how far apart levels are
    * @param {(id: string) => number} world.elevation  how high a workspace's deck stands
    */
-  build(plan, { gap, levelStep, elevation }) {
+  build(plan, { gap, levelStep, elevation, causeways = [] }) {
     this.clear()
     const span = gap * 2
+    // The long walkways out from the square: the same plate and rails, end to end, and the
+    // same flight at the far end where the district stands a level up.
+    for (const way of causeways) {
+      for (const plate of way.plates) {
+        const piece = new THREE.Group()
+        piece.position.set(plate.x, way.y, plate.z)
+        piece.rotation.y = way.heading
+        this._walkway(piece, plate.size)
+        this.group.add(piece)
+      }
+      if (way.stair) {
+        const piece = new THREE.Group()
+        piece.position.set(way.stair.x, way.y, way.stair.z)
+        piece.rotation.y = way.heading
+        this._stair(piece, levelStep)
+        this.group.add(piece)
+      }
+    }
     for (const crossing of plan) {
       const a = hexToWorld(crossing.from.q, crossing.from.r)
       const b = hexToWorld(crossing.to.q, crossing.to.r)

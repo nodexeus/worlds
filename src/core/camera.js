@@ -4,7 +4,7 @@ const ISO_POLAR = THREE.MathUtils.degToRad(56)
 const MIN_POLAR = THREE.MathUtils.degToRad(6)
 const MAX_POLAR = THREE.MathUtils.degToRad(84)
 const MIN_DIST = 4
-const MAX_DIST = 150
+const MAX_DIST = 240
 const WORLD_LIMIT = 82
 /** Orbit mode's rate: about two minutes a revolution, slow enough to watch. */
 const ORBIT_RATE = 0.055
@@ -260,9 +260,11 @@ export class CameraRig {
   _clampTarget() {
     const t = this.desiredTarget
     const len = Math.hypot(t.x, t.z)
-    if (len > WORLD_LIMIT) {
-      t.x = (t.x / len) * WORLD_LIMIT
-      t.z = (t.z / len) * WORLD_LIMIT
+    // As far as the campus reaches, when it has said: a district can be a long way from the middle.
+    const limit = Math.max(WORLD_LIMIT, this.worldLimit || 0)
+    if (len > limit) {
+      t.x = (t.x / len) * limit
+      t.z = (t.z / len) * limit
     }
   }
 
