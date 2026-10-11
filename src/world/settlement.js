@@ -1,9 +1,10 @@
 import { assetUrl } from '../core/asset-url.js'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-import { withCurve } from '../core/curve.js'
+import { curveUniforms, withCurve } from '../core/curve.js'
 import { tameSheen } from '../core/sheen.js'
 import { RESHADE, SHADES, callPulse, shadeOf } from './shades.js'
+import { TILE, boundTile, tileOf } from './tiles.js'
 import { campusBuilding } from './campus-buildings.js'
 
 /**
@@ -68,6 +69,11 @@ export class Settlement {
     scene.add(this.group)
     /** @type {Map<string, {mesh: THREE.InstancedMesh, capacity: number}>} */
     this.meshes = new Map()
+    /** The squares of ground it is drawn by: see `tiles.js`. */
+    this.tiles = new Map()
+    this.materials = new Map()
+    /** How far from the camera a square is drawn by its far twins. */
+    this.farFrom = FAR_FROM
     this.parts = []
     this.lifts = new Map()
     this._m = new THREE.Matrix4()
@@ -119,77 +125,160 @@ export class Settlement {
     for (const held of touched) held.glow.needsUpdate = true
   }
 
+  /**
+   * How a part is drawn near and far. A part that has a far twin in the kit (`<part>-far`,
+   * the same thing in a few triangles) is drawn in full near the camera and as its twin
+   * beyond; a small thing that cannot be made out from far off is drawn near only; anything
+   * else is drawn as it is wherever it is.
+   *
+   * @returns {Array<[string, string]>} each a level (`near`, `far` or `always`) and the model drawn at it
+   */
+  _levels(name) {
+    if (models.has(`${name}-far`)) return [['near', name], ['far', `${name}-far`]]
+    if (NEAR_ONLY.test(name)) return [['near', name]]
+    return [['always', name]]
+  }
+
   _write() {
     this.slots = []
+    // Each kind of part, by the square of ground it stands on (see `tiles.js`) and by how near it is drawn.
+    const keysOf = (part) => {
+      const { tx, tz } = tileOf(part.x, part.z)
+      return this._levels(part.part).map(([level, model]) => `${tx},${tz}|${model}|${level}`)
+    }
     const counts = new Map()
-    for (const part of this.parts) counts.set(part.part, (counts.get(part.part) || 0) + 1)
-    for (const [name, count] of counts) this._room(name, count)
+    for (const part of this.parts) for (const key of keysOf(part)) counts.set(key, (counts.get(key) || 0) + 1)
+    for (const [key, count] of counts) this._room(key, count)
+    for (const tile of this.tiles.values()) {
+      tile.low = Infinity
+      tile.high = -Infinity
+    }
 
     const at = new Map()
     for (const part of this.parts) {
-      const held = this.meshes.get(part.part)
-      if (!held) continue
-      const n = at.get(part.part) || 0
-      at.set(part.part, n + 1)
-      this._p.set(part.x, part.y + (this.lifts.get(part.plot) || 0), part.z)
+      const y = part.y + (this.lifts.get(part.plot) || 0)
+      this._p.set(part.x, y, part.z)
       this._q.setFromAxisAngle(this._up, part.turn)
       // A run hung between two stacks is tipped to meet its far end: see `settlementRuns`.
       if (part.pitch) this._q.multiply(this._tip.setFromAxisAngle(this._across, part.pitch))
       // Drawn out downward from the deck, where it has further to reach (see `reachDown`), or along its length to its span.
       this._s.set(1, part.stretch || 1, part.span || 1)
-      held.mesh.setMatrixAt(n, this._m.compose(this._p, this._q, this._s))
+      this._m.compose(this._p, this._q, this._s)
       // A neon sign is its own colour; everything else takes the workspace's shade.
       const shade = /^sign-/.test(part.part) ? null : SHADES[shadeOf(part.plot)]
-      held.glow.array.set(shade ? [...shade, 1] : [1, 1, 1, 0], n * 4)
-      // What it beats from when its workspace calls: its shade, or the amber it was made. A sign keeps its own colour.
-      this.slots.push({ part, held, n, shade: /^sign-/.test(part.part) ? null : shade || AMBER })
+      for (const key of keysOf(part)) {
+        const held = this.meshes.get(key)
+        if (!held) continue
+        const n = at.get(key) || 0
+        at.set(key, n + 1)
+        held.tile.low = Math.min(held.tile.low, y - BELOW)
+        held.tile.high = Math.max(held.tile.high, y + ABOVE)
+        held.mesh.setMatrixAt(n, this._m)
+        held.glow.array.set(shade ? [...shade, 1] : [1, 1, 1, 0], n * 4)
+        // What it beats from when its workspace calls: its shade, or the amber it was made. A sign keeps its own colour.
+        this.slots.push({ part, held, n, shade: /^sign-/.test(part.part) ? null : shade || AMBER })
+      }
     }
-    for (const [name, held] of this.meshes) {
-      held.mesh.count = at.get(name) || 0
+    for (const [key, held] of this.meshes) {
+      held.mesh.count = at.get(key) || 0
+      held.mesh.visible = held.mesh.count > 0
       held.mesh.instanceMatrix.needsUpdate = true
       held.glow.needsUpdate = true
     }
   }
 
-  /** Make sure there is an instanced mesh for `name` with room for `count` of it. */
-  _room(name, count) {
-    const held = this.meshes.get(name)
+  /**
+   * Once a frame, with the camera as it is about to draw.
+   *
+   * Says where each square of the campus is to be looked for, so that three leaves out the
+   * ones that cannot be seen: from the camera, and again from the sun when it draws the
+   * shadows, which is the same parts over again and only a small part of a big campus. Where
+   * a square is depends on the view, since the world bends: see `tiles.js`.
+   *
+   * And says which squares are near enough to be drawn in full: see `_levels`.
+   */
+  cull(camera) {
+    const curve = { focus: curveUniforms.uCurveFocus.value, forward: curveUniforms.uCurveForward.value, amount: curveUniforms.uCurveAmount.value }
+    for (const tile of this.tiles.values()) {
+      if (!(tile.high > tile.low)) continue
+      // Every mesh of the square has this one sphere for its bounds.
+      boundTile(tile.sphere, tile, curve)
+      // How far the nearest of the square is from the camera, over the ground. Once it is drawn
+      // one way it stays so until it is well past the line, so nothing flickers on it.
+      const dx = Math.max(tile.tx * TILE - camera.position.x, 0, camera.position.x - (tile.tx + 1) * TILE)
+      const dz = Math.max(tile.tz * TILE - camera.position.z, 0, camera.position.z - (tile.tz + 1) * TILE)
+      const away = Math.hypot(dx, dz, camera.position.y)
+      if (tile.far ? away < this.farFrom - FAR_SLACK : away > this.farFrom + FAR_SLACK) tile.far = !tile.far
+      tile.levels.near.visible = !tile.far
+      tile.levels.far.visible = tile.far
+    }
+  }
+
+  /** Make sure there is an instanced mesh for `key` (a square and a kind of part) with room for `count` of it. */
+  _room(key, count) {
+    const held = this.meshes.get(key)
     if (held && held.capacity >= count) return
+    const [square, name, level] = key.split('|')
     const model = models.get(name)
     if (!model) return
+    let tile = this.tiles.get(square)
+    if (!tile) {
+      const [tx, tz] = square.split(',').map(Number)
+      tile = { tx, tz, low: Infinity, high: -Infinity, group: new THREE.Group(), sphere: new THREE.Sphere(new THREE.Vector3((tx + 0.5) * TILE, 0, (tz + 0.5) * TILE), TILE) }
+      tile.group.name = `settlement-tile:${square}`
+      tile.far = false
+      tile.levels = { near: new THREE.Group(), far: new THREE.Group(), always: new THREE.Group() }
+      tile.levels.far.visible = false
+      tile.group.add(tile.levels.near, tile.levels.far, tile.levels.always)
+      this.group.add(tile.group)
+      this.tiles.set(square, tile)
+    }
     if (held) {
-      this.group.remove(held.mesh)
+      tile.levels[level].remove(held.mesh)
       held.mesh.geometry.dispose()
-      held.mesh.material.dispose()
       held.mesh.dispose()
     }
     // Room to grow into, so a workspace arriving does not rebuild every kind of part.
-    const capacity = Math.max(8, Math.ceil(count * 1.5))
-    // Its own copy of the model, since the shade of each instance's lamps is kept on it.
-    const geometry = model.geometry.clone()
+    const capacity = Math.max(4, Math.ceil(count * 1.5))
+    // The model's own vertices, shared by every square; only the shade of each instance's lamps is this mesh's own.
+    const geometry = new THREE.BufferGeometry()
+    geometry.setIndex(model.geometry.index)
+    for (const [attribute, value] of Object.entries(model.geometry.attributes)) geometry.setAttribute(attribute, value)
+    for (const group of model.geometry.groups) geometry.addGroup(group.start, group.count, group.materialIndex)
     const glow = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4), 4)
     geometry.setAttribute('aGlow', glow)
-    const mesh = new THREE.InstancedMesh(geometry, surface(model.material), capacity)
+    let material = this.materials.get(name)
+    if (!material) this.materials.set(name, (material = surface(model.material)))
+    const mesh = new THREE.InstancedMesh(geometry, material, capacity)
     mesh.name = `settlement:${name}`
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
     mesh.castShadow = true
     mesh.receiveShadow = true
-    // Its instances are all over the campus: the bounds of one say nothing about the rest.
-    mesh.frustumCulled = false
-    this.group.add(mesh)
-    this.meshes.set(name, { mesh, capacity, glow })
+    // Left out when its square cannot be seen. Its bounds are its square's, kept where the world's bend puts them: see `cull`.
+    mesh.boundingSphere = tile.sphere
+    tile.levels[level].add(mesh)
+    this.meshes.set(key, { mesh, capacity, glow, tile })
   }
 
   dispose() {
-    for (const { mesh } of this.meshes.values()) {
-      mesh.material.dispose()
-      mesh.dispose()
-    }
+    for (const { mesh } of this.meshes.values()) mesh.dispose()
+    for (const material of this.materials.values()) material.dispose()
     this.meshes.clear()
+    this.materials.clear()
+    this.tiles.clear()
     this.group.removeFromParent()
   }
 }
 
+/** The small things that cannot be made out from far off, and are drawn near only. */
+const NEAR_ONLY = /^(run-|mast-|under-lamp$|ladder$|edge|dish$|port-gate$)/
+/** How far from the camera a square is drawn by its far twins, and how far past that line it goes before it changes. */
+const FAR_FROM = 170
+const FAR_SLACK = 12
+
+/** How far below and above where a part is put anything of it reaches: a leg down into a canal, a stack and a mast up. */
+const BELOW = 10
+const ABOVE = 11
 /** The amber a lamp is made, as a shade, and the hot white a calling workspace's lamps beat toward. */
 const AMBER = [1.0, 0.69, 0.05]
 const HOT = [1.0, 0.92, 0.78]

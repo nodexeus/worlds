@@ -1,4 +1,5 @@
 import { tameSheen } from '../core/sheen.js'
+import { TILE, tileOf } from './tiles.js'
 import { OFFERED } from './planets-offered.js'
 import * as THREE from 'three'
 import { atlasTexture, hasPart, kitReady, kitUsesVertexColors, part } from './kit.js'
@@ -1460,14 +1461,50 @@ export function createScatter(planet, density, keepClear = [], seed = 4242, insi
     fill[which] = slot + 1
   }
 
+  // Drawn by the square of ground it stands on, so that what is out of the view, or out of
+  // the sun's when it draws the shadows, is left out: see `tiles.js`. Whoever owns the
+  // scatter says where each square is to be looked for, once a frame (`group.userData.tiles`).
+  const tiles = new Map()
+  const m = new THREE.Matrix4()
+  const c = new THREE.Color()
   meshes.forEach((mesh, i) => {
-    mesh.count = fill[i]
-    mesh.castShadow = true
-    mesh.receiveShadow = true
-    mesh.instanceMatrix.needsUpdate = true
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
-    group.add(mesh)
+    if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox()
+    const tall = mesh.geometry.boundingBox
+    const bySquare = new Map()
+    for (let n = 0; n < fill[i]; n++) {
+      const { tx, tz } = tileOf(mesh.instanceMatrix.array[n * 16 + 12], mesh.instanceMatrix.array[n * 16 + 14])
+      const key = `${tx},${tz}`
+      if (!bySquare.has(key)) bySquare.set(key, [])
+      bySquare.get(key).push(n)
+    }
+    for (const [key, list] of bySquare) {
+      let tile = tiles.get(key)
+      if (!tile) {
+        const [tx, tz] = key.split(',').map(Number)
+        tiles.set(key, (tile = { tx, tz, low: Infinity, high: -Infinity, sphere: new THREE.Sphere(new THREE.Vector3((tx + 0.5) * TILE, 0, (tz + 0.5) * TILE), TILE) }))
+      }
+      const part = new THREE.InstancedMesh(mesh.geometry, mesh.material, list.length)
+      list.forEach((n, at) => {
+        mesh.getMatrixAt(n, m)
+        part.setMatrixAt(at, m)
+        if (mesh.instanceColor) {
+          mesh.getColorAt(n, c)
+          part.setColorAt(at, c)
+        }
+        // As tall as the thing is, at the biggest it is ever made, and as far down as it is sunk.
+        const y = m.elements[13]
+        const scale = Math.hypot(m.elements[4], m.elements[5], m.elements[6])
+        tile.low = Math.min(tile.low, y + tall.min.y * scale - 1)
+        tile.high = Math.max(tile.high, y + tall.max.y * scale + 1)
+      })
+      part.castShadow = true
+      part.receiveShadow = true
+      part.boundingSphere = tile.sphere
+      group.add(part)
+    }
+    mesh.dispose()
   })
+  group.userData.tiles = tiles
   return group
 }
 

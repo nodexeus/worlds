@@ -286,6 +286,72 @@ point on the deck top. It runs along x, 2.2 over the posts (2.0 between their mi
 and stands on the deck's side of the origin (z from -0.23 to -0.03), like the edge parts: turn it
 so that its -z points at the deck centre. 540 triangles, 557360 bytes, maps 512.
 
+## Far twins
+
+For drawing a part a long way from the camera (NODEX-348): `<part>-far`, made by `make_far_twins.py`
+from the baked part. A twin is not a new model. It is a choice of the full part's own faces, kept
+exactly where they are with the same atlas coordinates: the biggest, and the ones that are lit or
+painted. Same origin, same turn. It wears the full part's material: `tools/build-settlement.mjs`
+gives each `<part>-far` the material of `<part>`, so the packed file carries every map once. The
+twins are exported with no images in them. They are not deck shapes and are not in `deck-shapes.json`.
+
+What a twin leaves out: rails and their posts, kerb ends, grating bars (a grille is a black hole),
+bolts, braces, bevels, most undersides, and whatever stands off a deck (a balcony, a shelf). So a
+twin of a railed deck is 0.86 lower than the full deck, and a post's twin is the column and the
+top of its pad without the knee braces. A twin of a large deck is 400 triangles, not 250: every
+plate is its own patch of the atlas, so a plate cannot be merged with its neighbour.
+
+| Part | Full triangles | Twin triangles |
+|---|---|---|
+| deck-a | 6300 | 250 |
+| deck-b | 6295 | 250 |
+| deck-c | 6428 | 250 |
+| deck-d | 6916 | 249 |
+| deck-join | 600 | 249 |
+| deck-fill | 201 | 89 |
+| deck-s1 | 5151 | 250 |
+| deck-s2 | 4810 | 250 |
+| deck-s3 | 7951 | 250 |
+| deck-s4 | 4912 | 250 |
+| deck-s5 | 5726 | 249 |
+| deck-s6 | 4667 | 250 |
+| deck-m1 | 7063 | 250 |
+| deck-m2 | 7336 | 250 |
+| deck-m3 | 7833 | 250 |
+| deck-m4 | 5774 | 250 |
+| deck-m5 | 6444 | 250 |
+| deck-m6 | 6614 | 250 |
+| deck-m7 | 5451 | 250 |
+| deck-m8 | 5755 | 249 |
+| deck-m9 | 6745 | 250 |
+| deck-m10 | 5237 | 250 |
+| deck-m11 | 7109 | 250 |
+| deck-l1 | 12055 | 400 |
+| deck-l2 | 11296 | 400 |
+| deck-l3 | 12451 | 400 |
+| post-1 | 972 | 24 |
+| post-2 | 1040 | 24 |
+| post-3 | 1016 | 24 |
+| post-4 | 1084 | 24 |
+| post-5 | 1132 | 24 |
+| legs-1 | 4208 | 120 |
+| legs-2 | 5828 | 120 |
+| legs-3 | 4852 | 120 |
+| legs-4 | 7276 | 120 |
+| legs-5 | 5960 | 120 |
+| mod-cabin | 2328 | 150 |
+| mod-drum | 1176 | 150 |
+| mod-shed | 540 | 150 |
+| mod-tank | 1104 | 150 |
+| frame | 572 | 60 |
+| stair-1 | 604 | 80 |
+| stair-2 | 1860 | 80 |
+| stair-ground | 1136 | 80 |
+| gangway | 316 | 40 |
+| port-gate | 540 | 24 |
+
+All 46 full parts together are 210,664 triangles; their twins are 8,469.
+
 ## Deck numbers
 
 `stencil-digits.png` (made by `make_stencil_digits.py`): the digits 0 to 9 in one row, left to right,

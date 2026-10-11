@@ -97,6 +97,18 @@ for (const other of rest) {
 }
 root.setDefaultScene(scene)
 
+// A far twin (`<part>-far`) is a choice of the part's own faces, with the part's own atlas
+// coordinates, exported with no images of its own (`design/campus/make_far_twins.py`). It wears
+// the part's material, so the kit carries each part's maps once however many twins there are.
+const FAR = '-far'
+for (const mesh of root.listMeshes()) {
+  const name = mesh.getName()
+  if (!name.endsWith(FAR)) continue
+  const material = root.listMaterials().find((one) => one.getName() === name.slice(0, -FAR.length))
+  if (!material) throw new Error(`${name}: no part named ${name.slice(0, -FAR.length)} to take a material from`)
+  for (const primitive of mesh.listPrimitives()) primitive.setMaterial(material)
+}
+
 await doc.transform(unpartition(), dedup(), prune())
 
 mkdirSync(dirname(OUT), { recursive: true })

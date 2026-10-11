@@ -8,7 +8,8 @@ import { createGrass } from '../world/grass.js'
 import { createSkyIsland } from '../world/skyisland.js'
 import { SKY_MARGIN, SKY_MAX_CELLS, setIslandFootprint } from '../world/planet.js'
 import { createHexIsland } from '../world/hexisland.js'
-import { bendPoint } from '../core/curve.js'
+import { bendPoint, curveUniforms } from '../core/curve.js'
+import { boundTile } from '../world/tiles.js'
 import { Sky } from '../world/sky.js'
 import {
   Plot,
@@ -2012,6 +2013,13 @@ export class Colony {
 
     const night = this.sky.nightFactor ?? 0
     buildingUniforms.uNight.value = night
+    this.settlement.cull(this.camera)
+    // The scatter is drawn by the square too, and is told where its squares are the same way.
+    const scattered = this.scatterGroup?.userData.tiles
+    if (scattered) {
+      const curve = { focus: curveUniforms.uCurveFocus.value, forward: curveUniforms.uCurveForward.value, amount: curveUniforms.uCurveAmount.value }
+      for (const tile of scattered.values()) boundTile(tile.sphere, tile, curve)
+    }
     // One write turns every rotor in the colony.
     buildingUniforms.uTime.value = elapsed
     terrainUniforms.uTime.value = elapsed
