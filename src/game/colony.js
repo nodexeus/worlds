@@ -27,7 +27,7 @@ import { CORE_CELLS, LIBRARY_CELL, inDistrict, translateCells } from '../world/p
 import { districtOf, frameDelta, landing, squareEnd, toFrame, toWorld } from '../world/districts.js'
 import { readLevels, settleLevels } from '../world/plot-levels.js'
 import { HEX_DIRS } from '../world/plot-move.js'
-import { causewayOf, heightOnCrossings, onSpan, spanOf } from '../world/crossing-spans.js'
+import { SpanIndex, causewayOf, heightOnCrossings, onSpan, spanOf } from '../world/crossing-spans.js'
 import { planCrossings } from '../world/crossings.js'
 import { Crossings } from '../world/crossing-models.js'
 import { loadModels } from '../world/kit.js'
@@ -162,6 +162,8 @@ const WALK_CLEAR = 5.5
  * a mouth is in everybody else's way, and there is only the one way through.
  */
 const MOUTH_CLEAR = { along: 2.2, across: 1.7 }
+/** The most that is ever asked for beyond a span's own length, in any direction: what its index is built to. */
+const SPAN_REACH = 3
 /** How far onto each deck a crossing's walkable strip reaches, so the two always join. */
 const CROSSING_OVERLAP = 0.6
 
@@ -231,6 +233,7 @@ export class Colony {
     this.walkways = new Walkways(scene)
     /** The strip of ground each crossing occupies. See `crossing-spans.js`. */
     this.crossingSpans = []
+    this.spanIndex = new SpanIndex([], SPAN_REACH)
     /** The plaza deck, when this world has one. */
     this.plaza = null
     /** Which workspaces are joined, and where. Empty on a world without crossings. */
@@ -488,6 +491,11 @@ export class Colony {
    * cheap next to rebuilding the terrain mesh alongside it.
    */
   _buildScatter() {
+    if (this._holding) {
+      this._scatterDue = true
+      return
+    }
+    this._scatterDue = false
     this._buildPipeline()
     if (this.scatterGroup) {
       this.worldGroup.remove(this.scatterGroup)
@@ -675,6 +683,23 @@ export class Colony {
    * moves nothing on screen.
    */
   setThreads(threads, archivedIds = new Set(), hiddenProjects = new Set(), knownIds = new Set(), places = []) {
+    // One scan can change the layout in several ways, and each used to lay the scatter and
+    // map the crew's ways again on the spot: seven maps and three scatters for one scan, on
+    // a campus of hundreds a freeze of seconds. They are held until the scan is taken in, and
+    // done once.
+    this._holding = true
+    try {
+      return this._takeThreads(threads, archivedIds, hiddenProjects, knownIds, places)
+    } finally {
+      // The ground first, while its own scatter is still held: laid once, on ground of the right size.
+      if (this.nav && (this._scatterDue || this._navDue)) this._growGround()
+      this._holding = false
+      if (this._scatterDue) this._buildScatter()
+      else if (this._navDue) this._rebuildNavigation()
+    }
+  }
+
+  _takeThreads(threads, archivedIds, hiddenProjects, knownIds, places) {
     const now = Date.now()
     const live = liveThreadsForColony(threads, archivedIds, hiddenProjects)
     /**
@@ -1106,6 +1131,8 @@ export class Colony {
       ...plan.map((crossing) => spanOf(crossing, { gap: style.gap, levelStep: style.levelStep, deckTop: DECK_TOP, elevation })),
       ...causeways.flatMap((way) => way.spans),
     ]
+    // Found by where they are from here on: see `SpanIndex`.
+    this.spanIndex = new SpanIndex(this.crossingSpans, SPAN_REACH)
     // Where the crew may step off a deck has just changed.
     if (this.nav) this._rebuildNavigation()
     if (!plan.length && !causeways.length) {
@@ -1188,7 +1215,7 @@ export class Colony {
   groundAt(x, z) {
     // Somebody on a walkway or a staircase stands on it, not on the ground far below.
     // And a little past each end of it: see `heightOnCrossings` for the sliver that covers.
-    const carried = heightOnCrossings(this.crossingSpans, x, z, CROSSING_WALK + 0.35, CROSSING_OVERLAP)
+    const carried = heightOnCrossings(this.spanIndex.near(x, z), x, z, CROSSING_WALK + 0.35, CROSSING_OVERLAP)
     if (carried !== null) return carried
     // A hair more than the outline: the tiles of one workspace stop just short of each
     // other, and somebody walking over that seam must not drop through it to the ground.
@@ -1279,7 +1306,32 @@ export class Colony {
    * anything that is not round, and blocking the full extent closes the gaps between a ring
    * of buildings, which is exactly where the crew needs to walk.
    */
+  /**
+   * Make the ground as big as the campus needs: it grows, and is laid again when it does.
+   * Asked before the scatter is laid and the crew's ways mapped, since both are laid on it.
+   *
+   * @returns {Array<{x: number, z: number}>} where everything of the campus stands
+   */
+  _growGround() {
+    const held = [shipPosition()]
+    for (const deck of this._decks()) for (const cell of deck.cells) held.push(hexToWorld(cell.q, cell.r))
+    /** How far from the middle anything of the campus stands: as far as the view may be taken. */
+    this.reach = Math.max(...held.map((at) => Math.hypot(at.x, at.z))) + 12
+    const ground = groundFor(this.reach)
+    if (ground > GROUND_SIZE) {
+      setGroundSize(ground)
+      this._buildTerrain()
+      this._buildPipeline?.()
+    }
+    return held
+  }
+
   _rebuildNavigation() {
+    if (this._holding) {
+      this._navDue = true
+      return
+    }
+    this._navDue = false
     const obstacles = []
     for (const entry of this.buildings.values()) {
       if (entry.retiring) continue
@@ -1354,18 +1406,8 @@ export class Colony {
     const round = walkRadius(this.library.radius, PLOT_APOTHEM, this.planet.plot?.gap || 0)
     obstacles.push({ x: library.x, z: library.z, r: round + TRAVEL_RADIUS, keep: this.library.radius + AGENT_RADIUS })
     // As big as the campus is now: a workspace off the map is one nobody can walk to.
-    const held = [shipPosition()]
-    for (const deck of this._decks()) for (const cell of deck.cells) held.push(hexToWorld(cell.q, cell.r))
+    const held = this._growGround()
     this.nav.fit(extentFor(held))
-    /** How far from the middle anything of the campus stands: as far as the view may be taken. */
-    this.reach = Math.max(...held.map((at) => Math.hypot(at.x, at.z))) + 12
-    // And the ground is as big as the campus needs: it grows, and is laid again when it does.
-    const ground = groundFor(this.reach)
-    if (ground > GROUND_SIZE) {
-      setGroundSize(ground)
-      this._buildTerrain()
-      this._buildPipeline?.()
-    }
     // On decks of their own shape, the ways between a deck's ports are kept open: from just
     // inside each port that is in use to just inside the next.
     const through = []
@@ -1694,7 +1736,7 @@ export class Colony {
 
   /** Whether (x, z) is on a crossing or in the ground just inside either of its mouths. */
   _inMouth(x, z) {
-    for (const span of this.crossingSpans) {
+    for (const span of this.spanIndex.near(x, z)) {
       if (onSpan(span, x, z, MOUTH_CLEAR.across, MOUTH_CLEAR.along)) return true
     }
     return false
@@ -1707,7 +1749,7 @@ export class Colony {
    * is left walkable, so nothing out there is suddenly walled in.
    */
   _walkable(x, z) {
-    for (const span of this.crossingSpans) {
+    for (const span of this.spanIndex.near(x, z)) {
       if (onSpan(span, x, z, CROSSING_WALK, CROSSING_OVERLAP)) return true
     }
     const cell = worldToHex(x, z)
