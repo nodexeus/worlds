@@ -290,67 +290,77 @@ so that its -z points at the deck centre. 540 triangles, 557360 bytes, maps 512.
 
 For drawing a part a long way from the camera (NODEX-348): `<part>-far`, made by `make_far_twins.py`
 from the baked part. A twin is not a new model. It is a choice of the full part's own faces, kept
-exactly where they are with the same atlas coordinates: the biggest, and the ones that are lit or
-painted. Same origin, same turn. It wears the full part's material: `tools/build-settlement.mjs`
-gives each `<part>-far` the material of `<part>`, so the packed file carries every map once. The
-twins are exported with no images in them. They are not deck shapes and are not in `deck-shapes.json`.
+exactly where they are with the same atlas coordinates. Same origin, same turn, and the same reach
+every way to within 0.08. It wears the full part's material: `tools/build-settlement.mjs` gives each
+`<part>-far` the material of `<part>`, so the packed file carries every map once. The twins are
+exported with no images in them. They are not deck shapes and are not in `deck-shapes.json`.
 
-What a twin leaves out: rails and their posts, kerb ends, grating bars (a grille is a black hole),
-bolts, braces, bevels, most undersides, and whatever stands off a deck (a balcony, a shelf). So a
-twin of a railed deck is 0.86 lower than the full deck, and a post's twin is the column and the
-top of its pad without the knee braces. A twin of a large deck is 400 triangles, not 250: every
-plate is its own patch of the atlas, so a plate cannot be merged with its neighbour.
+How the faces are chosen:
+
+- The biggest first, tops and sides before undersides, with lit and painted faces counted for more.
+- A lit face that is more than half hidden in the full part (a lamp's disc under a roof that leaves
+  a ring of it showing) is kept only together with every face that covers it, or left out. Kept
+  bare it shines whole: a glowing cap where the part has a thin ring.
+- A rail or a rail post is two faces of its tube, back to back: the one that looks out from the deck
+  and the one that looks in. Top rails first, then mid rails, then posts, as far as the budget goes.
+- A post keeps one face of each knee brace and all four sides of its pad, so it stands on the ground.
+- Where the twin would stop short of the full part's reach, the biggest face that reaches is added.
+
+What a twin still leaves out: grating bars (a grille is a black hole), bolts, kerb ends, bevels,
+most undersides, the dividers between a cabin's windows (its lit band is unbroken), and on the drum
+the lit line round its foot. A deck twin is 450 triangles or fewer (700 for a large deck): every plate
+is its own patch of the atlas, so a plate cannot be merged with its neighbour.
 
 | Part | Full triangles | Twin triangles |
 |---|---|---|
-| deck-a | 6300 | 250 |
-| deck-b | 6295 | 250 |
-| deck-c | 6428 | 250 |
-| deck-d | 6916 | 249 |
-| deck-join | 600 | 249 |
+| deck-a | 6300 | 441 |
+| deck-b | 6295 | 441 |
+| deck-c | 6428 | 448 |
+| deck-d | 6916 | 441 |
+| deck-join | 600 | 241 |
 | deck-fill | 201 | 89 |
-| deck-s1 | 5151 | 250 |
-| deck-s2 | 4810 | 250 |
-| deck-s3 | 7951 | 250 |
-| deck-s4 | 4912 | 250 |
-| deck-s5 | 5726 | 249 |
-| deck-s6 | 4667 | 250 |
-| deck-m1 | 7063 | 250 |
-| deck-m2 | 7336 | 250 |
-| deck-m3 | 7833 | 250 |
-| deck-m4 | 5774 | 250 |
-| deck-m5 | 6444 | 250 |
-| deck-m6 | 6614 | 250 |
-| deck-m7 | 5451 | 250 |
-| deck-m8 | 5755 | 249 |
-| deck-m9 | 6745 | 250 |
-| deck-m10 | 5237 | 250 |
-| deck-m11 | 7109 | 250 |
-| deck-l1 | 12055 | 400 |
-| deck-l2 | 11296 | 400 |
-| deck-l3 | 12451 | 400 |
-| post-1 | 972 | 24 |
-| post-2 | 1040 | 24 |
-| post-3 | 1016 | 24 |
-| post-4 | 1084 | 24 |
-| post-5 | 1132 | 24 |
+| deck-s1 | 5151 | 442 |
+| deck-s2 | 4810 | 442 |
+| deck-s3 | 7951 | 442 |
+| deck-s4 | 4912 | 440 |
+| deck-s5 | 5726 | 443 |
+| deck-s6 | 4667 | 442 |
+| deck-m1 | 7063 | 442 |
+| deck-m2 | 7336 | 442 |
+| deck-m3 | 7833 | 442 |
+| deck-m4 | 5774 | 442 |
+| deck-m5 | 6444 | 444 |
+| deck-m6 | 6614 | 440 |
+| deck-m7 | 5451 | 442 |
+| deck-m8 | 5755 | 441 |
+| deck-m9 | 6745 | 442 |
+| deck-m10 | 5237 | 442 |
+| deck-m11 | 7109 | 442 |
+| deck-l1 | 12055 | 692 |
+| deck-l2 | 11296 | 692 |
+| deck-l3 | 12451 | 690 |
+| post-1 | 972 | 40 |
+| post-2 | 1040 | 40 |
+| post-3 | 1016 | 40 |
+| post-4 | 1084 | 40 |
+| post-5 | 1132 | 40 |
 | legs-1 | 4208 | 120 |
 | legs-2 | 5828 | 120 |
-| legs-3 | 4852 | 120 |
+| legs-3 | 4852 | 122 |
 | legs-4 | 7276 | 120 |
-| legs-5 | 5960 | 120 |
-| mod-cabin | 2328 | 150 |
-| mod-drum | 1176 | 150 |
-| mod-shed | 540 | 150 |
-| mod-tank | 1104 | 150 |
-| frame | 572 | 60 |
-| stair-1 | 604 | 80 |
-| stair-2 | 1860 | 80 |
-| stair-ground | 1136 | 80 |
-| gangway | 316 | 40 |
-| port-gate | 540 | 24 |
+| legs-5 | 5960 | 122 |
+| mod-cabin | 2328 | 144 |
+| mod-drum | 1176 | 173 |
+| mod-shed | 540 | 142 |
+| mod-tank | 1104 | 152 |
+| frame | 572 | 52 |
+| stair-1 | 604 | 74 |
+| stair-2 | 1860 | 112 |
+| stair-ground | 1136 | 76 |
+| gangway | 316 | 32 |
+| port-gate | 540 | 20 |
 
-All 46 full parts together are 210,664 triangles; their twins are 8,469.
+All 46 full parts together are 210,664 triangles; their twins are 13,468.
 
 ## Deck numbers
 
