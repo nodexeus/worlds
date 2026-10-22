@@ -1,0 +1,378 @@
+{
+  "id": "scout-hover-v1",
+  "units": "metres",
+  "front": "-Y",
+  "joints": {
+    "root": {
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "parent": null
+    },
+    "hips": {
+      "position": [
+        0,
+        0,
+        0.765
+      ],
+      "parent": "root"
+    },
+    "spine": {
+      "position": [
+        0,
+        0,
+        0.88
+      ],
+      "parent": "hips"
+    },
+    "chest": {
+      "position": [
+        0,
+        0,
+        1.015
+      ],
+      "parent": "spine"
+    },
+    "head": {
+      "position": [
+        0,
+        0,
+        1.184
+      ],
+      "parent": "chest"
+    },
+    "eye.l": {
+      "position": [
+        0.102,
+        -0.435,
+        1.595
+      ],
+      "parent": "head"
+    },
+    "antenna.l": {
+      "position": [
+        0.43,
+        0.073,
+        1.625
+      ],
+      "parent": "head"
+    },
+    "upperarm.l": {
+      "position": [
+        0.28,
+        0,
+        1.09
+      ],
+      "parent": "chest"
+    },
+    "lowerarm.l": {
+      "position": [
+        0.55,
+        0,
+        1.09
+      ],
+      "parent": "upperarm.l"
+    },
+    "wrist.l": {
+      "position": [
+        0.8,
+        0,
+        1.09
+      ],
+      "parent": "lowerarm.l"
+    },
+    "upperleg.l": {
+      "position": [
+        0.19,
+        0,
+        0.765
+      ],
+      "parent": "hips"
+    },
+    "finger0.l": {
+      "position": [
+        0.885,
+        -0.0405,
+        1.09
+      ],
+      "parent": "wrist.l"
+    },
+    "finger1.l": {
+      "position": [
+        0.885,
+        -0.0135,
+        1.09
+      ],
+      "parent": "wrist.l"
+    },
+    "finger2.l": {
+      "position": [
+        0.885,
+        0.0135,
+        1.09
+      ],
+      "parent": "wrist.l"
+    },
+    "finger3.l": {
+      "position": [
+        0.885,
+        0.0405,
+        1.09
+      ],
+      "parent": "wrist.l"
+    },
+    "eye.r": {
+      "position": [
+        -0.102,
+        -0.435,
+        1.595
+      ],
+      "parent": "head"
+    },
+    "antenna.r": {
+      "position": [
+        -0.43,
+        0.073,
+        1.625
+      ],
+      "parent": "head"
+    },
+    "upperarm.r": {
+      "position": [
+        -0.28,
+        0,
+        1.09
+      ],
+      "parent": "chest"
+    },
+    "lowerarm.r": {
+      "position": [
+        -0.55,
+        0,
+        1.09
+      ],
+      "parent": "upperarm.r"
+    },
+    "wrist.r": {
+      "position": [
+        -0.8,
+        0,
+        1.09
+      ],
+      "parent": "lowerarm.r"
+    },
+    "upperleg.r": {
+      "position": [
+        -0.19,
+        0,
+        0.765
+      ],
+      "parent": "hips"
+    },
+    "finger0.r": {
+      "position": [
+        -0.885,
+        -0.0405,
+        1.09
+      ],
+      "parent": "wrist.r"
+    },
+    "finger1.r": {
+      "position": [
+        -0.885,
+        -0.0135,
+        1.09
+      ],
+      "parent": "wrist.r"
+    },
+    "finger2.r": {
+      "position": [
+        -0.885,
+        0.0135,
+        1.09
+      ],
+      "parent": "wrist.r"
+    },
+    "finger3.r": {
+      "position": [
+        -0.885,
+        0.0405,
+        1.09
+      ],
+      "parent": "wrist.r"
+    },
+    "magnifier": {
+      "position": [
+        -0.869,
+        -0.016,
+        1.09
+      ],
+      "parent": "wrist.r"
+    }
+  },
+  "name": "SEO Strategist",
+  "asset": "seo-strategist",
+  "propLabel": "Magnifying glass",
+  "locomotion": "hover",
+  "minimumClearance": 0.13,
+  "actions": [
+    "idle",
+    "idleAlt",
+    "walk",
+    "run",
+    "work",
+    "workAlt",
+    "cheer",
+    "jump",
+    "wave",
+    "sitDown",
+    "sit",
+    "standUp",
+    "hit",
+    "spawn",
+    "interact",
+    "phoneUp",
+    "phone",
+    "phoneDown"
+  ],
+  "authoredFlightClips": [
+    "walk",
+    "run"
+  ],
+  "motionSource": {
+    "source": "public/assets/crew.glb + src/agents/crew.js",
+    "sha256": "2018bb597e17051c896749537a83b4d76b9339d5547f3539a8897e95970eb25a",
+    "restSource": "inverse bind matrices in authored vertex coordinates"
+  },
+  "clipMetadata": {
+    "idle": {
+      "start": 0,
+      "frames": 33,
+      "duration": 1.0666667222976685,
+      "loop": true,
+      "name": "Idle_A"
+    },
+    "idleAlt": {
+      "start": 33,
+      "frames": 65,
+      "duration": 2.133333444595337,
+      "loop": true,
+      "name": "Idle_B"
+    },
+    "walk": {
+      "start": 98,
+      "frames": 33,
+      "duration": 1.0666667222976685,
+      "loop": true,
+      "name": "Walking_A"
+    },
+    "run": {
+      "start": 131,
+      "frames": 25,
+      "duration": 0.800000011920929,
+      "loop": true,
+      "name": "Running_A"
+    },
+    "work": {
+      "start": 156,
+      "frames": 81,
+      "duration": 2.6666667461395264,
+      "loop": true,
+      "name": "Hammering"
+    },
+    "workAlt": {
+      "start": 237,
+      "frames": 46,
+      "duration": 1.5,
+      "loop": true,
+      "name": "Working_A"
+    },
+    "cheer": {
+      "start": 283,
+      "frames": 51,
+      "duration": 1.6666666269302368,
+      "loop": true,
+      "name": "Cheering"
+    },
+    "jump": {
+      "start": 334,
+      "frames": 36,
+      "duration": 1.1666666269302368,
+      "loop": false,
+      "name": "Jump_Full_Short"
+    },
+    "wave": {
+      "start": 370,
+      "frames": 65,
+      "duration": 2.133333444595337,
+      "loop": true,
+      "name": "Waving"
+    },
+    "sitDown": {
+      "start": 435,
+      "frames": 31,
+      "duration": 1,
+      "loop": false,
+      "name": "Sit_Floor_Down"
+    },
+    "sit": {
+      "start": 466,
+      "frames": 121,
+      "duration": 4,
+      "loop": true,
+      "name": "Sit_Floor_Idle"
+    },
+    "standUp": {
+      "start": 587,
+      "frames": 35,
+      "duration": 1.1333333253860474,
+      "loop": false,
+      "name": "Sit_Floor_StandUp"
+    },
+    "hit": {
+      "start": 622,
+      "frames": 21,
+      "duration": 0.6666666865348816,
+      "loop": true,
+      "name": "Hit_A"
+    },
+    "spawn": {
+      "start": 643,
+      "frames": 40,
+      "duration": 1.2999999523162842,
+      "loop": false,
+      "name": "Spawn_Ground"
+    },
+    "interact": {
+      "start": 683,
+      "frames": 40,
+      "duration": 1.2999999523162842,
+      "loop": true,
+      "name": "Interact"
+    },
+    "phoneUp": {
+      "start": 723,
+      "frames": 15,
+      "duration": 0.46666666865348816,
+      "loop": false,
+      "name": "Idle_A"
+    },
+    "phone": {
+      "start": 738,
+      "frames": 33,
+      "duration": 1.0666667222976685,
+      "loop": true,
+      "name": "Idle_A"
+    },
+    "phoneDown": {
+      "start": 771,
+      "frames": 15,
+      "duration": 0.46666666865348816,
+      "loop": false,
+      "name": "Idle_A"
+    }
+  },
+  "reference": "agents/Finals/SEO Strategist.png"
+}

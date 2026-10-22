@@ -49,3 +49,7 @@ design/character
 # Intermediate bake maps: the same images are inside each exported nodexeus-*.glb, and
 # bake_model.py writes them again.
 design/campus/bake/
+design/agents/**/bake/
+# Rendered previews of the crew characters: export.py and the capture tools draw them again.
+design/agents/*/previews/
+design/agents/*/preview.png

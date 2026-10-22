@@ -98,6 +98,19 @@ bpy.context.view_layer.objects.active = source
 bpy.ops.object.mode_set(mode="EDIT")
 bpy.ops.mesh.select_all(action="SELECT")
 bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=0.003, area_weight=0.0)
+# Small light clusters can otherwise receive subpixel islands in the shared atlas.
+# This opt-in weighting preserves their detail without enlarging every texture.
+if SPEC.get("light_uv_scale"):
+    edit_mesh = bmesh.from_edit_mesh(source.data)
+    light_layer = edit_mesh.verts.layers.float.get("_light")
+    uv_layer = edit_mesh.loops.layers.uv.active
+    assert light_layer is not None and uv_layer is not None
+    for face in edit_mesh.faces:
+        factor = SPEC["light_uv_scale"].get(round(face.verts[0][light_layer]), 1.0)
+        for loop in face.loops:
+            loop[uv_layer].uv *= factor
+    bmesh.update_edit_mesh(source.data)
+    bpy.ops.uv.pack_islands(rotate=True, scale=True, margin=0.003)
 bpy.ops.object.mode_set(mode="OBJECT")
 gate.hide_render = gate.hide_viewport = True
 
