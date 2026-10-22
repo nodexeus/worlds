@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent model review</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; color: #e9e5df; background: #11141b; font: 14px system-ui,sans-serif; }
+  header { position: absolute; inset: 0 0 auto; padding: 24px 32px; z-index: 2; display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+  h1 { font-size: 18px; font-weight: 550; margin: 0 auto 0 0; }
+  label { display:flex; gap:8px; align-items:center; }
+  button,select { background:#232832; border:1px solid #4d525c; color:#e9e5df; padding:8px 12px; border-radius:5px; }
+  button { cursor:pointer; }
+  #scene { width:100vw;height:100vh; }
+  #status { position:absolute;bottom:20px;left:32px;color:#adb5c6;background:#11141b;padding:8px 12px; }
+  #error { position:absolute;top:100px;left:32px;color:#ffadad; }
+</style>
+<header><h1>Model review</h1>
+  <label>Agent <select id="asset" aria-label="Agent model"></select></label>
+  <label>Action <select id="action" aria-label="Animation"></select></label>
+  <label><input type="checkbox" id="camera"> <span id="prop-label">Camera</span></label>
+  <button id="pause">Pause</button><button id="front">Front</button><button id="back">Back</button>
+</header>
+<main id="scene"></main><output id="status">Loading model…</output><pre id="error"></pre>
+<script type="module" src="./agent-model.js"></script>
+</html>
